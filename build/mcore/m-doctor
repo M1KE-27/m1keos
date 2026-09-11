@@ -1,0 +1,75 @@
+#!/bin/sh
+# m-doctor - diagnóstico tolerante para hardware físico y máquinas virtuales
+set -u
+
+echo "=========================================================="
+echo "          MIKE OS DOCTOR — DIAGNÓSTICO DE SALUD"
+echo "=========================================================="
+
+ERRORS=0
+WARNINGS=0
+ok()   { echo "OK${1:+ ($1)}"; }
+warn() { echo "ALERTA${1:+ ($1)}"; WARNINGS=$((WARNINGS + 1)); }
+fail() { echo "FALLO${1:+ ($1)}"; ERRORS=$((ERRORS + 1)); }
+check_cmd() { command -v "$1" >/dev/null 2>&1; }
+
+printf " [1/10] Kernel e init... "
+PID1_COMM="$(cat /proc/1/comm 2>/dev/null || echo unknown)"
+if [ -n "$(uname -r 2>/dev/null)" ] && { [ "$PID1_COMM" = runit ] || [ "$PID1_COMM" = init ]; }; then ok "$(uname -r), PID 1: $PID1_COMM"; else fail "kernel/init no disponibles"; fi
+
+printf " [2/10] Etapas y supervisor runit... "
+if [ -x /etc/runit/1 ] && [ -x /etc/runit/2 ] && [ -x /etc/runit/3 ] && [ -d /var/service ]; then ok; else fail "estructura de runit incompleta"; fi
+
+printf " [3/10] Sistemas virtuales... "
+if mountpoint -q /proc 2>/dev/null && mountpoint -q /sys 2>/dev/null && mountpoint -q /dev 2>/dev/null; then ok; else fail "/proc, /sys o /dev sin montar"; fi
+
+printf " [4/10] Almacenamiento raíz... "
+if mountpoint -q / 2>/dev/null && [ -w /tmp ] && df -P / >/dev/null 2>&1; then ok "$(df -P / | awk 'NR==2 {print $5 " usado"}')"; else fail "raíz no escribible"; fi
+
+printf " [5/10] Servicios... "
+if [ -d /etc/sv ] && [ -d /var/service ]; then
+    active="$(find /var/service -maxdepth 1 -mindepth 1 2>/dev/null | wc -l)"
+    ok "$active activos"
+else
+    fail "directorios de servicios ausentes"
+fi
+
+printf " [6/10] Red e interfaces... "
+if ip link show lo >/dev/null 2>&1 && ip link show lo | grep -q 'UP'; then
+    net="$(find /sys/class/net -maxdepth 1 -mindepth 1 2>/dev/null | wc -l)"
+    ok "$net interfaces detectadas"
+else
+    warn "loopback inactivo"
+fi
+
+printf " [7/10] Drivers de virtualización... "
+virt=""
+for marker in /sys/class/net/*/device/vendor /sys/devices/virtual/dmi/id/product_name; do
+    [ -f "$marker" ] && virt="${virt} $(cat "$marker" 2>/dev/null)"
+done
+if grep -Eq 'virtio|VMware|VirtualBox|KVM|QEMU|Microsoft|Xen' /sys/devices/virtual/dmi/id/product_name /proc/cpuinfo 2>/dev/null; then ok "perfil detectado:${virt:- genérico}"; else warn "no se pudo identificar hipervisor"; fi
+
+printf " [8/10] Gráficos y dispositivos... "
+if [ -d /dev/dri ] || [ -d /sys/class/drm ]; then ok "DRM disponible"; else warn "sin DRM (válido en modo headless)"; fi
+
+printf " [9/10] Binarios esenciales... "
+missing=""
+for cmd in sh mount switch_root runit ip udhcpc m-service m-system m-network m-disk m-log; do
+    check_cmd "$cmd" || missing="$missing $cmd"
+done
+if [ -z "$missing" ]; then ok; else fail "faltan:$missing"; fi
+
+printf " [10/10] Memoria y presión... "
+mem="$(awk '/MemAvailable:/ {print $2}' /proc/meminfo 2>/dev/null || echo 0)"
+if [ "$mem" -gt 20000 ] 2>/dev/null; then ok "$((mem / 1024)) MB disponibles"; else warn "memoria disponible baja"; fi
+
+echo "=========================================================="
+if [ "$ERRORS" -eq 0 ] && [ "$WARNINGS" -eq 0 ]; then
+    echo " RESULTADO: MIKE OS está en perfecto estado de salud."
+elif [ "$ERRORS" -eq 0 ]; then
+    echo " RESULTADO: sistema funcional con $WARNINGS alertas."
+else
+    echo " RESULTADO: $ERRORS errores críticos y $WARNINGS alertas."
+fi
+echo "=========================================================="
+[ "$ERRORS" -eq 0 ]

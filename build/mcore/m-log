@@ -1,0 +1,49 @@
+#!/bin/sh
+# ==============================================================================
+# m-log - MIKE OS Log Viewer
+# ==============================================================================
+set -eu
+
+usage() {
+    echo "Uso: m-log [opciones]"
+    echo ""
+    echo "Opciones:"
+    echo "  (sin args)       Muestra las últimas 50 líneas de /var/log/messages"
+    echo "  -f               Sigue los logs en tiempo real"
+    echo "  dmesg            Muestra el buffer de logs del kernel"
+    echo "  service <svc>    Muestra los logs de un servicio runit"
+    echo ""
+    exit 1
+}
+
+LOG_FILE="/var/log/messages"
+
+if [ $# -eq 0 ]; then
+    if [ -f "$LOG_FILE" ]; then
+        tail -n 50 "$LOG_FILE"
+    else
+        echo "No hay archivo de log en $LOG_FILE. Mostrando dmesg:"
+        dmesg | tail -n 30
+    fi
+    exit 0
+fi
+
+case "$1" in
+    -f)
+        [ -f "$LOG_FILE" ] && tail -f "$LOG_FILE" || dmesg -w
+        ;;
+    dmesg)
+        dmesg
+        ;;
+    service)
+        [ -z "${2:-}" ] && usage
+        if [ -d "/var/log/sv/$2" ]; then
+            cat "/var/log/sv/$2/current" 2>/dev/null || echo "Sin logs para $2"
+        else
+            echo "Directorio de logs /var/log/sv/$2 no encontrado."
+        fi
+        ;;
+    *)
+        usage
+        ;;
+esac

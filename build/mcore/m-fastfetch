@@ -1,0 +1,12 @@
+#!/bin/sh
+# MIKE Fastfetch: identidad del sistema y detección rápida de hardware.
+set -u
+CONFIG="/etc/mikeos/fastfetch/config.jsonc"
+if [ -x /usr/bin/fastfetch ]; then
+    if [ -f "$CONFIG" ]; then
+        exec /usr/bin/fastfetch -c "$CONFIG" "$@"
+    fi
+    exec /usr/bin/fastfetch "$@"
+fi
+echo "m-fastfetch: Fastfetch no está instalado en este perfil." >&2
+exit 127

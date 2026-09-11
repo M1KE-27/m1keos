@@ -1,0 +1,19 @@
+#!/bin/sh
+[ -z "$1" ] && exit 1
+case "$1" in
+    deconfig)
+        ip addr flush dev "$interface"
+        ;;
+    renew|bound)
+        ip addr add "$ip/$mask" dev "$interface"
+        if [ -n "$router" ]; then
+            ip route add default via "$router" dev "$interface"
+        fi
+        if [ -n "$dns" ]; then
+            echo "# Generado por udhcpc para MIKE OS" > /etc/resolv.conf
+            for d in $dns; do
+                echo "nameserver $d" >> /etc/resolv.conf
+            done
+        fi
+        ;;
+esac

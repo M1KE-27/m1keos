@@ -1,0 +1,41 @@
+#!/bin/sh
+# m-wifi - control de WiFi real vía iwd (iwctl). En QEMU (virtio-net) no hay
+# adaptador inalámbrico: el servicio iwd corre pero "device list" no
+# devuelve nada y estos comandos no tienen nada que controlar. En hardware
+# real con tarjeta WiFi soportada por el kernel (mac80211/cfg80211 + driver
+# del vendor, ya habilitados), iwd la detecta sola y esto funciona de verdad.
+set -eu
+
+device() {
+    iwctl device list 2>/dev/null | awk '/station/{print $2; exit}'
+}
+
+DEV="$(device)"
+
+case "${1:-list}" in
+    list)
+        [ -z "$DEV" ] && { echo "Sin adaptador WiFi detectado."; exit 1; }
+        iwctl station "$DEV" get-networks
+        ;;
+    scan)
+        [ -z "$DEV" ] && { echo "Sin adaptador WiFi detectado."; exit 1; }
+        iwctl station "$DEV" scan
+        ;;
+    connect)
+        [ -z "$DEV" ] && { echo "Sin adaptador WiFi detectado."; exit 1; }
+        [ -z "${2:-}" ] && { echo "Uso: m-wifi connect <SSID>"; exit 1; }
+        iwctl station "$DEV" connect "$2"
+        ;;
+    disconnect)
+        [ -z "$DEV" ] && { echo "Sin adaptador WiFi detectado."; exit 1; }
+        iwctl station "$DEV" disconnect
+        ;;
+    status)
+        [ -z "$DEV" ] && { echo "Sin adaptador WiFi detectado."; exit 0; }
+        iwctl station "$DEV" show
+        ;;
+    *)
+        echo "Uso: m-wifi [list|scan|connect <SSID>|disconnect|status]"
+        exit 1
+        ;;
+esac

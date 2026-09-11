@@ -1,0 +1,6 @@
+#!/bin/sh
+# MIKE OS - Runit Stage 2 (Service Supervision)
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+
+exec env - PATH=$PATH runsvdir -P /var/service

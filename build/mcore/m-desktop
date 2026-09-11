@@ -1,0 +1,135 @@
+#!/bin/sh
+# ==============================================================================
+# m-desktop - MIKE Desktop Manager (v0.1.0)
+# Controls the graphical session, themes, and display server.
+# ==============================================================================
+set -eu
+
+MIKE_CONFIG_DIR="${HOME:-/root}/.config/mike"
+AUTOSTART_FILE="$MIKE_CONFIG_DIR/autostart.conf"
+
+usage() {
+    echo "=========================================================="
+    echo "          MIKE DESKTOP — GESTOR DE ENTORNO GRÁFICO"
+    echo "=========================================================="
+    echo "Uso: m-desktop <comando>"
+    echo ""
+    echo "Comandos:"
+    echo "  start           Inicia la sesión gráfica de MIKE Desktop (Hyprland + Quickshell)"
+    echo "  status          Muestra el estado de Wayland, Hyprland y la GPU"
+    echo "  enable          Habilita el inicio automático del escritorio al arrancar"
+    echo "  disable         Deshabilita el inicio automático del escritorio"
+    echo "  config          Abre la carpeta de configuración (~/.config/mike)"
+    echo "  theme [name]    Cambia o lista los temas visuales disponibles"
+    echo "=========================================================="
+    exit 1
+}
+
+[ $# -lt 1 ] && usage
+
+CMD="$1"
+
+case "$CMD" in
+    start)
+        echo "Iniciando MIKE Desktop..."
+        if [ -x /usr/bin/start-mike-desktop ]; then
+            exec /usr/bin/start-mike-desktop
+        else
+            echo "ERROR: 'start-mike-desktop' no encontrado."
+            echo "Asegúrate de tener instalado el paquete 'mike-desktop':"
+            echo "  mpm install mike-desktop"
+            exit 1
+        fi
+        ;;
+
+    status)
+        echo "=== [ESTADO DE MIKE DESKTOP] ==="
+        if [ -n "${WAYLAND_DISPLAY:-}" ]; then
+            echo " Sesión Activa : SÍ (Wayland: $WAYLAND_DISPLAY)"
+        else
+            echo " Sesión Activa : NO (Modo Consola TTY)"
+        fi
+
+        if pgrep -x hyprland >/dev/null 2>&1 || pgrep -x Hyprland >/dev/null 2>&1; then
+            echo " Compositor    : Hyprland (En ejecución)"
+        else
+            echo " Compositor    : Hyprland (Detenido)"
+        fi
+
+        if [ -f "$MIKE_CONFIG_DIR/hyprland.conf" ]; then
+            echo " Configuración : Presente en $MIKE_CONFIG_DIR"
+        else
+            echo " Configuración : No inicializada (Se usará /etc/skel/.config/mike)"
+        fi
+
+        if [ -c /dev/dri/card0 ] || [ -c /dev/dri/renderD128 ]; then
+            echo " GPU / DRM     : /dev/dri disponible (Aceleración KMS/DRM activa)"
+        else
+            echo " GPU / DRM     : Dispositivo DRM no detectado o en modo emulación"
+        fi
+        echo "================================"
+        ;;
+
+    enable)
+        echo "Habilitando inicio automático de MIKE Desktop..."
+        mkdir -p /etc/mikeos
+        touch /etc/mikeos/desktop_enabled
+        sed -i 's/DEFAULT_SHELL=.*/DEFAULT_SHELL="\/usr\/bin\/start-mike-desktop"/' /etc/mikeos/boot.conf 2>/dev/null || true
+        echo " [OK] MIKE Desktop se iniciará automáticamente tras el login."
+        ;;
+
+    disable)
+        echo "Deshabilitando inicio automático de MIKE Desktop..."
+        rm -f /etc/mikeos/desktop_enabled
+        sed -i 's/DEFAULT_SHELL=.*/DEFAULT_SHELL="\/bin\/mkshell"/' /etc/mikeos/boot.conf 2>/dev/null || true
+        echo " [OK] Modo consola por defecto restablecido (/bin/mkshell)."
+        ;;
+
+    config)
+        mkdir -p "$MIKE_CONFIG_DIR"
+        echo "Archivos de configuración en $MIKE_CONFIG_DIR:"
+        ls -la "$MIKE_CONFIG_DIR"
+        ;;
+
+    theme)
+        THEME="${2:-}"
+        THEME_DIR="$MIKE_CONFIG_DIR/theme"
+        mkdir -p "$THEME_DIR"
+        if [ -z "$THEME" ]; then
+            echo "=== [TEMAS VISUALES DE MIKE DESKTOP] ==="
+            echo " * dark (Predeterminado - Minimalista Negro / Cyan)"
+            echo " * nord (Azul glacial / Slate)"
+            echo " * monochrome (Blanco y Negro puro)"
+            echo ""
+            echo "Para aplicar un tema: m-desktop theme <nombre>"
+        else
+            echo "Aplicando tema '$THEME' a MIKE Desktop..."
+            case "$THEME" in
+                dark)
+                    echo "ACCENT=#00d4ff" > "$THEME_DIR/colors.conf"
+                    echo "BG=#101014" >> "$THEME_DIR/colors.conf"
+                    echo "FG=#e0e0e0" >> "$THEME_DIR/colors.conf"
+                    ;;
+                nord)
+                    echo "ACCENT=#88c0d0" > "$THEME_DIR/colors.conf"
+                    echo "BG=#2e3440" >> "$THEME_DIR/colors.conf"
+                    echo "FG=#eceff4" >> "$THEME_DIR/colors.conf"
+                    ;;
+                monochrome)
+                    echo "ACCENT=#ffffff" > "$THEME_DIR/colors.conf"
+                    echo "BG=#000000" >> "$THEME_DIR/colors.conf"
+                    echo "FG=#ffffff" >> "$THEME_DIR/colors.conf"
+                    ;;
+                *)
+                    echo "Tema desconocido '$THEME'. Temas válidos: dark, nord, monochrome"
+                    exit 1
+                    ;;
+            esac
+            echo " [OK] Tema '$THEME' configurado correctamente."
+        fi
+        ;;
+
+    *)
+        usage
+        ;;
+esac

@@ -1,0 +1,80 @@
+#!/bin/sh
+# m-wallhaven - cliente de la API pública de Wallhaven (wallhaven.cc/help/api).
+# Sin API key: solo contenido SFW/general, que es justo lo que queremos por
+# defecto. m-wallpapers (GTK) lo usa como backend; también usable a pelo.
+#
+# search y toplist aceptan un número de página opcional para que el botón
+# "Buscar más" del navegador de fondos pueda seguir cargando resultados.
+set -eu
+
+API="https://wallhaven.cc/api/v1"
+WALLPAPER="${HOME:-/root}/.config/mike/wallpaper.jpg"
+
+# Página: entero >= 1. Cualquier otra cosa se trata como la primera.
+page_arg() {
+    case "${1:-1}" in
+        ''|*[!0-9]*) echo 1 ;;
+        *) [ "$1" -ge 1 ] && echo "$1" || echo 1 ;;
+    esac
+}
+
+case "${1:-}" in
+    search)
+        [ -z "${2:-}" ] && { echo "Uso: m-wallhaven search <query> [pagina]"; exit 1; }
+        # categories=100 (general), purity=100 (sfw): fijo, sin exponer NSFW.
+        Q="$(printf '%s' "$2" | sed 's/ /+/g')"
+        P="$(page_arg "${3:-1}")"
+        curl -fsSL "$API/search?q=$Q&categories=100&purity=100&sorting=relevance&page=$P" \
+            | jq -r '.data[] | [.id, .thumbs.small, .path] | @tsv'
+        ;;
+    toplist)
+        P="$(page_arg "${2:-1}")"
+        curl -fsSL "$API/search?categories=100&purity=100&sorting=toplist&topRange=1M&page=$P" \
+            | jq -r '.data[] | [.id, .thumbs.small, .path] | @tsv'
+        ;;
+    cache)
+        # Descarga las miniaturas que falten. Recibe líneas "url<TAB>ruta".
+        #
+        # Cada una va a un archivo temporal y sólo se renombra si curl
+        # terminó bien: un archivo con el nombre definitivo está siempre
+        # completo, así que quien lo pinte nunca se encuentra un JPEG a
+        # medias. Es lo que permite que la cuadrícula se llene sola, imagen a
+        # imagen, en vez de esperar a que estén todas.
+        [ -z "${2:-}" ] && exit 0
+        # El bucle lee de un archivo y no de una tubería a propósito: una
+        # tubería lo metería en un subshell y el "wait" de abajo no vería los
+        # procesos de descarga, que morirían al salir el subshell.
+        _lista="${TMPDIR:-/tmp}/m-wallhaven-$$.lst"
+        printf '%s\n' "$2" > "$_lista"
+        while IFS='	' read -r _url _ruta; do
+            [ -n "$_url" ] && [ -n "$_ruta" ] || continue
+            [ -f "$_ruta" ] && continue
+            mkdir -p "$(dirname "$_ruta")"
+            (
+                if curl -fsL --connect-timeout 10 --retry 1 -o "$_ruta.part" "$_url"; then
+                    mv -f "$_ruta.part" "$_ruta"
+                else
+                    rm -f "$_ruta.part"
+                fi
+            ) &
+        done < "$_lista"
+        wait
+        rm -f "$_lista"
+        ;;
+
+    set)
+        [ -z "${2:-}" ] && { echo "Uso: m-wallhaven set <url-imagen-completa>"; exit 1; }
+        mkdir -p "$(dirname "$WALLPAPER")"
+        curl -fsSL "$2" -o "$WALLPAPER.tmp"
+        mv "$WALLPAPER.tmp" "$WALLPAPER"
+        if command -v hyprctl >/dev/null 2>&1 && [ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]; then
+            pkill -x swaybg 2>/dev/null || true
+            ( swaybg -i "$WALLPAPER" -m fill >/dev/null 2>&1 & )
+        fi
+        echo "[OK] Fondo actualizado."
+        ;;
+    *)
+        echo "Uso: m-wallhaven [search <query> [pagina]|toplist [pagina]|cache <pares>|set <url>]"
+        exit 1
+        ;;
+esac

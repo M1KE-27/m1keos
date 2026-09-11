@@ -1,0 +1,16 @@
+#!/bin/sh
+# MIKE OS - Runit Stage 3 (System Shutdown / Reboot)
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+
+echo ""
+echo ">> MIKE OS shutting down..."
+sync
+echo ">> Deteniendo servicios supervisados..."
+for s in /var/service/*; do
+    [ -d "$s" ] && sv down "$s" 2>/dev/null || true
+done
+echo ">> Unmounting filesystems..."
+umount -a -r 2>/dev/null
+sync
+echo ">> System halted."

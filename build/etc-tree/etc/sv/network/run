@@ -1,0 +1,38 @@
+#!/bin/sh
+exec 2>&1
+ip link set lo up 2>/dev/null || true
+IFACE="auto"
+
+if [ -f /etc/mikeos/network.conf ]; then
+    . /etc/mikeos/network.conf
+fi
+
+# Las interfaces modernas no tienen por qué llamarse eth0. Preferimos la
+# interfaz configurada y, si es "auto", la primera que no sea loopback.
+if [ "${IFACE:-auto}" = "auto" ] || [ -z "${IFACE:-}" ]; then
+    IFACE=""
+    for candidate in /sys/class/net/*; do
+        [ -e "$candidate" ] || continue
+        name="$(basename "$candidate")"
+        [ "$name" = lo ] && continue
+        IFACE="$name"
+        break
+    done
+fi
+
+if [ -z "$IFACE" ] || [ ! -e "/sys/class/net/$IFACE" ]; then
+    echo "[network] No se detectó adaptador Ethernet; esperando hardware..."
+    exec sleep 30
+fi
+
+ip link set "$IFACE" up 2>/dev/null || true
+
+if [ "${MODE:-dhcp}" = "dhcp" ]; then
+    exec udhcpc -f -i "$IFACE" -s /usr/share/udhcpc/default.script
+else
+    if ip addr add "$STATIC_IP" dev "$IFACE" 2>/dev/null && ip route add default via "$GATEWAY" dev "$IFACE" 2>/dev/null; then
+        exec sleep 86400
+    fi
+    echo "[network] Configuración estática falló para $IFACE; reintentando en 10s..."
+    exec sleep 10
+fi

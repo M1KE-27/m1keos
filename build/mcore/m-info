@@ -1,0 +1,41 @@
+#!/bin/sh
+# ==============================================================================
+# m-info - Fast Aesthetic ASCII System Info Banner
+# ==============================================================================
+set -eu
+
+# Fastfetch es el backend nativo de información de MIKE OS. Mantener el
+# banner POSIX de abajo como fallback permite usar m-info incluso en perfiles
+# core donde el paquete visual se haya retirado.
+if [ -x /usr/bin/m-fastfetch ]; then
+    exec /usr/bin/m-fastfetch "$@"
+fi
+
+C_RESET="\033[0m"
+C_CYAN="\033[1;36m"
+C_BLUE="\033[1;34m"
+C_GREEN="\033[1;32m"
+C_MAGENTA="\033[1;35m"
+C_YELLOW="\033[1;33m"
+C_WHITE="\033[1;37m"
+
+UPTIME=$(cut -d' ' -f1 /proc/uptime)
+MEM_TOTAL=$(grep MemTotal /proc/meminfo | awk '{print $2}')
+MEM_AVAIL=$(grep MemAvailable /proc/meminfo | awk '{print $2}')
+MEM_USED=$((MEM_TOTAL - MEM_AVAIL))
+MEM_STR="$((MEM_USED / 1024))MB / $((MEM_TOTAL / 1024))MB"
+DISK_STR=$(df -h / | awk 'NR==2 {print $3 " / " $2}')
+PROCS=$(ps | grep -v "PID" | wc -l)
+SV_COUNT=$(ls -1 /var/service 2>/dev/null | wc -l)
+
+echo ""
+printf "${C_CYAN}  __  __ _____ _  ______    ${C_WHITE}%s@%s${C_RESET}\n" "$(whoami 2>/dev/null || echo root)" "$(hostname)"
+printf "${C_CYAN} |  \\/  |_   _| |/ /  ____|  ${C_BLUE}OS:${C_RESET}        MIKE OS 0.1 (x86_64)\n"
+printf "${C_CYAN} | \\  / | | | | ' /| |__     ${C_BLUE}Kernel:${C_RESET}    %s\n" "$(uname -r)"
+printf "${C_CYAN} | |\\/| | | | |  < |  __|    ${C_BLUE}Init:${C_RESET}      runit (PID 1, 0%% systemd)\n"
+printf "${C_CYAN} | |  | |_| |_| . \\| |____   ${C_BLUE}Shell:${C_RESET}     %s\n" "${SHELL:-mkshell}"
+printf "${C_CYAN} |_|  |_|_____|_|\\_\\______|  ${C_BLUE}Uptime:${C_RESET}    %ss\n" "$UPTIME"
+printf "${C_MAGENTA}                             ${C_BLUE}RAM:${C_RESET}       %s\n" "$MEM_STR"
+printf "${C_MAGENTA}                             ${C_BLUE}Disk (/):${C_RESET}  %s\n" "$DISK_STR"
+printf "${C_MAGENTA}                             ${C_BLUE}Services:${C_RESET}  %s activos\n" "$SV_COUNT"
+echo ""

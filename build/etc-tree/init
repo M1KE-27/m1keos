@@ -1,0 +1,139 @@
+#!/bin/sh
+# MIKE OS - PID 1 Universal Entrypoint
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+log() { echo "[init] $*"; }
+
+mount_once() {
+    # mountpoint no siempre existe en initramfs mínimos; el segundo chequeo
+    # mantiene compatibilidad con BusyBox y evita montajes duplicados.
+    _target="$1"
+    shift
+    mountpoint -q "$_target" 2>/dev/null && return 0
+    mount "$@" "$_target" 2>/dev/null || return 1
+}
+
+wait_for_block() {
+    _dev="$1"
+    _timeout="${2:-15}"
+    _i=0
+    while [ ! -b "$_dev" ] && [ "$_i" -lt "$_timeout" ]; do
+        # Algunos discos virtio/SCSI aparecen después de que se ejecute /init.
+        modprobe virtio_pci 2>/dev/null || true
+        modprobe virtio_blk 2>/dev/null || true
+        modprobe ahci 2>/dev/null || true
+        modprobe sd_mod 2>/dev/null || true
+        sleep 1
+        _i=$((_i + 1))
+    done
+    [ -b "$_dev" ]
+}
+
+resolve_root() {
+    _spec="$1"
+    case "$_spec" in
+        LABEL=*|UUID=*)
+            findfs "$_spec" 2>/dev/null || true
+            ;;
+        /dev/*) echo "$_spec" ;;
+        *) echo "" ;;
+    esac
+}
+
+# Montar sistemas esenciales
+[ -d /proc ] || mkdir -p /proc
+[ -d /sys ] || mkdir -p /sys
+[ -d /dev ] || mkdir -p /dev
+[ -d /run ] || mkdir -p /run
+[ -d /tmp ] || mkdir -p /tmp
+
+mount_once /proc -t proc none || log "No se pudo montar /proc"
+mount_once /sys -t sysfs none || log "No se pudo montar /sys"
+mountpoint -q /dev 2>/dev/null || mount -t devtmpfs devtmpfs /dev 2>/dev/null || mount -t tmpfs none /dev
+mount_once /run -t tmpfs none || true
+mount_once /tmp -t tmpfs none || true
+mkdir -p /dev/pts /dev/shm
+mount -t devpts devpts /dev/pts -o mode=0620,gid=5 2>/dev/null || true
+mountpoint -q /dev/shm 2>/dev/null || mount -t tmpfs -o mode=1777,nosuid,nodev tmpfs /dev/shm 2>/dev/null || true
+
+# Nodos estáticos mínimos garantizados
+mknod -m 600 /dev/console c 5 1 2>/dev/null || true
+mknod -m 666 /dev/tty c 5 0 2>/dev/null || true
+mknod -m 666 /dev/tty0 c 4 0 2>/dev/null || true
+mknod -m 666 /dev/tty1 c 4 1 2>/dev/null || true
+mknod -m 666 /dev/tty2 c 4 2 2>/dev/null || true
+mknod -m 666 /dev/null c 1 3 2>/dev/null || true
+mknod -m 666 /dev/zero c 1 5 2>/dev/null || true
+mknod -m 666 /dev/ptmx c 5 2 2>/dev/null || true
+
+# Los drivers de almacenamiento/red están integrados en el kernel portable.
+# Solo intentar módulos si una instalación avanzada los proporcionó; llamar a
+# modprobe sin /lib/modules en un live mínimo puede introducir demoras largas.
+if [ -d /lib/modules ]; then
+    for _module in virtio_pci virtio_blk virtio_net ahci ata_piix nvme vmw_pvscsi vmxnet3 8139too e1000 e1000e hv_vmbus hv_storvsc hv_netvsc; do
+        modprobe "$_module" 2>/dev/null || true
+    done
+fi
+
+# Comprobar modo Recovery
+if grep -q "mikeos_recovery=1" /proc/cmdline 2>/dev/null; then
+    echo ""
+    echo "=========================================================="
+    echo "               MIKE OS — MODO RECOVERY"
+    echo "=========================================================="
+    echo "Entrando a shell de rescate como root..."
+    exec /bin/bash -l </dev/console >/dev/console 2>&1
+fi
+
+# Si se especificó arranque en disco persistente (root=/dev/vda o root=/dev/sda)
+ROOT_SPEC=""
+for arg in $(cat /proc/cmdline); do
+    case "$arg" in
+        root=*) ROOT_SPEC="${arg#root=}" ;;
+    esac
+done
+
+ROOT_DEV="$(resolve_root "$ROOT_SPEC")"
+ROOT_TIMEOUT=15
+[ -f /etc/mikeos/boot.conf ] && . /etc/mikeos/boot.conf
+
+if [ -n "$ROOT_DEV" ] && [ "$ROOT_DEV" != "/dev/ram0" ] && wait_for_block "$ROOT_DEV" "${ROOT_TIMEOUT:-15}"; then
+    log "Montando disco raíz persistente: $ROOT_DEV"
+    mkdir -p /mnt/root
+    if mount -t "${ROOT_FS:-ext4}" -o rw,noatime "$ROOT_DEV" /mnt/root 2>/dev/null || mount "$ROOT_DEV" /mnt/root 2>/dev/null; then
+      if [ -x /mnt/root/sbin/runit ]; then
+        # Preparar nodos y devtmpfs en la raíz persistente antes de switch_root
+        mkdir -p /mnt/root/dev /mnt/root/proc /mnt/root/sys /mnt/root/run /mnt/root/tmp
+        mknod -m 600 /mnt/root/dev/console c 5 1 2>/dev/null || true
+        mknod -m 666 /mnt/root/dev/tty c 5 0 2>/dev/null || true
+        mknod -m 666 /mnt/root/dev/tty0 c 4 0 2>/dev/null || true
+        mknod -m 666 /mnt/root/dev/tty1 c 4 1 2>/dev/null || true
+        mknod -m 666 /mnt/root/dev/tty2 c 4 2 2>/dev/null || true
+        mknod -m 666 /mnt/root/dev/null c 1 3 2>/dev/null || true
+        mknod -m 666 /mnt/root/dev/zero c 1 5 2>/dev/null || true
+        mknod -m 666 /mnt/root/dev/ptmx c 5 2 2>/dev/null || true
+
+        mount --move /dev /mnt/root/dev 2>/dev/null || mount -t devtmpfs devtmpfs /mnt/root/dev
+        mount --move /proc /mnt/root/proc 2>/dev/null || mount -t proc proc /mnt/root/proc
+        mount --move /sys /mnt/root/sys 2>/dev/null || mount -t sysfs sysfs /mnt/root/sys
+        mount --move /run /mnt/root/run 2>/dev/null || mount -t tmpfs none /mnt/root/run
+        mount --move /tmp /mnt/root/tmp 2>/dev/null || mount -t tmpfs none /mnt/root/tmp
+        # devtmpfs no provee /dev/shm por sí solo; sin este tmpfs, cualquier
+        # cliente Wayland que use shm_open() (memoria compartida POSIX para
+        # buffers) falla con "fd != -1" en pool-buffer.c.
+        mkdir -p /mnt/root/dev/shm
+        mount -t tmpfs -o mode=1777,nosuid,nodev tmpfs /mnt/root/dev/shm
+
+        log "Cambiando a raíz de disco persistente con switch_root"
+        exec switch_root /mnt/root /sbin/runit
+      else
+        log "La partición no contiene un MIKE OS válido; se mantiene initramfs"
+        umount /mnt/root 2>/dev/null || true
+      fi
+    else
+        log "No se pudo montar $ROOT_DEV; se mantiene initramfs"
+    fi
+fi
+
+# Arranque directo en memoria (initramfs)
+exec /sbin/runit

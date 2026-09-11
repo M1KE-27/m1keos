@@ -1,0 +1,5 @@
+#!/bin/sh
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+echo ">> Ctrl+Alt+Del detectado. Reiniciando MIKE OS..."
+reboot -f

@@ -1,0 +1,5 @@
+#!/bin/sh
+exec 2>&1
+mkdir -p /run/dbus
+rm -f /run/dbus/system_bus_socket /run/dbus/pid
+exec dbus-daemon --config-file=/etc/dbus-1/system.conf --nofork

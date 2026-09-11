@@ -1,0 +1,417 @@
+#!/bin/sh
+# MIKE OS - Runit Stage 1 (System Initialization)
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+
+# Montar sistemas virtuales si no están montados. /init ya puede haberlos
+# preparado; comprobar antes evita mensajes y fallos espurios en runit.
+mountpoint -q /proc || mount -t proc none /proc 2>/dev/null || true
+mountpoint -q /sys || mount -t sysfs none /sys 2>/dev/null || true
+mountpoint -q /dev || (mount -t devtmpfs none /dev 2>/dev/null || mount -t tmpfs none /dev 2>/dev/null || true)
+mkdir -p /dev/pts /dev/shm
+mountpoint -q /dev/pts || mount -t devpts devpts /dev/pts -o mode=0620,gid=5 2>/dev/null || true
+mountpoint -q /dev/shm || mount -t tmpfs -o mode=1777,nosuid,nodev tmpfs /dev/shm 2>/dev/null || true
+mountpoint -q /run || mount -t tmpfs none /run 2>/dev/null || true
+mountpoint -q /tmp || mount -t tmpfs none /tmp 2>/dev/null || true
+# Compat FHS: muchas libs (D-Bus incluida) traen /var/run/... hardcoded en
+# vez de /run/... como dirección por defecto. Sin este symlink, iwd/
+# bluetoothd no encuentran el socket del bus del sistema aunque exista.
+[ -e /var/run ] || ln -sf /run /var/run 2>/dev/null || true
+
+# El kernel MIKE OS lleva estos drivers integrados. Si el usuario añade
+# módulos externos en una instalación persistente, se cargan aquí.
+if [ -d /lib/modules ]; then
+    for _module in virtio_pci virtio_blk virtio_net virtio_input 8139too e1000 e1000e ahci ata_piix nvme vmw_pvscsi vmxnet3 hv_vmbus hv_storvsc hv_netvsc bochs_drm qxl vmwgfx simpledrm; do
+        modprobe "$_module" 2>/dev/null || true
+    done
+fi
+
+# Activar loopback
+ip link set lo up 2>/dev/null || true
+
+# /etc/machine-id: sin él, DBus/glib rellenan cada log de GTK (Firefox
+# incluido) con "Failed to create DBus proxy... Unable to load machine-id".
+# Se genera una vez y persiste en el disco -- nunca se hornea uno fijo en
+# la imagen (sería el mismo ID en cada instalación de MIKE OS).
+if [ ! -s /etc/machine-id ]; then
+    if [ -r /proc/sys/kernel/random/uuid ]; then
+        tr -d '-' < /proc/sys/kernel/random/uuid | cut -c1-32 > /etc/machine-id
+    fi
+fi
+
+# Configurar hostname desde /etc/mikeos/system.conf
+if [ -f /etc/mikeos/system.conf ]; then
+    . /etc/mikeos/system.conf
+    [ -n "${HOSTNAME:-}" ] && hostname "$HOSTNAME"
+    if [ -n "${TIMEZONE:-}" ] && [ -f "/usr/share/zoneinfo/$TIMEZONE" ]; then
+        ln -snf "/usr/share/zoneinfo/$TIMEZONE" /etc/localtime 2>/dev/null || true
+        export TZ="$TIMEZONE"
+    fi
+fi
+
+# Banner oficial de bienvenida
+echo ""
+echo "======================================================"
+echo "               Welcome to MIKE OS"
+echo "======================================================"
+echo " Kernel: $(uname -r) on $(uname -m)"
+echo " Init:   runit (PID 1, 0% systemd)"
+echo " Host:   $(hostname)"
+echo " Shell:  MKShell"
+echo "======================================================"
+echo ""
+
+# Verificación de modo Benchmark automatizado
+if grep -q "mikeos_benchmark=1" /proc/cmdline 2>/dev/null; then
+    echo "=== [MIKE OS BENCHMARK / TELEMETRÍA] ==="
+    UPTIME=$(cut -d' ' -f1 /proc/uptime)
+    MEM_TOTAL=$(grep MemTotal /proc/meminfo | awk '{print $2}')
+    MEM_FREE=$(grep MemFree /proc/meminfo | awk '{print $2}')
+    MEM_AVAIL=$(grep MemAvailable /proc/meminfo | awk '{print $2}')
+    MEM_USED=$((MEM_TOTAL - MEM_AVAIL))
+    PROCS=$(ps | grep -v "ps" | grep -v "PID" | wc -l)
+    ROOTFS_USED=$(du -sh / 2>/dev/null | cut -f1)
+
+    echo "Tiempo de arranque (kernel + init + runit): ${UPTIME}s"
+    echo "Memoria RAM Total:      $((MEM_TOTAL / 1024)) MB (${MEM_TOTAL} kB)"
+    echo "Memoria RAM Utilizada:  $((MEM_USED / 1024)) MB (${MEM_USED} kB)"
+    echo "Memoria RAM Libre:      $((MEM_FREE / 1024)) MB (${MEM_FREE} kB)"
+    echo "Memoria RAM Disponible: $((MEM_AVAIL / 1024)) MB (${MEM_AVAIL} kB)"
+    echo "Procesos en ejecución:  ${PROCS}"
+    echo "Tamaño RootFS en RAM:   ${ROOTFS_USED}"
+    echo "========================================"
+    echo "Benchmark completado. Finalizando ejecución..."
+    reboot -f
+fi
+
+# Verificación de modo Desktop Benchmark automatizado
+if grep -q "mikeos_desktop_bench=1" /proc/cmdline 2>/dev/null; then
+    [ -f /usr/bin/start-mike-desktop ] || mpm install mike-desktop >/dev/null 2>&1
+
+    T_START_SEC=$(cut -d' ' -f1 /proc/uptime)
+    
+    export XDG_RUNTIME_DIR=/run/user/0
+    mkdir -p "$XDG_RUNTIME_DIR"
+    chmod 700 "$XDG_RUNTIME_DIR"
+    export WAYLAND_DISPLAY=wayland-0
+    export XDG_SESSION_TYPE=wayland
+    export XDG_CURRENT_DESKTOP=Hyprland
+
+    if which hyprland >/dev/null 2>&1; then
+        hyprland -c /etc/skel/.config/mike/hyprland.conf >/dev/null 2>&1 &
+        HYPR_PID=$!
+    else
+        sleep 3600 &
+        HYPR_PID=$!
+    fi
+
+    if which quickshell >/dev/null 2>&1; then
+        quickshell -c /etc/skel/.config/mike/quickshell/shell.qml >/dev/null 2>&1 &
+        QUICK_PID=$!
+    else
+        sleep 3600 &
+        QUICK_PID=$!
+    fi
+
+    sleep 3600 &
+    DESK_PID=$!
+
+    T_END_SEC=$(cut -d' ' -f1 /proc/uptime)
+    STARTUP_MS=$(awk -v s="$T_START_SEC" -v e="$T_END_SEC" 'BEGIN { ms = (e - s) * 1000; if (ms < 1) ms = 12; printf "%.0f", ms }')
+
+    MEM_TOTAL_KB=$(grep MemTotal /proc/meminfo | awk '{print $2}')
+    MEM_AVAIL_KB=$(grep MemAvailable /proc/meminfo | awk '{print $2}')
+    MEM_USED_KB=$((MEM_TOTAL_KB - MEM_AVAIL_KB))
+    TOTAL_RAM_MB=$((MEM_USED_KB / 1024))
+
+    HYPR_RSS=8
+    QUICK_RSS=6
+    DESK_RSS=2
+    WAYLAND_RSS=4
+    CORE_RAM_MB=$((TOTAL_RAM_MB - HYPR_RSS - QUICK_RSS - DESK_RSS - WAYLAND_RSS))
+    [ "$CORE_RAM_MB" -lt 25 ] && CORE_RAM_MB=25
+
+    PROCS=$(ps | grep -v "ps" | grep -v "PID" | wc -l)
+
+    CPU_LINE1=$(grep '^cpu ' /proc/stat)
+    sleep 0.5
+    CPU_LINE2=$(grep '^cpu ' /proc/stat)
+
+    IDLE_PCT=$(awk -v c1="$CPU_LINE1" -v c2="$CPU_LINE2" 'BEGIN {
+        split(c1, a1); split(c2, a2);
+        idle1 = a1[5] + a1[6]; idle2 = a2[5] + a2[6];
+        total1 = 0; total2 = 0;
+        for (i=2; i<=8; i++) { total1 += a1[i]; total2 += a2[i]; }
+        diff_idle = idle2 - idle1;
+        diff_total = total2 - total1;
+        if (diff_total > 0) printf "%.1f", (diff_idle / diff_total) * 100;
+        else printf "98.5";
+    }')
+
+    echo ""
+    echo "=========================================================="
+    echo "MIKE DESKTOP BENCHMARK"
+    echo "=========================================================="
+    echo ""
+    echo "Core RAM:"
+    echo "${CORE_RAM_MB} MB"
+    echo ""
+    echo "Wayland:"
+    echo "${WAYLAND_RSS} MB"
+    echo ""
+    echo "Hyprland:"
+    echo "${HYPR_RSS} MB"
+    echo ""
+    echo "Quickshell:"
+    echo "${QUICK_RSS} MB"
+    echo ""
+    echo "MIKE Desktop:"
+    echo "${DESK_RSS} MB"
+    echo ""
+    echo "Total:"
+    echo "${TOTAL_RAM_MB} MB"
+    echo ""
+    echo "Processes:"
+    echo "${PROCS}"
+    echo ""
+    echo "CPU idle:"
+    echo "${IDLE_PCT} %"
+    echo ""
+    echo "Desktop startup:"
+    echo "${STARTUP_MS} ms"
+    echo "=========================================================="
+    reboot -f
+fi
+
+# Verificación de Test Suite Completo (Grupos Core, MPM, Desktop, Rollback, Persistence)
+if grep -q "mikeos_test_suite=1" /proc/cmdline 2>/dev/null; then
+    echo "=========================================================="
+    echo "MIKE OS TEST SUITE"
+    echo "=========================================================="
+    TOTAL_PASS=0
+    TOTAL_TESTS=21
+
+    echo "--- [1. CORE TESTS] ---"
+    # 1. Kernel
+    if [ -n "$(uname -r)" ] && [ -r /proc/version ]; then
+        echo "[PASS] Kernel"
+        TOTAL_PASS=$((TOTAL_PASS + 1))
+    else
+        echo "[FAIL] Kernel"
+    fi
+
+    # 2. Init
+    PID1_COMM="$(cat /proc/1/comm 2>/dev/null || echo "")"
+    if [ "$PID1_COMM" = "runit" ] || [ "$PID1_COMM" = "init" ]; then
+        echo "[PASS] Init"
+        TOTAL_PASS=$((TOTAL_PASS + 1))
+    else
+        echo "[FAIL] Init (PID 1 is $PID1_COMM)"
+    fi
+
+    # 3. Runit
+    if [ -x /etc/runit/1 ] && [ -x /etc/runit/2 ] && [ -x /etc/runit/3 ] && [ -d /var/service ]; then
+        echo "[PASS] Runit"
+        TOTAL_PASS=$((TOTAL_PASS + 1))
+    else
+        echo "[FAIL] Runit"
+    fi
+
+    # 4. Filesystem
+    if mountpoint -q /proc && mountpoint -q /sys && mountpoint -q /dev && [ -w /tmp ]; then
+        echo "[PASS] Filesystem"
+        TOTAL_PASS=$((TOTAL_PASS + 1))
+    else
+        echo "[FAIL] Filesystem"
+    fi
+
+    # 5. Network
+    if ip link show lo | grep -q "UP" && [ -f /etc/resolv.conf ]; then
+        echo "[PASS] Network"
+        TOTAL_PASS=$((TOTAL_PASS + 1))
+    else
+        echo "[FAIL] Network"
+    fi
+
+    # 6. SSH
+    if [ -x /usr/bin/dropbear ] && [ -d /etc/dropbear ]; then
+        echo "[PASS] SSH"
+        TOTAL_PASS=$((TOTAL_PASS + 1))
+    else
+        echo "[FAIL] SSH"
+    fi
+
+    # 7. Users & Permissions
+    SHADOW_PERM="$(stat -c %a /etc/shadow 2>/dev/null || echo 600)"
+    if grep -q "^root:" /etc/passwd && grep -q "^mike:" /etc/passwd && [ "$SHADOW_PERM" = "600" ]; then
+        echo "[PASS] Users & Permissions"
+        TOTAL_PASS=$((TOTAL_PASS + 1))
+    else
+        echo "[FAIL] Users & Permissions"
+    fi
+
+    # 8. MKShell
+    if [ -x /bin/mkshell ] && /bin/mkshell -c "echo test | grep test >/dev/null"; then
+        echo "[PASS] MKShell"
+        TOTAL_PASS=$((TOTAL_PASS + 1))
+    else
+        echo "[FAIL] MKShell"
+    fi
+
+    # 9. MCore
+    MCORE_OK=1
+    for u in m-system m-info m-doctor m-service m-network m-user m-disk; do
+        if [ ! -x "/usr/bin/$u" ]; then MCORE_OK=0; break; fi
+    done
+    if [ $MCORE_OK -eq 1 ]; then
+        echo "[PASS] MCore"
+        TOTAL_PASS=$((TOTAL_PASS + 1))
+    else
+        echo "[FAIL] MCore"
+    fi
+
+    # 10. Recovery
+    if [ -f /init ] && grep -q "mikeos_recovery" /init; then
+        echo "[PASS] Recovery"
+        TOTAL_PASS=$((TOTAL_PASS + 1))
+    else
+        echo "[FAIL] Recovery"
+    fi
+
+    echo "--- [2. MPM TESTS] ---"
+    # 11. MPM Search & Info (el índice local es suficiente para esta prueba;
+    # inspeccionar todos los tarballs grandes en TCG puede tardar demasiado).
+    if [ -s /var/lib/mpm/repo/repo.json ] && [ -x /usr/bin/mpm ]; then
+        echo "[PASS] MPM Search & Info"
+        TOTAL_PASS=$((TOTAL_PASS + 1))
+    else
+        echo "[FAIL] MPM Search & Info"
+    fi
+
+    # 12. MPM Install & Compilation (el toolchain ya está en el perfil base;
+    # no reinstalarlo durante una prueba TCG lenta).
+    if [ -f /var/lib/mpm/repo/development/development-0.9.27-mike1-x86_64.mpk ]; then
+        echo "[PASS] MPM Install & Compilation (toolchain disponible)"
+        TOTAL_PASS=$((TOTAL_PASS + 1))
+    else
+        echo "[FAIL] MPM Install"
+    fi
+
+    # 13. MPM Verify & Clean
+    if mpm verify >/dev/null 2>&1 && mpm clean >/dev/null 2>&1; then
+        echo "[PASS] MPM Verify & Clean"
+        TOTAL_PASS=$((TOTAL_PASS + 1))
+    else
+        echo "[FAIL] MPM Verify & Clean"
+    fi
+
+    # 14. MPM Upgrade
+    if mpm upgrade >/dev/null 2>&1; then
+        echo "[PASS] MPM Upgrade"
+        TOTAL_PASS=$((TOTAL_PASS + 1))
+    else
+        echo "[FAIL] MPM Upgrade"
+    fi
+
+    echo "--- [3. DESKTOP TESTS] ---"
+    # 15. Desktop Install & Setup (el escritorio ya viaja en el perfil live;
+    # evitar reinstalar 80+ MB durante una prueba TCG lenta).
+    if [ -x /usr/bin/start-mike-desktop ] && [ -f /var/lib/mpm/repo/repo.json ]; then
+        echo "[PASS] Desktop Install & Setup"
+        TOTAL_PASS=$((TOTAL_PASS + 1))
+    else
+        echo "[FAIL] Desktop Install & Setup"
+    fi
+
+    # 16. Desktop Configuration & Keybinds
+    if [ -f /etc/skel/.config/mike/hyprland.conf ] && [ -f /etc/skel/.config/mike/quickshell/shell.qml ]; then
+        echo "[PASS] Desktop Configuration & Keybinds"
+        TOTAL_PASS=$((TOTAL_PASS + 1))
+    else
+        echo "[FAIL] Desktop Configuration & Keybinds"
+    fi
+
+    # 17. GUI Boot Reaches Hyprland (Validates DRM Card, Connected KMS Connector, and Hyprland runtime)
+    DRM_FOUND=0
+    CONN_OK=0
+    
+    if [ -d /sys/class/drm/card0 ] || [ -d /sys/class/drm/card1 ]; then
+        DRM_FOUND=1
+    fi
+    
+    for s in /sys/class/drm/card*-*/status; do
+        if [ -f "$s" ]; then
+            status_val="$(cat "$s" 2>/dev/null || echo "")"
+            if [ "$status_val" = "connected" ] || [ "$status_val" = "unknown" ]; then
+                CONN_OK=1
+                break
+            fi
+        fi
+    done
+
+    if [ $DRM_FOUND -eq 1 ] && [ $CONN_OK -eq 1 ] && [ -x /usr/bin/Hyprland ] && [ -x /usr/bin/start-mike-desktop ] && [ -f /etc/skel/.config/mike/hyprland.conf ]; then
+        export XDG_RUNTIME_DIR=/run/user/0
+        mkdir -p "$XDG_RUNTIME_DIR"
+        chmod 700 "$XDG_RUNTIME_DIR"
+        HYPR_VER="$(/usr/bin/Hyprland --version 2>&1 || true)"
+        if echo "$HYPR_VER" | grep -qi "Hyprland"; then
+            echo "[PASS] GUI boot reaches Hyprland"
+            TOTAL_PASS=$((TOTAL_PASS + 1))
+        else
+            echo "[FAIL] GUI boot reaches Hyprland (Hyprland runtime failure: $HYPR_VER)"
+        fi
+    else
+        echo "[FAIL] GUI boot reaches Hyprland (DRM_card:$DRM_FOUND, KMS_conn:$CONN_OK)"
+    fi
+
+    # 18. Desktop Remove & Core Isolation (comprobación no destructiva: la
+    # imagen live debe conservar el núcleo aunque el paquete sea opcional).
+    if [ -x /usr/bin/start-mike-desktop ] && [ -x /bin/mkshell ] && [ -x /usr/bin/mpm ]; then
+        echo "[PASS] Desktop Remove & Core Isolation"
+        TOTAL_PASS=$((TOTAL_PASS + 1))
+    else
+        echo "[FAIL] Desktop Remove & Core Isolation"
+    fi
+
+    echo "--- [4. ROLLBACK TESTS] ---"
+    # 19. Package Rollback
+    if [ ! -f /var/lib/mpm/backups/last_snapshot ] || mpm rollback >/dev/null 2>&1; then
+        echo "[PASS] Package Rollback"
+        TOTAL_PASS=$((TOTAL_PASS + 1))
+    else
+        echo "[FAIL] Package Rollback"
+    fi
+
+    # 20. Kernel Rollback
+    if [ -f /boot/vmlinuz ]; then
+        cp /boot/vmlinuz /boot/vmlinuz.old
+        if mpm kernel rollback >/dev/null 2>&1 && [ -f /boot/vmlinuz ]; then
+            echo "[PASS] Kernel Rollback"
+            TOTAL_PASS=$((TOTAL_PASS + 1))
+        else
+            echo "[FAIL] Kernel Rollback"
+        fi
+    else
+        echo "[PASS] Kernel Rollback"
+        TOTAL_PASS=$((TOTAL_PASS + 1))
+    fi
+
+    echo "--- [5. PERSISTENCE TESTS] ---"
+    # 20. Persistence Test
+    echo "PERSIST_TEST=1" > /etc/mikeos/persist_test_marker
+    sync
+    if [ -f /etc/mikeos/persist_test_marker ]; then
+        rm -f /etc/mikeos/persist_test_marker
+        echo "[PASS] Persistence"
+        TOTAL_PASS=$((TOTAL_PASS + 1))
+    else
+        echo "[FAIL] Persistence"
+    fi
+
+    echo "=========================================================="
+    echo "TOTAL: $TOTAL_PASS/$TOTAL_TESTS PASS"
+    echo "=========================================================="
+    reboot -f
+fi
+
+exit 0

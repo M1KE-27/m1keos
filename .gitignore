@@ -1,0 +1,55 @@
+# ==============================================================================
+# MIKE OS — .gitignore
+#
+# Regla: se versiona la FUENTE (el código propio bajo build/), nunca la SALIDA
+# (rootfs/, iso/, binarios compilados, árboles de terceros descargados).
+# ==============================================================================
+
+# ── Salida del build ─────────────────────────────────────────────────────────
+# rootfs/ e iso/ los regenera scripts/build.sh por completo en cada ejecución.
+# rootfs/etc/shadow y los authorized_keys viven aquí: son estado generado y
+# NUNCA deben entrar al repositorio.
+rootfs/
+iso/
+kernel/
+*.img
+*.cpio.gz
+*.iso
+*.mpk
+
+# ── Terceros: se descargan y compilan, no son fuente del proyecto ────────────
+build/admin/
+build/bash-*/
+build/busybox-*/
+build/curl-*/
+build/dropbear-*/
+build/runit-*/
+build/tcc-*/
+build/fastfetch-src/
+build/fastfetch-build/
+build/fastfetch-static/
+build/*.tar.gz
+build/*.tar.bz2
+build/*.tar.xz
+build/jq-linux-*
+
+# ── Artefactos generados dentro de build/ ────────────────────────────────────
+build/repo/
+build/repo_pkgs/
+build/repo_mpm_tmp/
+build/settings/
+build/*.log
+
+# Binarios compilados que conviven con su fuente en el mismo directorio.
+build/mcore/m-arch-install
+build/mcore/m-sudo
+build/mkshell/mkshell
+build/mterminal/m-terminal
+
+# ── Objetos y bibliotecas ────────────────────────────────────────────────────
+*.o
+*.a
+*.so
+*.so.*
+build/mpm/bin-resolver
+build/mpm/bin/

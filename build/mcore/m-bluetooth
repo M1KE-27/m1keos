@@ -1,0 +1,32 @@
+#!/bin/sh
+# m-bluetooth - control de Bluetooth real vía bluez (bluetoothctl). Igual
+# que m-wifi: en QEMU no hay adaptador Bluetooth (el kernel sí soporta el
+# stack, pero no hay hardware ni siquiera emulado que enumerar), así que
+# "list"/"scan" no encontrarán nada. En hardware real con adaptador BT lo
+# detecta el propio bluetoothd y esto controla dispositivos de verdad.
+set -eu
+
+case "${1:-list}" in
+    list)
+        bluetoothctl devices
+        ;;
+    scan)
+        timeout "${2:-10}" bluetoothctl scan on
+        ;;
+    connect)
+        [ -z "${2:-}" ] && { echo "Uso: m-bluetooth connect <MAC>"; exit 1; }
+        bluetoothctl connect "$2"
+        ;;
+    pair)
+        [ -z "${2:-}" ] && { echo "Uso: m-bluetooth pair <MAC>"; exit 1; }
+        bluetoothctl pair "$2"
+        ;;
+    power)
+        [ -z "${2:-}" ] && { echo "Uso: m-bluetooth power <on|off>"; exit 1; }
+        bluetoothctl power "$2"
+        ;;
+    *)
+        echo "Uso: m-bluetooth [list|scan [seg]|connect <MAC>|pair <MAC>|power <on|off>]"
+        exit 1
+        ;;
+esac

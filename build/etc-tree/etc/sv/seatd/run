@@ -1,0 +1,4 @@
+#!/bin/sh
+exec 2>&1
+rm -f /run/seatd.sock
+exec seatd -u mike -g mike

@@ -1,0 +1,49 @@
+#!/bin/sh
+# Volumen en pasos de 5%, limitado siempre a 0..100.
+set -u
+# "get" devuelve el nivel actual (0-100) y, si está silenciado, "mute".
+# Sin destino de audio no imprime nada y sale con error: quien pregunta debe
+# poder distinguir "está a cero" de "no hay tarjeta", y no inventarse un valor.
+if [ "${1:-}" = "get" ]; then
+    if command -v wpctl >/dev/null 2>&1; then
+        out="$(wpctl get-volume @DEFAULT_AUDIO_SINK@ 2>/dev/null)" || exit 1
+        [ -n "$out" ] || exit 1
+        vol="$(printf '%s' "$out" | awk '{print $2}')"
+        [ -n "$vol" ] || exit 1
+        printf '%s' "$out" | grep -q MUTED && { echo "mute"; exit 0; }
+        awk -v v="$vol" 'BEGIN { printf "%d", v * 100 + 0.5 }'
+        exit 0
+    fi
+    if command -v pactl >/dev/null 2>&1; then
+        vol="$(pactl get-sink-volume @DEFAULT_SINK@ 2>/dev/null | sed -n 's/.* \([0-9][0-9]*\)%.*/\1/p' | head -1)"
+        [ -n "$vol" ] || exit 1
+        pactl get-sink-mute @DEFAULT_SINK@ 2>/dev/null | grep -q yes && { echo "mute"; exit 0; }
+        printf '%s' "$vol"
+        exit 0
+    fi
+    exit 1
+fi
+
+# "mute" alterna el silencio.
+if [ "${1:-}" = "mute" ]; then
+    command -v wpctl >/dev/null 2>&1 && exec wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle
+    command -v pactl >/dev/null 2>&1 && exec pactl set-sink-mute @DEFAULT_SINK@ toggle
+    exit 1
+fi
+
+DELTA="${1:-0}"
+case "$DELTA" in -5|5) ;; *) echo "Uso: m-volume <5|-5|get|mute>" >&2; exit 2 ;; esac
+if command -v wpctl >/dev/null 2>&1; then
+    current="$(wpctl get-volume @DEFAULT_AUDIO_SINK@ 2>/dev/null | awk '{print $2}' | head -1)"
+    [ -n "$current" ] || exit 1
+    new="$(awk -v c="$current" -v d="$DELTA" 'BEGIN { n=c+(d/100); if(n<0)n=0; if(n>1)n=1; printf "%.2f", n }')"
+    exec wpctl set-volume @DEFAULT_AUDIO_SINK@ "$new"
+fi
+if command -v pactl >/dev/null 2>&1; then
+    current="$(pactl get-sink-volume @DEFAULT_SINK@ 2>/dev/null | sed -n 's/.* \([0-9][0-9]*\)%.*/\1/p' | head -1)"
+    [ -n "$current" ] || exit 1
+    new=$((current + DELTA)); [ "$new" -lt 0 ] && new=0; [ "$new" -gt 100 ] && new=100
+    exec pactl set-sink-volume @DEFAULT_SINK@ "${new}%"
+fi
+echo "m-volume: no se detectó PipeWire/WirePlumber/PulseAudio." >&2
+exit 1

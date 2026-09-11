@@ -1,0 +1,167 @@
+#!/bin/sh
+# ==============================================================================
+# m-install - MIKE OS Target Disk Installer
+# ==============================================================================
+set -eu
+
+echo "=========================================================="
+echo "          INSTALADOR DE MIKE OS EN DISCO"
+echo "=========================================================="
+
+if [ "$(id -u)" -ne 0 ]; then
+    echo "ERROR: Debes ser root para ejecutar el instalador." >&2
+    exit 1
+fi
+
+TARGET_DEV="${1:-}"
+
+ask() {
+    _prompt="$1"
+    _default="$2"
+    _answer=""
+    if [ -t 0 ] || [ -c /dev/tty ]; then
+        printf "%s [%s]: " "$_prompt" "$_default" >&2
+        IFS= read -r _answer </dev/tty || _answer=""
+    fi
+    [ -n "$_answer" ] && printf '%s' "$_answer" || printf '%s' "$_default"
+}
+
+if [ -z "$TARGET_DEV" ]; then
+    echo "Dispositivos de almacenamiento detectados:"
+    ls -l /dev/sd* /dev/vd* /dev/nvme* 2>/dev/null | grep -E '[a-z]$' || true
+    echo ""
+    echo "Uso: m-install <dispositivo_destino> (ej: /dev/vda o /dev/sda)"
+    exit 1
+fi
+
+if [ ! -b "$TARGET_DEV" ]; then
+    echo "ERROR: '$TARGET_DEV' no es un dispositivo de bloque válido." >&2
+    exit 1
+fi
+
+# Nunca permitir formatear el dispositivo que sostiene la raíz activa ni un
+# disco con particiones montadas. Esto evita convertir un error tipográfico en
+# una pérdida de datos, especialmente dentro de QEMU/VMware.
+TARGET_REAL="$(readlink -f "$TARGET_DEV" 2>/dev/null || echo "$TARGET_DEV")"
+ROOT_SOURCE="$(mount 2>/dev/null | awk '$3 == "/" {print $1; exit}')"
+ROOT_REAL="$(readlink -f "$ROOT_SOURCE" 2>/dev/null || echo "$ROOT_SOURCE")"
+if [ "$TARGET_REAL" = "$ROOT_REAL" ]; then
+    echo "ERROR: '$TARGET_DEV' es el dispositivo raíz actualmente en uso." >&2
+    exit 1
+fi
+MOUNTED_MATCH=""
+for src in $(mount 2>/dev/null | awk '{print $1}'); do
+    real="$(readlink -f "$src" 2>/dev/null || echo "$src")"
+    case "$real" in
+        "${TARGET_REAL}"*) MOUNTED_MATCH="$real" ;;
+    esac
+done
+if [ -n "$MOUNTED_MATCH" ]; then
+    echo "ERROR: '$TARGET_DEV' o una de sus particiones está montada." >&2
+    exit 1
+fi
+
+echo "¡ADVERTENCIA! Se borrarán todos los datos en $TARGET_DEV."
+printf "¿Deseas continuar con la instalación? (s/N): "
+read -r CONFIRM
+if [ "$CONFIRM" != "s" ] && [ "$CONFIRM" != "S" ]; then
+    echo "Instalación cancelada."
+    exit 0
+fi
+
+echo ""
+echo "Configuración inicial (puedes cambiarla después en /etc/mikeos/):"
+echo "  Teclados disponibles: es, us, latam, fr, de, it, pt, br, uk"
+KEYMAP="$(ask "Distribución de teclado" "es")"
+case "$KEYMAP" in es|us|latam|fr|de|it|pt|br|uk) ;; *) echo "Aviso: teclado '$KEYMAP' no listado; se conservará." ;; esac
+LOCALE="$(ask "Locale (ej. es_ES.UTF-8)" "es_ES.UTF-8")"
+TIMEZONE="$(ask "Zona horaria" "UTC")"
+HOSTNAME="$(ask "Nombre del equipo" "mikeos")"
+COMMON_PACKAGES="$(ask "Paquetes comunes (separados por espacios; none para omitir)" "none")"
+
+echo "[1/5] Creando sistema de archivos ext4 en $TARGET_DEV..."
+mkfs.ext4 -F -L "MIKEOS_ROOT" "$TARGET_DEV"
+
+MOUNT_POINT="/tmp/mikeos_target"
+mkdir -p "$MOUNT_POINT"
+
+echo "[2/5] Montando partición destino en $MOUNT_POINT..."
+mount "$TARGET_DEV" "$MOUNT_POINT"
+
+echo "[3/5] Copiando sistema base de MIKE OS..."
+for d in bin sbin usr etc var root home; do
+    if [ -d "/$d" ]; then
+        echo "  Copiando /$d..."
+        cp -a "/$d" "$MOUNT_POINT/"
+    fi
+done
+
+# El instalador es editable desde el live USB: guardar las decisiones evita
+# perderlas aunque algún paquete opcional no esté en el medio de instalación.
+mkdir -p "$MOUNT_POINT/etc/mikeos"
+cat << EOF > "$MOUNT_POINT/etc/mikeos/install.conf"
+# Generado por m-install desde el live USB
+KEYMAP="$KEYMAP"
+LOCALE="$LOCALE"
+TIMEZONE="$TIMEZONE"
+HOSTNAME="$HOSTNAME"
+COMMON_PACKAGES="$COMMON_PACKAGES"
+EOF
+sed -i "s/^KEYMAP=.*/KEYMAP=\"$KEYMAP\"/; s/^LOCALE=.*/LOCALE=\"$LOCALE\"/; s/^TIMEZONE=.*/TIMEZONE=\"$TIMEZONE\"/" "$MOUNT_POINT/etc/mikeos/system.conf"
+echo "$HOSTNAME" > "$MOUNT_POINT/etc/hostname"
+
+# Los paquetes opcionales se dejan anotados para que MPM pueda resolverlos con
+# red en el primer arranque. MTerminal ya forma parte del perfil gráfico.
+cat << EOF > "$MOUNT_POINT/etc/mikeos/first-boot-packages"
+$COMMON_PACKAGES
+EOF
+
+# Resolver de paquetes comunes desde el repositorio que viaja en el live USB.
+# Lo que no exista localmente queda anotado para que el primer arranque pueda
+# resolverlo con red, sin convertir una selección opcional en un fallo fatal.
+if [ "$COMMON_PACKAGES" != "none" ] && command -v chroot >/dev/null 2>&1; then
+    for _pkg in $COMMON_PACKAGES; do
+        case "$_pkg" in
+            ''|*[!A-Za-z0-9+_.-]*) echo "  Paquete omitido por nombre inválido: $_pkg"; continue ;;
+        esac
+        if chroot "$MOUNT_POINT" /usr/bin/mpm info "$_pkg" >/dev/null 2>&1; then
+            echo "  Instalando paquete común offline: $_pkg"
+            if ! chroot "$MOUNT_POINT" /usr/bin/mpm install "$_pkg" >/dev/null 2>&1; then
+                echo "  Aviso: $_pkg se resolverá en el primer arranque."
+            fi
+        else
+            echo "  Aviso: $_pkg no está en el medio; se resolverá en el primer arranque."
+        fi
+    done
+fi
+if [ -f "$MOUNT_POINT/etc/skel/.config/mike/hyprland.conf" ]; then
+    sed -i "s/^kb_layout = .*/kb_layout = $KEYMAP,us/" "$MOUNT_POINT/etc/skel/.config/mike/hyprland.conf"
+fi
+
+# Crear puntos de montaje vacíos
+mkdir -p "$MOUNT_POINT"/{dev,proc,sys,run,tmp}
+chmod 1777 "$MOUNT_POINT/tmp"
+
+echo "[4/5] Configurando fstab y arranque de disco..."
+cat << EOF > "$MOUNT_POINT/etc/fstab"
+# /etc/fstab: MIKE OS Static File System Information
+LABEL=MIKEOS_ROOT   /           ext4    defaults,noatime    0   1
+devpts              /dev/pts    devpts  gid=5,mode=620      0   0
+proc                /proc       proc    defaults            0   0
+sysfs               /sys        sysfs   defaults            0   0
+tmpfs               /run        tmpfs   defaults,nodev,nosuid,size=10% 0 0
+tmpfs               /tmp        tmpfs   defaults,nodev,nosuid 0 0
+EOF
+
+# Marcar que el sistema está instalado en disco
+echo "installed" > "$MOUNT_POINT/etc/mikeos/installed"
+
+echo "[5/5] Sincronizando y desmontando..."
+sync
+umount "$MOUNT_POINT"
+rmdir "$MOUNT_POINT"
+
+echo "=========================================================="
+echo " ¡Instalación de MIKE OS completada con éxito en $TARGET_DEV!"
+echo " Puedes arrancar la máquina seleccionando este disco."
+echo "=========================================================="

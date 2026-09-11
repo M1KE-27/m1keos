@@ -1,0 +1,69 @@
+#!/bin/sh
+exec 2>&1
+cd /root
+
+IS_GUI="no"
+if grep -qw 'mikeos_gui=1' /proc/cmdline 2>/dev/null || [ -f /etc/mikeos/desktop_enabled ]; then
+    IS_GUI="yes"
+fi
+
+# Logging de diagnóstico del servicio de consola
+echo "[console] cmdline: $(cat /proc/cmdline 2>/dev/null || echo '')"
+echo "[console] GUI mode: $IS_GUI"
+echo "[console] tty1: $(ls -l /dev/tty1 2>/dev/null || echo 'missing')"
+echo "[console] /dev/console: $(ls -l /dev/console 2>/dev/null || echo 'missing')"
+
+if [ "$IS_GUI" = "yes" ]; then
+    echo ">> [console] Iniciando compositor gráfico directo en /dev/tty1..."
+    chvt 1 2>/dev/null || true
+    exec </dev/tty1 >/dev/tty1 2>&1
+    chmod 666 /dev/input/event* /dev/tty1 2>/dev/null || true
+    # Gráfica: igual que con /dev/snd, sin udev los nodos de /dev/dri nacen
+    # root:root 600. Hyprland se salvaba porque seatd le pasa el descriptor
+    # siendo root, pero cualquier otra aplicación que quisiera acelerar por
+    # GPU -- un navegador, un juego -- no podía abrirlos y caía a renderizado
+    # por software en la CPU. Ahí estaba buena parte de la lentitud.
+    #
+    # El chmod que había aquí no servía de nada: los nodos los crea el driver
+    # de la tarjeta al cargarse, que ocurre después de este punto. Por eso se
+    # reintenta en segundo plano durante unos segundos en vez de dar por
+    # hecho que ya existen.
+    (
+        _i=0
+        while [ "$_i" -lt 40 ]; do
+            if [ -e /dev/dri/card0 ] || [ -e /dev/dri/renderD128 ]; then
+                chgrp video /dev/dri/* 2>/dev/null || true
+                chmod g+rw /dev/dri/* 2>/dev/null || true
+                break
+            fi
+            sleep 0.25
+            _i=$((_i + 1))
+        done
+    ) &
+    # Sonido: sin udev, los nodos de /dev/snd nacen root:root 600 y ni
+    # WirePlumber ni nadie del escritorio puede abrir la tarjeta. El grupo
+    # audio ya existe y el usuario pertenece a él; sólo falta aplicarlo.
+    if [ -d /dev/snd ]; then
+        chgrp -R audio /dev/snd 2>/dev/null || true
+        chmod -R g+rw /dev/snd 2>/dev/null || true
+    fi
+    # La sesión gráfica nunca corre como root: mike pertenece a wheel y
+    # conserva acceso administrativo mediante m-sudo.
+    if id mike >/dev/null 2>&1; then
+        mkdir -p /run/user/1000
+        chown mike:mike /run/user/1000 2>/dev/null || true
+        chmod 700 /run/user/1000
+        # Forzar un entorno de sesión completo evita que BusyBox su herede
+        # HOME/SHELL de root en algunas imágenes o instalaciones antiguas.
+        su mike -s /bin/sh -c 'export HOME=/home/mike USER=mike LOGNAME=mike SHELL=/bin/bash; exec /usr/bin/start-mike-desktop' \
+            2>&1 | tee /var/log/desktop_session.log
+    else
+        /usr/bin/start-mike-desktop 2>&1 | tee /var/log/desktop_session.log
+    fi
+    echo ">> [console] Sesión gráfica finalizada. Iniciando shell de consola..."
+    exec setsid cttyhack /bin/bash -l
+else
+    echo ">> [console] Iniciando terminal interactiva en /dev/console..."
+    exec </dev/console >/dev/console 2>&1
+    exec setsid cttyhack /bin/bash -l
+fi

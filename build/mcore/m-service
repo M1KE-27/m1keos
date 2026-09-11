@@ -1,0 +1,127 @@
+#!/bin/sh
+# ==============================================================================
+# m-service - MIKE OS Service Manager (runit wrapper)
+# ==============================================================================
+set -eu
+
+SV_DIR="/etc/sv"
+RUN_DIR="/var/service"
+
+usage() {
+    echo "Uso: m-service <comando> [servicio]"
+    echo ""
+    echo "Comandos disponibles:"
+    echo "  list              Lista todos los servicios y su estado"
+    echo "  status <svc>      Muestra el estado detallado de un servicio"
+    echo "  enable <svc>      Habilita un servicio (crea enlace en /var/service)"
+    echo "  disable <svc>     Deshabilita un servicio"
+    echo "  start <svc>       Inicia un servicio activo"
+    echo "  stop <svc>        Detiene un servicio activo"
+    echo "  restart <svc>     Reinicia un servicio activo"
+    echo ""
+    exit 1
+}
+
+[ $# -lt 1 ] && usage
+
+CMD="$1"
+SVC="${2:-}"
+
+valid_service() {
+    case "$1" in
+        ""|.|..|*/*|*[!A-Za-z0-9_.-]*) return 1 ;;
+    esac
+    [ -d "$SV_DIR/$1" ]
+}
+
+case "$CMD" in
+    list)
+        echo "=== [SERVICIOS DE MIKE OS (runit)] ==="
+        printf "%-18s %-12s %-20s\n" "SERVICIO" "ESTADO" "SUPERVISIÓN"
+        echo "----------------------------------------------------"
+        for s in "$SV_DIR"/*; do
+            [ -d "$s" ] || continue
+            sname="$(basename "$s")"
+            if [ -L "$RUN_DIR/$sname" ] || [ -d "$RUN_DIR/$sname" ]; then
+                state="HABILITADO"
+                # Check sv status if runsv is running
+                if sv status "$RUN_DIR/$sname" >/dev/null 2>&1; then
+                    sup_status="$(sv status "$RUN_DIR/$sname" 2>/dev/null | cut -d: -f1,2)"
+                else
+                    sup_status="iniciando..."
+                fi
+            else
+                state="DESHABILITADO"
+                sup_status="inactivo"
+            fi
+            printf "%-18s %-12s %-20s\n" "$sname" "$state" "$sup_status"
+        done
+        echo "===================================================="
+        ;;
+    status)
+        [ -z "$SVC" ] && usage
+        if ! valid_service "$SVC"; then
+            echo "ERROR: El servicio '$SVC' no existe en $SV_DIR" >&2
+            exit 1
+        fi
+        if [ -L "$RUN_DIR/$SVC" ]; then
+            echo "Servicio '$SVC': HABILITADO"
+            sv status "$RUN_DIR/$SVC" || true
+        else
+            echo "Servicio '$SVC': DESHABILITADO (no está en $RUN_DIR)"
+        fi
+        ;;
+    enable)
+        [ -z "$SVC" ] && usage
+        if ! valid_service "$SVC"; then
+            echo "ERROR: El servicio '$SVC' no existe en $SV_DIR" >&2
+            exit 1
+        fi
+        mkdir -p "$RUN_DIR"
+        ln -sf "$SV_DIR/$SVC" "$RUN_DIR/$SVC"
+        echo "Servicio '$SVC' habilitado en $RUN_DIR."
+        ;;
+    disable)
+        [ -z "$SVC" ] && usage
+        if [ -L "$RUN_DIR/$SVC" ]; then
+            sv down "$RUN_DIR/$SVC" 2>/dev/null || true
+            rm -f "$RUN_DIR/$SVC"
+            echo "Servicio '$SVC' deshabilitado."
+        else
+            echo "El servicio '$SVC' ya estaba deshabilitado."
+        fi
+        ;;
+    start)
+        [ -z "$SVC" ] && usage
+        valid_service "$SVC" || { echo "ERROR: El servicio '$SVC' no existe en $SV_DIR" >&2; exit 1; }
+        if [ ! -L "$RUN_DIR/$SVC" ]; then
+            echo "Habilitando '$SVC' primero..."
+            ln -sf "$SV_DIR/$SVC" "$RUN_DIR/$SVC"
+            sleep 1
+        fi
+        sv start "$RUN_DIR/$SVC"
+        ;;
+    stop)
+        [ -z "$SVC" ] && usage
+        valid_service "$SVC" || { echo "ERROR: El servicio '$SVC' no existe en $SV_DIR" >&2; exit 1; }
+        if [ -L "$RUN_DIR/$SVC" ]; then
+            sv stop "$RUN_DIR/$SVC"
+        else
+            echo "ERROR: El servicio '$SVC' no está activo." >&2
+            exit 1
+        fi
+        ;;
+    restart)
+        [ -z "$SVC" ] && usage
+        valid_service "$SVC" || { echo "ERROR: El servicio '$SVC' no existe en $SV_DIR" >&2; exit 1; }
+        if [ -L "$RUN_DIR/$SVC" ]; then
+            sv restart "$RUN_DIR/$SVC"
+        else
+            echo "ERROR: El servicio '$SVC' no está activo." >&2
+            exit 1
+        fi
+        ;;
+    *)
+        usage
+        ;;
+esac

@@ -1,0 +1,143 @@
+#!/bin/sh
+# m-repo-sync - descarga el catálogo de paquetes de Arch y lo convierte en un
+# índice local.
+#
+# Antes cada dependencia costaba una petición HTTP a la API de búsqueda de
+# archlinux.org. Instalar Firefox lanzaba cientos de peticiones encadenadas,
+# tardaba varios minutos y acababa fallando cuando el servidor cortaba por
+# exceso de ritmo. Aquí se descargan las dos bases de datos del repositorio
+# una sola vez (unos 9 MB entre core y extra) y a partir de ese momento toda
+# la resolución de dependencias ocurre en local, sin red.
+#
+# El índice tiene dos tipos de línea, ambas separadas por tabuladores:
+#
+#   P  nombre  repo  archivo  sha256  bytes-descarga  bytes-instalado  deps  descripción
+#   V  nombre-virtual  paquete-que-lo-provee
+#
+# Las líneas V son imprescindibles: muchas dependencias de Arch no nombran un
+# paquete sino una capacidad ("ttf-font", "libnautilus-extension.so"). Sin
+# ellas Firefox se instala sin ninguna fuente y Nautilus sin su librería.
+set -u
+
+ESPEJO="${MPM_MIRROR:-https://geo.mirror.pkgbuild.com}"
+# MPM_SYNC_DIR permite construir el catálogo fuera del sistema en marcha: lo
+# usa el script de compilación para dejarlo ya hecho dentro de la imagen, de
+# modo que la primera instalación de un paquete no tenga que esperar a
+# descargar 9 MB de catálogo.
+SYNC="${MPM_SYNC_DIR:-/var/lib/mpm/sync}"
+INDICE="$SYNC/index.tsv"
+REPOS="core extra"
+# Una semana: el catálogo de Arch cambia a diario, pero un índice de hace unos
+# días sigue resolviendo bien y evita descargar 9 MB en cada instalación.
+MAX_EDAD_DIAS=7
+
+uso() {
+    cat <<'EOF'
+Uso: m-repo-sync [--si-hace-falta]
+
+  (sin opciones)     descarga y reconstruye el índice siempre
+  --si-hace-falta    sólo lo reconstruye si falta o está caducado
+EOF
+}
+
+case "${1:-}" in
+    -h|--help) uso; exit 0 ;;
+    --si-hace-falta)
+        if [ -f "$INDICE" ] && [ -z "$(find "$INDICE" -mtime +$MAX_EDAD_DIAS 2>/dev/null)" ]; then
+            exit 0
+        fi
+        ;;
+    '') ;;
+    *) uso >&2; exit 1 ;;
+esac
+
+if [ -z "${MPM_SYNC_DIR:-}" ] && [ "$(id -u)" != "0" ]; then
+    echo "m-repo-sync: hacen falta permisos de root." >&2
+    exit 1
+fi
+
+mkdir -p "$SYNC" || exit 1
+TMP="$SYNC/.tmp.$$"
+mkdir -p "$TMP" || exit 1
+trap 'rm -rf "$TMP"' EXIT INT TERM
+
+# curl y no wget: el wget de busybox avisa en cada llamada de que no valida el
+# certificado TLS, y además no valida nada. curl usa el almacén de CA del
+# sistema, así que la descarga va autenticada y sin ruido.
+for r in $REPOS; do
+    printf 'Descargando catálogo de %s... ' "$r"
+    if ! curl -fsSL --retry 3 --connect-timeout 15 \
+              "$ESPEJO/$r/os/x86_64/$r.db" -o "$TMP/$r.db"; then
+        echo "error"
+        echo "m-repo-sync: no se pudo descargar el catálogo de $r desde $ESPEJO" >&2
+        exit 1
+    fi
+    echo "ok"
+done
+
+# Cada entrada de la base es un archivo "desc" con campos %CLAVE% seguidos de
+# sus valores. Al extraer con -O llegan todos concatenados por la salida
+# estándar, y como cada entrada empieza por %FILENAME% se pueden separar sin
+# crear 15.000 directorios en disco.
+cat > "$TMP/indexar.awk" <<'AWK'
+function volcar() {
+    if (nombre == "") return
+    sub(/^,/, "", deps)
+    printf "P\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+           nombre, repo, archivo, sha,
+           (csize == "" ? "0" : csize), (isize == "" ? "0" : isize), deps, desc
+    n = split(prov, pv, ",")
+    for (i = 1; i <= n; i++)
+        if (pv[i] != "") printf "V\t%s\t%s\n", pv[i], nombre
+    nombre = ""; archivo = ""; sha = ""; deps = ""; prov = ""
+    csize = ""; isize = ""; desc = ""
+}
+/^%[A-Z0-9]+%$/ {
+    k = substr($0, 2, length($0) - 2)
+    if (k == "FILENAME") volcar()
+    clave = k
+    next
+}
+$0 == "" { next }
+{
+    if (clave == "FILENAME") archivo = $0
+    else if (clave == "NAME") nombre = $0
+    else if (clave == "SHA256SUM") sha = $0
+    else if (clave == "CSIZE") csize = $0
+    else if (clave == "ISIZE") isize = $0
+    else if (clave == "DESC") { d = $0; gsub(/\t/, " ", d); desc = d }
+    else if (clave == "DEPENDS") {
+        v = $0; sub(/[<>=:].*$/, "", v)
+        if (v != "") deps = deps "," v
+    }
+    else if (clave == "PROVIDES") {
+        v = $0; sub(/[<>=:].*$/, "", v)
+        if (v != "") prov = prov "," v
+    }
+}
+END { volcar() }
+AWK
+
+printf 'Construyendo índice... '
+: > "$TMP/index.tsv"
+for r in $REPOS; do
+    if ! tar -xzOf "$TMP/$r.db" 2>/dev/null \
+         | awk -v repo="$r" -f "$TMP/indexar.awk" >> "$TMP/index.tsv"; then
+        echo "error"
+        echo "m-repo-sync: no se pudo procesar el catálogo de $r" >&2
+        exit 1
+    fi
+done
+
+PAQUETES="$(grep -c '^P	' "$TMP/index.tsv" 2>/dev/null || echo 0)"
+if [ "$PAQUETES" -lt 1000 ]; then
+    echo "error"
+    echo "m-repo-sync: el índice salió incompleto ($PAQUETES paquetes), se descarta." >&2
+    exit 1
+fi
+
+# Movimiento atómico: si algo falla a mitad, el índice viejo sigue sirviendo.
+mv -f "$TMP/index.tsv" "$INDICE" || exit 1
+VIRTUALES="$(grep -c '^V	' "$INDICE" 2>/dev/null || echo 0)"
+echo "ok"
+echo "Catálogo listo: $PAQUETES paquetes, $VIRTUALES nombres virtuales."

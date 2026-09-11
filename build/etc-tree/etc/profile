@@ -1,0 +1,12 @@
+export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+export EDITOR=vi
+export PS1='\[\e[36m\]\w\[\e[0m\] \[\e[90m\]❯\[\e[0m\] '
+alias ff=m-info
+alias sys=m-info
+alias ls='ls --color=auto'
+
+case "$-" in
+    *i*)
+        command -v fastfetch >/dev/null 2>&1 && fastfetch -c /etc/mikeos/fastfetch/config.jsonc
+        ;;
+esac

@@ -1,0 +1,34 @@
+#!/bin/sh
+# ==============================================================================
+# m-system - MIKE OS System Information & Telemetry (v0.2.0 Core)
+# ==============================================================================
+set -eu
+
+PROFILE="generic"
+[ -f /etc/mikeos/system.conf ] && . /etc/mikeos/system.conf
+
+echo "=========================================================="
+echo "               MIKE OS — ESTADO DEL SISTEMA"
+echo "=========================================================="
+echo " Hostname:    $(hostname)"
+echo " SO:          MIKE OS 0.2.0 Core (x86_64)"
+echo " Perfil:      MIKE OS ${PROFILE:-generic}"
+echo " Kernel:      $(uname -r) ($(uname -m))"
+echo " Init System: runit (PID 1, 0% systemd)"
+echo " Uptime:      $(cut -d' ' -f1 /proc/uptime)s"
+echo " Carga CPU:   $(awk '{print $1, $2, $3}' /proc/loadavg)"
+
+MEM_TOTAL=$(grep MemTotal /proc/meminfo | awk '{print $2}')
+MEM_AVAIL=$(grep MemAvailable /proc/meminfo | awk '{print $2}')
+MEM_USED=$((MEM_TOTAL - MEM_AVAIL))
+echo " Memoria RAM: $((MEM_USED / 1024)) MB / $((MEM_TOTAL / 1024)) MB ($((MEM_AVAIL / 1024)) MB disponible)"
+
+PROCS=$(ps | grep -v "ps" | grep -v "PID" | wc -l)
+echo " Procesos:    $PROCS"
+
+ROOT_SIZE=$(df -h / 2>/dev/null | awk 'NR==2 {print $3 " / " $2 " (" $5 " usado)"}' || echo "N/A")
+echo " Disco (/):   $ROOT_SIZE"
+
+ACTIVE_SV=$(ls -1 /var/service 2>/dev/null | wc -l)
+echo " Servicios:   $ACTIVE_SV activos en /var/service"
+echo "=========================================================="

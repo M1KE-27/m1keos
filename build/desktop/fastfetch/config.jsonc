@@ -1,0 +1,27 @@
+{
+  "$schema": "https://github.com/fastfetch-cli/fastfetch/raw/master/doc/json_schema.json",
+  "logo": {
+    "type": "file",
+    "source": "/etc/mikeos/fastfetch/mike.logo",
+    "padding": { "top": 1, "right": 3 }
+  },
+  "display": {
+    "separator": "  ",
+    "color": { "keys": "cyan", "title": "cyan" }
+  },
+  "modules": [
+    { "type": "title", "format": "{#1}MIKE OS{#2} · {user-name}@{host-name}" },
+    "separator",
+    { "type": "os", "key": "OS      ", "format": "{name} {version} {arch}" },
+    { "type": "kernel", "key": "Kernel  ", "format": "{release}" },
+    { "type": "host", "key": "Hardware", "format": "{family} {name}" },
+    { "type": "cpu", "key": "CPU     ", "format": "{name}" },
+    { "type": "gpu", "key": "GPU     ", "format": "{name}" },
+    { "type": "memory", "key": "Memory  ", "format": "{used} / {total}" },
+    { "type": "disk", "key": "Disk    ", "format": "{size-used} / {size-total}" },
+    { "type": "uptime", "key": "Uptime  " },
+    { "type": "shell", "key": "Shell   " },
+    { "type": "wm", "key": "Desktop ", "format": "{pretty-name}" },
+    { "type": "packages", "key": "Packages", "format": "{all}" }
+  ]
+}

@@ -1,0 +1,7 @@
+# /etc/fstab: MIKE OS Static File System Information
+LABEL=MIKEOS_ROOT   /           ext4    defaults,noatime    0   1
+devpts              /dev/pts    devpts  gid=5,mode=620      0   0
+proc                /proc       proc    defaults            0   0
+sysfs               /sys        sysfs   defaults            0   0
+tmpfs               /run        tmpfs   defaults,nodev,nosuid,size=10% 0 0
+tmpfs               /tmp        tmpfs   defaults,nodev,nosuid 0 0

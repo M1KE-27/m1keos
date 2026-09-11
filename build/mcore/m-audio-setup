@@ -1,0 +1,60 @@
+#!/bin/sh
+# m-audio-setup - declara la tarjeta de sonido para PipeWire.
+#
+# WirePlumber descubre las tarjetas a través de udev, y MIKE OS usa
+# libudev-zero, un sustituto mínimo que no le da esa información: el resultado
+# era un sistema con tarjeta detectada por el kernel pero sin ninguna salida de
+# audio. En vez de arrastrar un udev completo sólo por esto, se declara la
+# tarjeta directamente en la configuración de PipeWire.
+#
+# No se escribe una tarjeta fija: se lee la primera de /proc/asound/cards, así
+# que funciona igual en la máquina virtual que en un portátil con Realtek o
+# una tarjeta USB, mientras haya alguna.
+set -u
+
+CFG_DIR="${HOME:-/root}/.config/pipewire/pipewire.conf.d"
+CFG="$CFG_DIR/10-alsa.conf"
+
+# Primera tarjeta: la línea de /proc/asound/cards empieza por su índice.
+TARJETA="$(awk '/^[[:space:]]*[0-9]+[[:space:]]*\[/ { gsub(/[^0-9]/, "", $1); print $1; exit }' /proc/asound/cards 2>/dev/null)"
+
+if [ -z "$TARJETA" ]; then
+    # Sin tarjeta no se escribe nada: dejar una declaración apuntando a un
+    # dispositivo inexistente sólo llenaría los registros de errores.
+    rm -f "$CFG" 2>/dev/null || true
+    echo "m-audio-setup: no hay ninguna tarjeta de sonido." >&2
+    exit 1
+fi
+
+# Nombre legible de la tarjeta, para que aparezca así en los mezcladores.
+NOMBRE="$(awk -v c="$TARJETA" '
+    $0 ~ "^[[:space:]]*" c "[[:space:]]*\\[" {
+        if (match($0, /\]:.*/)) {
+            s = substr($0, RSTART + 2)
+            gsub(/^[[:space:]]+|[[:space:]]+$/, "", s)
+            print s
+        }
+        exit
+    }' /proc/asound/cards 2>/dev/null)"
+[ -n "$NOMBRE" ] || NOMBRE="Salida de audio"
+
+mkdir -p "$CFG_DIR"
+cat > "$CFG" <<EOF
+# Generado por m-audio-setup. No editar a mano: se reescribe en cada arranque
+# con la tarjeta que haya en ese momento.
+context.objects = [
+  { factory = adapter
+    args = {
+      factory.name     = api.alsa.pcm.sink
+      node.name        = "salida-alsa"
+      node.description = "$NOMBRE"
+      media.class      = "Audio/Sink"
+      api.alsa.path    = "hw:$TARJETA"
+      audio.channels   = 2
+      audio.position   = [ FL FR ]
+    }
+  }
+]
+EOF
+
+echo "m-audio-setup: tarjeta hw:$TARJETA ($NOMBRE)."

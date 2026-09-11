@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Fondos de pantalla
+Comment=Buscar y aplicar fondos de Wallhaven
+Exec=/usr/bin/m-wallpapers
+Icon=preferences-desktop-wallpaper
+Terminal=false
+Categories=Settings;Graphics;

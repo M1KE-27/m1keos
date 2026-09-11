@@ -1,0 +1,182 @@
+#!/bin/sh
+# m-drivers - detecta el hardware de la máquina y dice qué instalar para que
+# funcione del todo.
+#
+# No adivina por el nombre comercial: lee los identificadores que el propio
+# hardware publica en /sys/bus/pci y /sys/bus/usb, que es lo único fiable.
+# Cada dispositivo se traduce a los paquetes que le hacen falta, y sólo se
+# proponen: nada se instala sin que alguien lo pida.
+set -u
+
+PCI="/sys/bus/pci/devices"
+INSTALAR=""
+
+# La base de identificadores de fabricante que trae el sistema da el nombre
+# comercial; sin ella se enseña el identificador en crudo, que sigue sirviendo.
+IDS=""
+for _f in /usr/share/hwdata/pci.ids /usr/share/misc/pci.ids /usr/share/pci.ids; do
+    [ -f "$_f" ] && { IDS="$_f"; break; }
+done
+
+nombre_dispositivo() {
+    # $1 = vendedor (4 hex), $2 = dispositivo (4 hex)
+    [ -n "$IDS" ] || { printf '%s:%s' "$1" "$2"; return; }
+    awk -v v="$1" -v d="$2" '
+        /^[0-9a-f]{4}  / {
+            envendedor = (substr($0, 1, 4) == v)
+            if (envendedor) vnom = substr($0, 7)
+            next
+        }
+        envendedor && /^\t[0-9a-f]{4}  / {
+            if (substr($0, 2, 4) == d) { print vnom " " substr($0, 8); exit }
+        }
+    ' "$IDS" 2>/dev/null || printf '%s:%s' "$1" "$2"
+}
+
+proponer() {
+    # $1 = paquete, $2 = por qué
+    case " $INSTALAR " in *" $1 "*) return ;; esac
+    INSTALAR="$INSTALAR $1"
+    printf '    %-24s %s\n' "$1" "$2"
+}
+
+leer_hex() { [ -f "$1" ] && sed 's/^0x//' "$1" || echo ""; }
+
+is_instalado() { [ -f "/var/lib/mpm/installed/$1.json" ]; }
+
+echo "Hardware detectado"
+echo "=================="
+echo
+
+# ---------------------------------------------------------------- gráfica
+echo "Gráfica"
+_hay_gpu=0
+for _d in "$PCI"/*; do
+    [ -d "$_d" ] || continue
+    _clase="$(leer_hex "$_d/class")"
+    # 0x030000 = VGA, 0x038000 = otra controladora de pantalla
+    case "$_clase" in 03*) ;; *) continue ;; esac
+    _hay_gpu=1
+    _v="$(leer_hex "$_d/vendor")"; _p="$(leer_hex "$_d/device")"
+    echo "  $(nombre_dispositivo "$_v" "$_p")"
+    case "$_v" in
+        10de)
+            # Las tarjetas de las últimas generaciones van mejor con el
+            # módulo abierto; el propietario cubre las anteriores.
+            proponer nvidia-open "controlador NVIDIA (Turing en adelante)"
+            proponer nvidia-utils "bibliotecas OpenGL/Vulkan de NVIDIA"
+            ;;
+        1002)
+            proponer vulkan-radeon "Vulkan para AMD"
+            proponer libva-mesa-driver "aceleración de vídeo AMD"
+            ;;
+        8086)
+            proponer vulkan-intel "Vulkan para Intel"
+            proponer intel-media-driver "aceleración de vídeo Intel"
+            ;;
+        1af4|1234)
+            # En una máquina virtual el driver de OpenGL ya está, pero Vulkan
+            # no: hace falta Venus, que es el que traduce Vulkan del huésped
+            # al anfitrión. Sin él no hay DXVK ni VKD3D, o sea que Wine no
+            # puede con DirectX 11 ni 12.
+            proponer vulkan-virtio "Vulkan en máquina virtual (Venus)"
+            ;;
+    esac
+done
+[ "$_hay_gpu" = 1 ] || echo "  (ninguna encontrada)"
+echo
+
+# ------------------------------------------------------------------- red
+echo "Red"
+_hay_red=0
+for _d in "$PCI"/*; do
+    [ -d "$_d" ] || continue
+    _clase="$(leer_hex "$_d/class")"
+    case "$_clase" in 02*) ;; *) continue ;; esac
+    _hay_red=1
+    _v="$(leer_hex "$_d/vendor")"; _p="$(leer_hex "$_d/device")"
+    echo "  $(nombre_dispositivo "$_v" "$_p")"
+    case "$_v" in
+        8086) proponer linux-firmware "firmware de la Wi-Fi Intel" ;;
+        14e4) proponer broadcom-wl "controlador Wi-Fi Broadcom" ;;
+        10ec) proponer linux-firmware "firmware Realtek" ;;
+        168c|17cb) proponer linux-firmware "firmware Atheros/Qualcomm" ;;
+        14c3) proponer linux-firmware "firmware Wi-Fi MediaTek" ;;
+    esac
+done
+[ "$_hay_red" = 1 ] || echo "  (ninguna encontrada)"
+echo
+
+# ---------------------------------------------------------------- sonido
+echo "Sonido"
+if [ -r /proc/asound/cards ] && grep -q '[0-9]' /proc/asound/cards 2>/dev/null; then
+    sed -n 's/.*\]: *//p' /proc/asound/cards | sed 's/^/  /'
+else
+    echo "  (ninguna tarjeta)"
+fi
+echo
+
+# ---------------------------------------------------------------- táctil
+echo "Entrada"
+_tactil=0
+for _n in /sys/class/input/input*/name; do
+    [ -r "$_n" ] || continue
+    _nom="$(cat "$_n" 2>/dev/null)"
+    case "$_nom" in
+        *[Tt]ouch*|*[Ss]tylus*|*[Ww]acom*|*[Pp]en*)
+            echo "  $_nom"
+            _tactil=1
+            ;;
+    esac
+done
+[ "$_tactil" = 1 ] || echo "  (sin pantalla táctil ni tableta)"
+echo
+
+# ------------------------------------------------------------------ CPU
+echo "Procesador"
+sed -n 's/^model name[[:space:]]*: //p' /proc/cpuinfo 2>/dev/null | head -1 | sed 's/^/  /'
+_marca="$(sed -n 's/^vendor_id[[:space:]]*: //p' /proc/cpuinfo 2>/dev/null | head -1)"
+case "$_marca" in
+    GenuineIntel) proponer intel-ucode "actualizaciones de microcódigo Intel" ;;
+    AuthenticAMD) proponer amd-ucode  "actualizaciones de microcódigo AMD" ;;
+esac
+echo
+
+# ------------------------------------------------------------- DirectX
+# Sólo se menciona; no se propone por defecto porque son cientos de megas y
+# no todo el mundo quiere ejecutar programas de Windows.
+if ! is_instalado wine 2>/dev/null; then
+    echo "Juegos de Windows"
+    echo "  DirectX 9 a 12 funcionan mediante Wine con DXVK y VKD3D."
+    echo "  Requieren Vulkan, así que instala antes lo de arriba."
+    echo "  mpm install wine vkd3d"
+    echo
+fi
+
+# --------------------------------------------------------------- resumen
+if [ -z "$INSTALAR" ]; then
+    echo "No hace falta instalar nada: el sistema ya cubre este equipo."
+    exit 0
+fi
+
+echo "=================="
+echo "Recomendado:$INSTALAR"
+echo
+
+case "${1:-}" in
+    --instalar)
+        # -y a propósito: quien llega aquí ya ha dicho que sí, sea pulsando
+        # el botón del panel de bienvenida o escribiendo --instalar. Volver a
+        # preguntar dejaba la instalación parada esperando una tecla que
+        # nadie iba a pulsar, y parecía que no terminaba nunca.
+        # shellcheck disable=SC2086
+        exec mpm install -y $INSTALAR
+        ;;
+    --lista)
+        printf '%s\n' $INSTALAR
+        ;;
+    *)
+        echo "Para instalarlo todo:  m-drivers --instalar"
+        echo "Para elegir uno:       mpm install <nombre>"
+        ;;
+esac

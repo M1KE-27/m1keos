@@ -1,0 +1,14 @@
+#!/bin/sh
+exec 2>&1
+mkdir -p /etc/dropbear
+if [ ! -f /etc/dropbear/dropbear_rsa_host_key ]; then
+    dropbearkey -t rsa -f /etc/dropbear/dropbear_rsa_host_key -s 2048 >/dev/null 2>&1 || true
+fi
+if [ ! -f /etc/dropbear/dropbear_ecdsa_host_key ]; then
+    dropbearkey -t ecdsa -f /etc/dropbear/dropbear_ecdsa_host_key >/dev/null 2>&1 || true
+fi
+if [ ! -f /etc/dropbear/dropbear_ed25519_host_key ]; then
+    dropbearkey -t ed25519 -f /etc/dropbear/dropbear_ed25519_host_key >/dev/null 2>&1 || true
+fi
+
+exec dropbear -F -p 22 -w -R

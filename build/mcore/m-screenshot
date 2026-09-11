@@ -1,0 +1,29 @@
+#!/bin/sh
+# Captura de región Wayland: guarda PNG y lo copia al clipboard.
+set -u
+OUT_DIR="${XDG_PICTURES_DIR:-${HOME:-/root}/Pictures}/Screenshots"
+mkdir -p "$OUT_DIR"
+command -v grim >/dev/null 2>&1 && command -v slurp >/dev/null 2>&1 && command -v wl-copy >/dev/null 2>&1 || {
+    echo "m-screenshot: instala grim, slurp y wl-clipboard para capturar." >&2
+    exit 1
+}
+# "full" captura la pantalla entera sin pedir región. Es lo que tiene sentido
+# desde un botón de la barra: seleccionar con el ratón sólo estorba cuando lo
+# que se quiere es la pantalla tal cual.
+FILE="$OUT_DIR/mikeos-$(date +%Y%m%d-%H%M%S).png"
+if [ "${1:-}" = "full" ]; then
+    if grim "$FILE"; then
+        wl-copy < "$FILE"
+        echo "$FILE"
+        exit 0
+    fi
+    echo "m-screenshot: no se pudo capturar." >&2
+    exit 1
+fi
+
+GEOMETRY="$(slurp 2>/dev/null)" || exit 1
+[ -n "$GEOMETRY" ] || exit 0
+if grim -g "$GEOMETRY" "$FILE"; then
+    wl-copy < "$FILE"
+    echo "Captura copiada al portapapeles: $FILE"
+fi

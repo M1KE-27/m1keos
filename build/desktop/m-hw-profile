@@ -1,0 +1,34 @@
+#!/bin/sh
+# Perfil adaptativo de rendimiento y compatibilidad.
+set -u
+CFG="${HOME:-/root}/.config/mike"
+mkdir -p "$CFG"
+RAM_MB="$(awk '/MemTotal:/ {print int($2/1024)}' /proc/meminfo 2>/dev/null || echo 512)"
+CPU_COUNT="$(grep -c '^processor' /proc/cpuinfo 2>/dev/null || echo 1)"
+VM=0
+grep -Eqi 'QEMU|KVM|VMware|VirtualBox|Microsoft|Xen|virtio' /sys/devices/virtual/dmi/id/product_name /proc/cpuinfo 2>/dev/null && VM=1
+
+cat > "$CFG/hyprland.local.conf" <<'EOF'
+# Generado por m-hw-profile; no editar a mano.
+monitor=,preferred,auto,1
+EOF
+
+if [ "$VM" -eq 0 ] && [ "$RAM_MB" -ge 6144 ] && [ "$CPU_COUNT" -ge 4 ]; then
+    cat >> "$CFG/hyprland.local.conf" <<'EOF'
+decoration { blur { enabled = true; size = 4; passes = 1; } shadow { enabled = true; range = 8; render_power = 1; } }
+animations { enabled = true; }
+EOF
+else
+    cat >> "$CFG/hyprland.local.conf" <<'EOF'
+decoration { blur { enabled = false; } shadow { enabled = false; } }
+# Incluso en QEMU conservamos las animaciones cortas: no requieren blur ni
+# sombras y hacen visible el cambio de workspace.
+animations { enabled = true; }
+EOF
+fi
+
+# El dotfile principal usa una ruta absoluta para ser válido incluso cuando
+# Hyprland se inicia como root o desde una TTY sin expansión de '~'.
+if [ -d /etc/mikeos/desktop ] && [ -w /etc/mikeos/desktop ]; then
+    cp "$CFG/hyprland.local.conf" /etc/mikeos/desktop/hyprland.local.conf
+fi

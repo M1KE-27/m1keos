@@ -1,0 +1,457 @@
+#!/bin/sh
+# m-apply-settings - aplica ~/.config/mike/settings.conf al sistema en vivo.
+# Lo llama el panel integrado en la barra (botón "Aplicar" de QML/
+# Quickshell) tras cada cambio, y start-mike-desktop una vez al arrancar
+# la sesión para que el estado inicial ya sea coherente.
+set -u
+
+CFG_DIR="${HOME:-/root}/.config/mike"
+SETTINGS="$CFG_DIR/settings.conf"
+mkdir -p "$CFG_DIR/quickshell"
+
+# =============================================================================
+# ESQUEMA DE AJUSTES
+#
+# settings.conf es Lua real (clave = "valor" / clave = 4 / clave = false), no
+# KEY=VALUE de shell. Se lee con un mini-parser sed en vez de arrastrar un
+# intérprete Lua entero para un puñado de claves.
+#
+# Todo ajuste pasa por aquí: se declara con su tipo y su valor de fábrica, y
+# se lee siempre con `leer`. Un valor corrupto o fuera de rango no rompe el
+# arranque -- se descarta y se usa el de fábrica.
+# =============================================================================
+
+# --- Modo "set": actualizar claves sueltas ----------------------------------
+#   m-apply-settings set clave=valor [clave=valor ...]
+#
+# Cambia sólo las claves indicadas y aplica. El Centro de Control reescribía
+# el archivo entero con las siete claves que conocía, así que cada "Aplicar"
+# borraba silenciosamente la forma de la barra, las listas de módulos y los
+# ajustes del reloj. Aquí se respeta todo lo demás, incluidos los comentarios.
+if [ "${1:-}" = "set" ]; then
+    shift
+    # Si aún no hay archivo, esta misma llamada sin argumentos escribe el de
+    # fábrica; después se parchean las claves pedidas.
+    [ -f "$SETTINGS" ] || "$0" >/dev/null 2>&1
+
+    for _par in "$@"; do
+        _k="${_par%%=*}"
+        _v="${_par#*=}"
+        case "$_k" in
+            ''|*[!a-z_]*) continue ;;   # nombre de clave no válido: se ignora
+        esac
+        # El archivo tiene que seguir siendo Lua legible: los números y los
+        # booleanos van tal cual, el resto entre comillas.
+        case "$_v" in
+            ''|*[!0-9]*)
+                [ "$_v" = "true" ] || [ "$_v" = "false" ] || _v="\"$_v\""
+                ;;
+        esac
+        _tmp="$SETTINGS.tmp.$$"
+        awk -v k="$_k" -v v="$_v" '
+            $0 ~ "^[[:space:]]*" k "[[:space:]]*=" {
+                # Se conserva el comentario de la derecha, que documenta los
+                # valores admitidos.
+                com = ""
+                if (match($0, /--.*$/)) com = substr($0, RSTART)
+                printf "%-17s = %-22s %s\n", k, v, com
+                hecho = 1
+                next
+            }
+            { print }
+            END { if (!hecho) printf "%-17s = %s\n", k, v }
+        ' "$SETTINGS" > "$_tmp" && mv "$_tmp" "$SETTINGS"
+    done
+    # Sin exec: el resto del script viene justo después y ya relee el archivo
+    # recién parcheado. Reejecutarse dependía de que $0 siguiera siendo una
+    # ruta válida, y no siempre lo era.
+fi
+
+# Lee una clave del archivo. Se hace por pasos en vez de con una expresión
+# única porque la versión anterior exigía que la línea terminara justo tras el
+# valor: con el comentario que documenta las opciones a la derecha, no casaba
+# NUNCA, y todas las claves caían silenciosamente al valor de fábrica.
+lua_get() {
+    _key="$1"
+    [ -f "$SETTINGS" ] || return 1
+    sed -n "s/^[[:space:]]*$_key[[:space:]]*=[[:space:]]*//p" "$SETTINGS" \
+        | head -1 \
+        | sed -e 's/--.*$//' \
+              -e 's/[[:space:]]*$//' \
+              -e 's/^"//' -e 's/"$//'
+}
+
+# validar <tipo> <valor> -> 0 si es aceptable
+#   bool                  true / false
+#   color                 #rrggbb
+#   entero:MIN:MAX        número dentro del rango
+#   opcion:a:b:c          uno de la lista
+#   lista                 nombres separados por comas (módulos de la barra)
+#   texto                 sin caracteres de control ni comillas
+validar() {
+    _t="$1"; _v="$2"
+    case "$_t" in
+        bool)
+            [ "$_v" = "true" ] || [ "$_v" = "false" ]
+            ;;
+        color)
+            printf '%s' "$_v" | grep -Eq '^#[0-9a-fA-F]{6}$'
+            ;;
+        entero:*)
+            _min="${_t#entero:}"; _max="${_min#*:}"; _min="${_min%%:*}"
+            case "$_v" in ''|*[!0-9]*) return 1 ;; esac
+            [ "$_v" -ge "$_min" ] && [ "$_v" -le "$_max" ]
+            ;;
+        opcion:*)
+            _opts="${_t#opcion:}"
+            printf '%s' ":$_opts:" | grep -q ":$_v:"
+            ;;
+        lista)
+            printf '%s' "$_v" | grep -Eq '^[a-z]+(,[a-z]+)*$|^$'
+            ;;
+        texto)
+            printf '%s' "$_v" | grep -Eq '^[A-Za-z0-9 ,._:+/-]*$'
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+# leer <clave> <tipo> <por-defecto>
+#
+# Un valor vacío es un valor legítimo para las listas de módulos: una zona de
+# la barra puede quedarse sin nada. Por eso se distingue "la clave no está"
+# (usar el valor de fábrica) de "la clave está y vale cadena vacía" (respetar
+# lo que pidió el usuario). Antes ambos casos caían al valor de fábrica y era
+# imposible vaciar una zona desde el Centro de Control.
+clave_existe() {
+    [ -f "$SETTINGS" ] || return 1
+    grep -qE "^[[:space:]]*$1[[:space:]]*=" "$SETTINGS"
+}
+
+leer() {
+    _val="$(lua_get "$1" 2>/dev/null)"
+    if [ -n "$_val" ]; then
+        validar "$2" "$_val" && { printf '%s' "$_val"; return; }
+    elif [ "$2" = "lista" ] && clave_existe "$1"; then
+        # Lista declarada y vacía: es lo que se ha pedido.
+        printf ''
+        return
+    fi
+    printf '%s' "$3"
+}
+
+# --- Declaración de ajustes -------------------------------------------------
+# Barra
+BAR_POSITION="$(leer      bar_position    opcion:top:bottom:left:right   top)"
+BAR_SHAPE="$(leer         bar_shape       opcion:pegada:isla:completa    isla)"
+BAR_GROUPING="$(leer      bar_grouping    opcion:islas:continua          islas)"
+BAR_HEIGHT="$(leer        bar_height      entero:24:96                   48)"
+BAR_MODULE_HEIGHT="$(leer bar_module_height entero:18:72                 36)"
+BAR_FONT_SIZE="$(leer     bar_font_size   entero:8:24                    12)"
+BAR_SPACING="$(leer       bar_spacing     entero:0:24                    8)"
+BAR_OPACITY="$(leer       bar_opacity     entero:20:100                  100)"
+BAR_AUTOHIDE="$(leer      bar_autohide    bool                           false)"
+SCREEN_CORNERS="$(leer    screen_corners  bool                           false)"
+METRICS_INTERVAL="$(leer  metrics_interval entero:1000:30000             3000)"
+
+# Módulos de la barra: qué se pinta y en qué orden, por zona. Añadir, quitar o
+# reordenar es cambiar estas listas. Los nombres válidos son los del catálogo
+# de shell.qml; uno desconocido simplemente no pinta nada.
+BAR_LEFT="$(leer          bar_left        lista                          identidad)"
+BAR_CENTER="$(leer        bar_center      lista                          espacios)"
+BAR_RIGHT="$(leer         bar_right       lista                          'medidores,red,volumen,reloj,botones,ajustes')"
+# Botones rápidos disponibles. Sólo se admiten los que tienen función real:
+# captura de pantalla y cambio de teclado.
+BAR_BUTTONS="$(leer       bar_buttons     lista                          'captura,teclado')"
+
+# Escritorio
+WORKSPACE_COUNT="$(leer   workspace_count entero:1:10                    4)"
+ACCENT_COLOR="$(leer      accent_color    color                          '#00d4ff')"
+# El blur de Hyprland es de los efectos más caros que hay y se nota mucho sin
+# aceleración por hardware (QEMU, gráficas integradas antiguas). MIKE OS tiene
+# que ir fluido en cualquier equipo de partida; quien quiera el efecto lo
+# activa desde el Centro de Control.
+BLUR_ENABLED=0
+[ "$(leer blur_enabled bool false)" = "true" ] && BLUR_ENABLED=1
+ANIMATION_SPEED="$(leer   animation_speed opcion:instant:fast:normal     fast)"
+TERMINAL_OPACITY="$(leer  terminal_opacity entero:40:100                 98)"
+
+# Sistema
+KB_LAYOUT="$(leer         kb_layout       opcion:us,es:es,us             'us,es')"
+CLOCK_FORMAT="$(leer      clock_format    opcion:24h:12h-min:12h-may     24h)"
+CLOCK_SECONDS="$(leer     clock_seconds   bool                           false)"
+
+# --- Archivo de fábrica -----------------------------------------------------
+# Si no existe settings.conf se escribe uno completo y comentado, para que
+# quien prefiera editarlo a mano vea todas las opciones y sus valores válidos
+# sin tener que consultar documentación aparte.
+if [ ! -f "$SETTINGS" ]; then
+    # Se escribe con printf y anchos fijos para que la columna de comentarios
+    # quede alineada: el archivo está pensado para leerse y editarse a mano.
+    _linea() { printf '%-17s = %-22s -- %s\n' "$1" "$2" "$3"; }
+    _blur_txt=false; [ "$BLUR_ENABLED" = 1 ] && _blur_txt=true
+
+    {
+        echo '-- Ajustes de MIKE OS'
+        echo '--'
+        echo '-- Sintaxis Lua. Se puede editar a mano: los cambios se aplican al ejecutar'
+        echo '-- m-apply-settings, o desde el Centro de Control.'
+        echo '-- Un valor inválido no rompe nada: se ignora y se usa el de fábrica.'
+        echo
+        echo '-- === Barra ================================================================'
+        _linea bar_position      "\"$BAR_POSITION\""      'top | bottom | left | right'
+        _linea bar_shape         "\"$BAR_SHAPE\""         'pegada | isla | completa'
+        _linea bar_grouping      "\"$BAR_GROUPING\""      'islas | continua'
+        _linea bar_height        "$BAR_HEIGHT"            'alto total de la barra (24-96)'
+        _linea bar_module_height "$BAR_MODULE_HEIGHT"     'alto de cada módulo (18-72)'
+        _linea bar_font_size     "$BAR_FONT_SIZE"         'tamaño de letra (8-24)'
+        _linea bar_spacing       "$BAR_SPACING"           'separación entre módulos (0-24)'
+        _linea bar_opacity       "$BAR_OPACITY"           'opacidad de la barra (20-100)'
+        _linea bar_autohide      "$BAR_AUTOHIDE"          'ocultar la barra sola'
+        _linea screen_corners    "$SCREEN_CORNERS"        'esquinas de pantalla redondeadas'
+        _linea metrics_interval  "$METRICS_INTERVAL"      'refresco de medidores en ms (1000-30000)'
+        echo
+        echo '-- Módulos de la barra, por zona y en orden. Disponibles:'
+        echo '--   identidad, espacios, reloj, ajustes'
+        _linea bar_left          "\"$BAR_LEFT\""          'zona izquierda'
+        _linea bar_center        "\"$BAR_CENTER\""        'zona central'
+        _linea bar_right         "\"$BAR_RIGHT\""         'zona derecha'
+        _linea bar_buttons       "\"$BAR_BUTTONS\""       'botones rápidos: captura, teclado'
+        echo
+        echo '-- === Escritorio ===========================================================';
+        _linea workspace_count   "$WORKSPACE_COUNT"       'espacios de trabajo (1-10)'
+        _linea accent_color      "\"$ACCENT_COLOR\""      'color de acento, #rrggbb'
+        _linea blur_enabled      "$_blur_txt"             'desenfoque (cuesta rendimiento)'
+        _linea animation_speed   "\"$ANIMATION_SPEED\""   'instant | fast | normal'
+        _linea terminal_opacity  "$TERMINAL_OPACITY"      'opacidad de la terminal (40-100)'
+        echo
+        echo '-- === Sistema ==============================================================';
+        _linea kb_layout         "\"$KB_LAYOUT\""         'us,es | es,us'
+        _linea clock_format      "\"$CLOCK_FORMAT\""      '24h | 12h-min | 12h-may'
+        _linea clock_seconds     "$CLOCK_SECONDS"         'mostrar segundos en el reloj'
+    } > "$SETTINGS"
+fi
+
+# "identidad,espacios" -> '"identidad", "espacios"' para los arrays del JSON.
+lista_json() {
+    printf '%s' "$1" | awk -F, '{
+        out = ""
+        for (i = 1; i <= NF; i++) {
+            if ($i == "") continue
+            out = out (out == "" ? "" : ", ") "\"" $i "\""
+        }
+        print out
+    }'
+}
+MODULOS_IZQ="$(lista_json "$BAR_LEFT")"
+MODULOS_CENTRO="$(lista_json "$BAR_CENTER")"
+MODULOS_DER="$(lista_json "$BAR_RIGHT")"
+BOTONES_MODEL="$(lista_json "$BAR_BUTTONS")"
+
+case "$BAR_POSITION" in
+    left|right) BAR_VERTICAL="true" ;;
+    *)          BAR_VERTICAL="false" ;;
+esac
+
+# --- Ajustes en vivo para la barra -------------------------------------
+# La barra lee este archivo mientras está en marcha y se revincula sola
+# cuando cambia. Es lo que permite que tocar un ajuste se vea al instante en
+# vez de tener que matar quickshell y verlo desaparecer y reaparecer.
+AJUSTES_JSON="$CFG_DIR/settings.json"
+BLUR_JSON="false"; [ "$BLUR_ENABLED" = "1" ] && BLUR_JSON="true"
+cat > "$AJUSTES_JSON.tmp" <<JSON
+{
+  "accent_color":      "$ACCENT_COLOR",
+  "bar_position":      "$BAR_POSITION",
+  "bar_vertical":      $BAR_VERTICAL,
+  "bar_shape":         "$BAR_SHAPE",
+  "bar_grouping":      "$BAR_GROUPING",
+  "bar_height":        $BAR_HEIGHT,
+  "bar_module_height": $BAR_MODULE_HEIGHT,
+  "bar_font_size":     $BAR_FONT_SIZE,
+  "bar_spacing":       $BAR_SPACING,
+  "bar_opacity":       $BAR_OPACITY,
+  "bar_autohide":      $BAR_AUTOHIDE,
+  "screen_corners":    $SCREEN_CORNERS,
+  "metrics_interval":  $METRICS_INTERVAL,
+  "workspace_count":   $WORKSPACE_COUNT,
+  "clock_format":      "$CLOCK_FORMAT",
+  "clock_seconds":     $CLOCK_SECONDS,
+  "blur_enabled":      $BLUR_JSON,
+  "terminal_opacity":  $TERMINAL_OPACITY,
+  "animation_speed":   "$ANIMATION_SPEED",
+  "kb_layout":         "$KB_LAYOUT",
+  "bar_left":          [$MODULOS_IZQ],
+  "bar_center":        [$MODULOS_CENTRO],
+  "bar_right":         [$MODULOS_DER],
+  "bar_buttons":       [$BOTONES_MODEL]
+}
+JSON
+# Movimiento atómico: la barra vigila este archivo y leerlo a medio escribir
+# le daría un JSON truncado.
+mv -f "$AJUSTES_JSON.tmp" "$AJUSTES_JSON"
+
+# --- 1. Publicar shell.qml y sus componentes --------------------------
+# Ya no hay plantilla que rellenar: shell.qml lee settings.json mientras está
+# en marcha. Aquí sólo se copian los archivos, y sólo si cambiaron, para no
+# disparar sin motivo el vigilante de archivos de la barra.
+QS_DIR="$CFG_DIR/quickshell"
+mkdir -p "$QS_DIR"
+for _src in /etc/mikeos/desktop/*.qml "$QS_DIR"/*.qml.src; do
+    [ -f "$_src" ] || continue
+    _dst="$QS_DIR/$(basename "$_src" .src)"
+    cmp -s "$_src" "$_dst" || cp -f "$_src" "$_dst"
+done
+
+# --- 1.b Tema del sistema ----------------------------------------------
+# El color de acento sólo llegaba a la barra: se guardaba en settings.conf y
+# ahí se quedaba. Las ventanas GTK ni siquiera tenían tema, así que el
+# selector de fondos salía en blanco Adwaita mientras el resto del escritorio
+# era oscuro. Aquí el acento se reparte a GTK 3 y 4, a los bordes de las
+# ventanas y a la terminal, que es lo que hace que el sistema se vea de una
+# pieza.
+
+# "#00d4ff" -> "0, 212, 255", que es lo que entienden las funciones rgba()
+# de CSS y las de Hyprland.
+_hex="${ACCENT_COLOR#\#}"
+ACCENT_R=$(printf '%d' "0x${_hex%????}" 2>/dev/null || echo 0)
+ACCENT_G=$(printf '%d' "0x$(printf '%s' "$_hex" | cut -c3-4)" 2>/dev/null || echo 212)
+ACCENT_B=$(printf '%d' "0x$(printf '%s' "$_hex" | cut -c5-6)" 2>/dev/null || echo 255)
+
+for _gtk in gtk-3.0 gtk-4.0; do
+    mkdir -p "$HOME/.config/$_gtk"
+    cat > "$HOME/.config/$_gtk/settings.ini" <<INI
+[Settings]
+gtk-application-prefer-dark-theme=1
+gtk-theme-name=Adwaita-dark
+gtk-icon-theme-name=Adwaita
+gtk-font-name=Cantarell 11
+gtk-cursor-theme-size=24
+INI
+    # GTK 4 ignora gtk-theme-name para Adwaita, pero sí respeta estos
+    # colores nombrados; GTK 3 los usa igual.
+    cat > "$HOME/.config/$_gtk/gtk.css" <<CSS
+/* Generado por m-apply-settings. No editar: se reescribe al cambiar el
+   color de acento en el Centro de Control. */
+@define-color accent_color $ACCENT_COLOR;
+@define-color accent_bg_color $ACCENT_COLOR;
+@define-color accent_fg_color #0a0c12;
+@define-color theme_selected_bg_color $ACCENT_COLOR;
+@define-color theme_selected_fg_color #0a0c12;
+@define-color window_bg_color #14161d;
+@define-color window_fg_color #e6e8ee;
+@define-color view_bg_color #10121a;
+@define-color view_fg_color #e6e8ee;
+@define-color headerbar_bg_color #14161d;
+@define-color card_bg_color #181b24;
+
+selection { background-color: $ACCENT_COLOR; color: #0a0c12; }
+button:checked, button:active { background-image: none; background-color: $ACCENT_COLOR; color: #0a0c12; }
+CSS
+done
+
+# Las aplicaciones Qt (quickshell entre ellas) miran esta variable para
+# elegir paleta clara u oscura.
+mkdir -p "$HOME/.config/environment.d" 2>/dev/null || true
+
+# --- 2. Generar fragmento Hyprland (blur/animaciones/teclado) ----------
+HYPR_FRAG="$CFG_DIR/user-settings.hypr.conf"
+{
+    # Bordes del color de acento. Estaban fijos en hyprland.conf, así que
+    # cambiar el acento no se notaba en ninguna ventana.
+    echo "general {"
+    echo "    col.active_border = rgba(${_hex}ee) rgba(${_hex}88) 45deg"
+    echo "    col.inactive_border = rgba(252530aa)"
+    echo "}"
+    echo "# Generado por m-apply-settings; no editar a mano."
+    if [ "$BLUR_ENABLED" = "1" ]; then
+        echo "decoration { blur { enabled = true; size = 4; passes = 2; } }"
+    else
+        echo "decoration { blur { enabled = false; } }"
+    fi
+    case "$ANIMATION_SPEED" in
+        instant)
+            echo "animations { enabled = false; }"
+            ;;
+        normal)
+            cat <<'EOF'
+animations {
+    enabled = true
+    bezier = mikeEase, 0.16, 1.0, 0.3, 1.0
+    animation = windows, 1, 4, mikeEase
+    animation = workspaces, 1, 4, mikeEase, fade
+    animation = fade, 1, 4, mikeEase
+    animation = border, 1, 5, mikeEase
+}
+EOF
+            ;;
+        *)
+            # fast (por defecto): movimiento perceptible pero mínimo.
+            cat <<'EOF'
+animations {
+    enabled = true
+    bezier = mikeEase, 0.16, 1.0, 0.3, 1.0
+    animation = windows, 1, 1, mikeEase
+    animation = workspaces, 1, 1, mikeEase, fade
+    animation = fade, 1, 1, mikeEase
+    animation = border, 1, 1, mikeEase
+}
+EOF
+            ;;
+    esac
+    echo "input { kb_layout = $KB_LAYOUT }"
+
+    # Atajos de workspace generados según el número configurado. Antes estaban
+    # fijos a 1-4 en hyprland.conf: al subir el contador aparecían los botones
+    # en la barra, pero SUPER+5 no hacía nada y no había forma de llegar a los
+    # workspaces nuevos con el teclado.
+    #
+    # La fila de números del teclado es 1234567890, así que el workspace 10 se
+    # activa con la tecla 0, no con "10" (que Hyprland no reconocería como
+    # tecla). Ese es el tope: no hay más teclas en la fila.
+    i=1
+    while [ "$i" -le "$WORKSPACE_COUNT" ] && [ "$i" -le 10 ]; do
+        if [ "$i" -eq 10 ]; then
+            key=0
+        else
+            key=$i
+        fi
+        echo "bind = SUPER, $key, workspace, $i"
+        echo "bind = ALT, $key, workspace, $i"
+        echo "bind = SUPER SHIFT, $key, movetoworkspace, $i"
+        echo "bind = ALT SHIFT, $key, movetoworkspace, $i"
+        echo "workspace = $i, default:true"
+        i=$((i + 1))
+    done
+} > "$HYPR_FRAG"
+
+# --- 3. Opacidad de terminal: MTerminal la lee al arrancar --------------
+echo "$TERMINAL_OPACITY" > "$CFG_DIR/terminal-opacity"
+
+# --- 4. Aplicar en caliente ----------------------------------------------
+if command -v hyprctl >/dev/null 2>&1 && [ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]; then
+    hyprctl reload >/dev/null 2>&1 || true
+    # `hyprctl reload` relee la configuración pero no siempre reconfigura los
+    # teclados ya conectados, así que cambiar el layout desde el panel parecía
+    # no hacer nada hasta reiniciar la sesión. Con `keyword` se aplica en el
+    # acto sobre los dispositivos vivos.
+    hyprctl keyword input:kb_layout "$KB_LAYOUT" >/dev/null 2>&1 || true
+    hyprctl keyword input:kb_options "grp:alt_shift_toggle" >/dev/null 2>&1 || true
+fi
+
+# La barra ya no se reinicia. Antes había que matar quickshell en cada
+# "Aplicar" porque los ajustes venían cosidos dentro del propio shell.qml:
+# cambiar uno significaba reescribir su código fuente. Ese era el motivo de
+# que la barra desapareciera y volviera a aparecer con cada cambio.
+#
+# Ahora shell.qml vigila settings.json, que se acaba de escribir de forma
+# atómica más arriba, y Qt revincula solo todo lo que dependa de él. El
+# cambio se ve en el sitio.
+#
+# Si en algún momento hiciera falta forzar el reinicio (un componente QML
+# nuevo, por ejemplo), m-panel sigue supervisando el proceso: basta con
+# `pkill -x quickshell` y vuelve en menos de un segundo.
+
+echo "[OK] Ajustes aplicados."

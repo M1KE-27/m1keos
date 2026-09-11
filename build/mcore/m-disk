@@ -1,0 +1,14 @@
+#!/bin/sh
+# ==============================================================================
+# m-disk - MIKE OS Storage and Mount Manager
+# ==============================================================================
+set -eu
+
+echo "=== [DISPOSITIVOS DE BLOQUE] ==="
+ls -l /dev/sd* /dev/vd* /dev/nvme* 2>/dev/null || echo "No se encontraron discos adicionales."
+echo ""
+echo "=== [SISTEMAS DE ARCHIVOS MONTADOS] ==="
+df -h
+echo ""
+echo "=== [PUNTOS DE MONTAJE ACTIVOS] ==="
+mount | grep -E '^/dev' || echo "Sistema corriendo en initramfs (memoria)."

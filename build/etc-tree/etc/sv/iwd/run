@@ -1,0 +1,11 @@
+#!/bin/sh
+exec 2>&1
+# runit arranca todos los servicios de la etapa 2 en paralelo: sin esta
+# espera, iwd suele ganarle la carrera a dbus-system y muere en bucle con
+# "Failed to initialize D-Bus" (mismo patrón que seatd vs Hyprland).
+i=0
+while [ ! -S /run/dbus/system_bus_socket ] && [ "$i" -lt 50 ]; do
+    sleep 0.1
+    i=$((i + 1))
+done
+exec /usr/lib/iwd/iwd

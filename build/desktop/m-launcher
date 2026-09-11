@@ -1,0 +1,44 @@
+#!/bin/sh
+# ==============================================================================
+# m-launcher - MIKE Desktop Minimalist Application Launcher
+# Ultra-fast launcher triggered by SUPER key or terminal.
+# ==============================================================================
+set -eu
+
+if which fuzzel >/dev/null 2>&1; then
+    exec fuzzel \
+        --background-color=0f0f14fa \
+        --text-color=e0e0e0ff \
+        --match-color=00d4ffff \
+        --selection-color=1f1f2caa \
+        --selection-text-color=00d4ffff \
+        --border-color=00d4ffee \
+        --border-width=1 \
+        --border-radius=6 \
+        --font="monospace:size=12" \
+        --lines=6 \
+        --width=32 \
+        --prompt="> " \
+        "$@"
+fi
+
+# Fallback basic terminal menu launcher
+echo "=========================================================="
+echo "          MIKE DESKTOP APPLICATION LAUNCHER"
+echo "=========================================================="
+echo " 1) Terminal (MKShell)"
+echo " 2) System Monitor (m-system)"
+echo " 3) Health Doctor (m-doctor)"
+echo " 4) Package Manager (mpm)"
+echo " 5) Exit"
+echo "=========================================================="
+printf "Selecciona una opción [1-5]: "
+read -r OPTION
+case "$OPTION" in
+    1) exec /usr/bin/m-terminal ;;
+    2) m-system; printf "Presiona Enter..."; read -r _ ;;
+    3) m-doctor; printf "Presiona Enter..."; read -r _ ;;
+    4) mpm list; printf "Presiona Enter..."; read -r _ ;;
+    5) exit 0 ;;
+    *) echo "Opción inválida." ;;
+esac

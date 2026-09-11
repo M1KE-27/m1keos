@@ -1,0 +1,211 @@
+#!/bin/sh
+# ==============================================================================
+# start-mike-desktop - MIKE OS Graphical Session Launcher (v0.2.0)
+# Validates DRM/KMS hardware, establishes Wayland environment, and starts Hyprland.
+# ==============================================================================
+set -eu
+
+echo "=========================================================="
+echo "          INICIANDO SESIÓN GRÁFICA MIKE DESKTOP"
+echo "=========================================================="
+
+# 1. Configuración de Directorios XDG
+USER_ID="$(id -u)"
+export XDG_RUNTIME_DIR="/run/user/$USER_ID"
+export XDG_STATE_HOME="${HOME:-/root}/.local/state"
+export XDG_CACHE_HOME="${HOME:-/root}/.cache"
+export XDG_DATA_HOME="${HOME:-/root}/.local/share"
+export SEATD_SOCK="/run/seatd.sock"
+mkdir -p "$XDG_RUNTIME_DIR" "$XDG_STATE_HOME" "$XDG_CACHE_HOME" "$XDG_DATA_HOME" /run /var/log
+chmod 700 "$XDG_RUNTIME_DIR"
+
+# Generar el perfil antes de que Hyprland lea la configuración; así el mismo
+# dotfile se adapta a una notebook gubernamental o a una GPU potente.
+if command -v m-hw-profile >/dev/null 2>&1; then
+    m-hw-profile
+fi
+# Genera shell.qml + user-settings.hypr.conf a partir de
+# ~/.config/mike/settings.conf (o valores por defecto si aún no existe).
+# Hyprland hace "source" de ese fragmento más abajo: debe existir ANTES
+# de que arranque o falla el parseo del config.
+if command -v m-apply-settings >/dev/null 2>&1; then
+    m-apply-settings >/dev/null 2>&1 || true
+fi
+
+# 2. Permisos de hardware gráfico y terminales virtuales
+chmod 666 /dev/dri/card* /dev/dri/renderD* /dev/input/event* /dev/tty* /dev/fb* 2>/dev/null || true
+
+# 3. Validación y Detección de DRM / KMS
+DRM_CARD=""
+for card in /sys/class/drm/card[0-9]*; do
+    [ -d "$card" ] || continue
+    card_name="$(basename "$card")"
+    if echo "$card_name" | grep -qv -- "-"; then
+        DRM_CARD="/dev/dri/$card_name"
+        echo "DRM device detectado: $card_name"
+        
+        # Comprobar conectores asociados
+        for conn in /sys/class/drm/${card_name}-*; do
+            [ -d "$conn" ] || continue
+            conn_name="$(basename "$conn")"
+            conn_status="$(cat "$conn/status" 2>/dev/null || echo "unknown")"
+            echo "DRM connector detectado: $conn_name"
+            echo "estado del connector: $conn_status"
+            
+            if [ "$conn_status" = "connected" ] || [ "$conn_status" = "unknown" ]; then
+                if [ -f "$conn/modes" ] && [ -s "$conn/modes" ]; then
+                    mode="$(head -n 1 "$conn/modes" 2>/dev/null || echo "auto")"
+                    echo "resolución/modo KMS activo: $mode"
+                else
+                    echo "resolución/modo KMS activo: auto (1024x768 / preferido)"
+                fi
+            fi
+        done
+    fi
+done
+
+if [ -z "$DRM_CARD" ] || [ ! -e "$DRM_CARD" ]; then
+    echo "ERROR CRÍTICO: No se detectó ningún dispositivo /dev/dri/card* funcional." >&2
+    exit 1
+fi
+
+CONNECTED_COUNT=0
+for status_file in /sys/class/drm/card*-*/status; do
+    if [ -f "$status_file" ]; then
+        status_val="$(cat "$status_file" 2>/dev/null || echo "")"
+        if [ "$status_val" = "connected" ] || [ "$status_val" = "unknown" ]; then
+            CONNECTED_COUNT=$((CONNECTED_COUNT + 1))
+        fi
+    fi
+done
+
+if [ "$CONNECTED_COUNT" -eq 0 ]; then
+    echo "ERROR CRÍTICO: Ningún conector DRM se encuentra disponible (todos desconectados)." >&2
+    exit 1
+fi
+
+# 4. Variables de Entorno de Compositor y Aquamarine
+export AQ_DRM_DEVICES="$DRM_CARD"
+export WLR_DRM_DEVICES="$DRM_CARD"
+export XDG_CURRENT_DESKTOP="Hyprland"
+export XDG_SESSION_DESKTOP="Hyprland"
+export XDG_SESSION_TYPE="wayland"
+# Fallbacks conservadores solo para VMs/GPUs emuladas; en Intel/AMD/NVIDIA
+# reales dejamos que el backend use cursores y modifiers acelerados.
+if grep -Eqi 'QEMU|KVM|VMware|VirtualBox|Microsoft|Xen|virtio' /sys/devices/virtual/dmi/id/product_name /proc/cpuinfo 2>/dev/null; then
+    export WLR_NO_HARDWARE_CURSORS=1
+    export AQ_NO_MODIFIERS=1
+else
+    unset WLR_NO_HARDWARE_CURSORS AQ_NO_MODIFIERS
+fi
+export HYPRLAND_LOG_WLR=1
+export HYPRLAND_NO_RT=1
+export HYPRLAND_NO_SD_NOTIFY=1
+export QT_QPA_PLATFORM="wayland;xcb"
+export GDK_BACKEND="wayland,x11,*"
+export XCURSOR_THEME=""
+# Respetar la selección realizada desde el instalador/live USB.
+if [ -f /etc/mikeos/system.conf ]; then
+    . /etc/mikeos/system.conf
+fi
+# Aplicar la zona elegida en el instalador (o la zona detectada por el host)
+# para que la hora del panel y la de la terminal sean coherentes.
+if [ -n "${TIMEZONE:-}" ] && [ -f "/usr/share/zoneinfo/$TIMEZONE" ]; then
+    export TZ="$TIMEZONE"
+    ln -snf "/usr/share/zoneinfo/$TIMEZONE" /etc/localtime 2>/dev/null || true
+fi
+export XKB_DEFAULT_LAYOUT="${KEYMAP:-es},us"
+export XKB_DEFAULT_VARIANT="${XKB_VARIANT:-}"
+# 5. Poblar /dev/input con mdev (necesario para libinput)
+echo "Poblando dispositivos de entrada..."
+echo /bin/mdev > /proc/sys/kernel/hotplug 2>/dev/null || true
+mdev -s 2>/dev/null || true
+chmod 666 /dev/input/event* 2>/dev/null || true
+chmod 666 /dev/dri/card* /dev/dri/renderD* 2>/dev/null || true
+chmod 666 /dev/tty[0-9]* 2>/dev/null || true
+ls -la /dev/input/ 2>/dev/null || echo "WARN: /dev/input no existe"
+
+# 6. Configuración de Teclado
+export XKB_DEFAULT_RULES=evdev
+export XKB_DEFAULT_MODEL=pc105
+export XKB_CONFIG_ROOT=/usr/share/X11/xkb
+
+# 7. Configuración de Hyprland
+USER_CONFIG="${HOME:-/root}/.config/mike"
+if [ ! -d "$USER_CONFIG" ]; then
+    mkdir -p "$USER_CONFIG"
+    if [ -d "/etc/skel/.config/mike" ]; then
+        cp -r /etc/skel/.config/mike/* "$USER_CONFIG/" 2>/dev/null || true
+    fi
+fi
+
+HYPR_CONF="$USER_CONFIG/hyprland.conf"
+if [ ! -f "$HYPR_CONF" ]; then
+    HYPR_CONF="/etc/mikeos/desktop/hyprland.conf"
+fi
+
+# Migrar configuraciones creadas por versiones anteriores. Hyprland 0.56 no
+# acepta de forma fiable la expansión de '~' en `source` y retiró algunas
+# opciones antiguas; dejar el arreglo aquí evita que un usuario conserve un
+# dotfile que provoque el crash `basic_string ... null`.
+if [ -f "$HYPR_CONF" ] && [ -w "$HYPR_CONF" ]; then
+    sed -i \
+        -e 's#source[[:space:]]*=[[:space:]]*~/.config/mike/hyprland.local.conf#source = /etc/mikeos/desktop/hyprland.local.conf#' \
+        -e '/^[[:space:]]*vfr[[:space:]]*=/d' \
+        -e '/^[[:space:]]*no_direct_scanout[[:space:]]*=/d' \
+        -e '/^[[:space:]]*windowrulev2[[:space:]]*=/d' \
+        "$HYPR_CONF"
+fi
+
+EXTRA_FLAGS=""
+if [ "$USER_ID" -eq 0 ]; then
+    EXTRA_FLAGS="--i-am-really-stupid"
+fi
+
+echo "Hyprland iniciado"
+echo "=========================================================="
+
+# Bus de sesión de D-Bus. MIKE OS ya levanta el bus del sistema como servicio
+# de runit, pero un escritorio Wayland necesita además uno por sesión:
+# WirePlumber lo pide para reservar la tarjeta de sonido, y sin él no llega a
+# exponer ningún destino de audio. También es lo que usan MPRIS (saber qué se
+# está reproduciendo) y las notificaciones.
+if command -v dbus-run-session >/dev/null 2>&1; then
+    SESSION_BUS="dbus-run-session --"
+else
+    SESSION_BUS=""
+    echo "AVISO: sin dbus-run-session; no habrá bus de sesión (audio y multimedia limitados)." >&2
+fi
+
+# 8. Lanzar Hyprland conectando al servicio seatd persistente (root)
+#
+# seatd-launch spawnea SU PROPIO seatd con el UID de quien lo invoca. Como
+# este script ya corre como "mike" (console.run hizo su mike antes de
+# llegar aquí), ese seatd nacía sin privilegios y no podía abrir /dev/tty*
+# para VT-switching ("Permission denied" en libseat, Hyprland abortaba).
+# El servicio runit /etc/sv/seatd corre seatd como root de verdad y deja el
+# socket en manos de mike vía -u/-g; aquí solo hace falta esperarlo y
+# conectarse — nunca lanzar un seatd propio.
+i=0
+while [ ! -S /run/seatd.sock ] && [ "$i" -lt 50 ]; do
+    sleep 0.1
+    i=$((i + 1))
+done
+if [ ! -S /run/seatd.sock ]; then
+    echo "ERROR: /run/seatd.sock no apareció (servicio seatd caído); intentando LIBSEAT_BACKEND=noop." >&2
+    export LIBSEAT_BACKEND=noop
+else
+    export LIBSEAT_BACKEND=seatd
+    export SEATD_SOCK=/run/seatd.sock
+fi
+
+if which start-hyprland >/dev/null 2>&1; then
+    # Watchdog launcher de Hyprland; invocarlo directo puede salir
+    # inmediatamente (pantalla negra) en builds recientes.
+    exec $SESSION_BUS start-hyprland -- -c "$HYPR_CONF" $EXTRA_FLAGS
+elif which Hyprland >/dev/null 2>&1; then
+    exec $SESSION_BUS Hyprland -c "$HYPR_CONF" $EXTRA_FLAGS
+else
+    echo "ERROR: Binario de Hyprland no encontrado en PATH." >&2
+    exit 1
+fi

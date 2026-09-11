@@ -1,0 +1,63 @@
+#!/bin/sh
+# ==============================================================================
+# m-user - MIKE OS User and Group Manager
+# ==============================================================================
+set -eu
+
+usage() {
+    echo "Uso: m-user <comando> [argumentos]"
+    echo ""
+    echo "Comandos:"
+    echo "  list              Lista todos los usuarios del sistema"
+    echo "  add <usuario>     Crea un nuevo usuario con su home"
+    echo "  del <usuario>     Elimina un usuario"
+    echo "  passwd <usuario>  Cambia la contraseña de un usuario"
+    echo ""
+    exit 1
+}
+
+[ $# -lt 1 ] && usage
+
+CMD="$1"
+
+case "$CMD" in
+    list)
+        echo "=== [USUARIOS DE MIKE OS] ==="
+        printf "%-15s %-8s %-8s %-20s %s\n" "USUARIO" "UID" "GID" "HOME" "SHELL"
+        echo "-------------------------------------------------------------------"
+        awk -F: '{ printf "%-15s %-8s %-8s %-20s %s\n", $1, $3, $4, $6, $7 }' /etc/passwd
+        ;;
+    add)
+        [ -z "${2:-}" ] && usage
+        USER="$2"
+        case "$USER" in
+            [a-z_][a-z0-9_-]*) ;;
+            *) echo "m-user: nombre de usuario inválido: '$USER'" >&2; exit 1 ;;
+        esac
+        echo "Creando usuario '$USER'..."
+        adduser -D -s /bin/mkshell -h "/home/$USER" "$USER" 2>/dev/null || adduser -D "$USER"
+        echo "Configurando entorno para '$USER'..."
+        mkdir -p "/home/$USER"
+        cp /etc/profile "/home/$USER/.profile" 2>/dev/null || true
+        chown -R "$USER:$USER" "/home/$USER"
+        echo "Usuario '$USER' creado. Establece su contraseña con: m-user passwd $USER"
+        ;;
+    del)
+        [ -z "${2:-}" ] && usage
+        USER="$2"
+        case "$USER" in
+            [a-z_][a-z0-9_-]*) ;;
+            *) echo "m-user: nombre de usuario inválido: '$USER'" >&2; exit 1 ;;
+        esac
+        echo "Eliminando usuario '$USER'..."
+        deluser "$USER"
+        echo "Usuario eliminado."
+        ;;
+    passwd)
+        [ -z "${2:-}" ] && usage
+        passwd "$2"
+        ;;
+    *)
+        usage
+        ;;
+esac

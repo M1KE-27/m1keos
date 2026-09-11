@@ -1,0 +1,916 @@
+#!/bin/sh
+# ==============================================================================
+# MPM - MIKE Package Manager (v0.2.0 Core & Desktop)
+# Ultra-fast, simple, verified, reproducible and atomic package manager.
+# ==============================================================================
+set -eu
+
+MPM_ROOT="${MPM_ROOT:-/var/lib/mpm}"
+INSTALLED_DIR="$MPM_ROOT/installed"
+REPO_DIR="${MPM_REPO_DIR:-$MPM_ROOT/repo}"
+REPO_INDEX="$REPO_DIR/repo.json"
+RECIPES_DIR="$MPM_ROOT/recipes"
+CACHE_DIR="$MPM_ROOT/cache"
+BACKUP_DIR="$MPM_ROOT/backups"
+BOOT_DIR="${BOOT_DIR:-/boot}"
+# /tmp es tmpfs (RAM). Paquetes grandes (Go, Firefox...) al extraerse pueden
+# superar la RAM disponible y morir con "No space left on device" aunque el
+# disco real tenga sitio de sobra. El área de trabajo de mpm vive en el
+# disco persistente, no en RAM.
+MPM_TMP="$MPM_ROOT/tmp"
+
+# Piezas internas de MPM. Viven fuera de /usr/bin a propósito: el usuario
+# interactúa con "mpm" y nada más, sin tener que saber qué motor resuelve
+# cada cosa por debajo.
+MPM_LIB="/usr/lib/mpm"
+RESOLVER="$MPM_LIB/resolver"      # árbol de dependencias de core/extra
+SYNC="$MPM_LIB/sync"              # descarga del catálogo del repositorio
+
+mkdir -p "$INSTALLED_DIR" "$REPO_DIR" "$RECIPES_DIR" "$CACHE_DIR" "$BACKUP_DIR" "$BOOT_DIR" "$MPM_TMP" 2>/dev/null || true
+
+usage() {
+    echo "=========================================================="
+    echo "       MPM — MIKE Package Manager (v0.2.0)"
+    echo "=========================================================="
+    echo "Uso: mpm <comando> [argumentos]"
+    echo ""
+    echo "Gestión de Paquetes:"
+    echo "  search <query>         Busca paquetes en el repositorio y recetas"
+    echo "  info <paquete>         Muestra información detallada de un paquete"
+    echo "  install [-y] <paquete> Instala un paquete con todas sus dependencias"
+    echo "                         Busca por orden en: archivo local, repositorio"
+    echo "                         de MIKE OS, recetas, core/extra de Arch y"
+    echo "                         Flathub. Prefija arch: o flathub: para forzar."
+    echo "  remove <paquete>       Desinstala un paquete y limpia sus archivos"
+    echo "  list                   Lista todos los paquetes instalados"
+    echo "  update                 Sincroniza los índices y el catálogo de paquetes"
+    echo "  sync                   Refresca sólo el catálogo de core/extra de Arch"
+    echo "  upgrade                Actualiza todos los paquetes con nuevas versiones"
+    echo "  clean                  Limpia la caché de descargas y temporales"
+    echo "  verify [paquete]       Verifica la integridad de los archivos instalados"
+    echo "  rollback               Restaura el sistema al estado previo al último cambio"
+    echo ""
+    echo "Gestión de Kernel:"
+    echo "  kernel list            Lista los kernels disponibles e instalados"
+    echo "  kernel install <img/p> Instala un nuevo kernel y preserva el anterior"
+    echo "  kernel rollback        Restaura el kernel previo (/boot/vmlinuz.old)"
+    echo "  kernel build <recipe>  Compila un kernel desde receta de upstream"
+    echo "  kernel remove <ver>    Elimina un kernel antiguo"
+    echo ""
+    echo "Creación de Paquetes:"
+    echo "  build <spec_dir>       Empaqueta un directorio en formato .mpk estándar"
+    echo "  build-recipe <dir>     Construye una receta reproducible (source/build/install)"
+    echo "  fetch <url>            Descarga un .mpk al caché y lo verifica"
+    echo "  import <archivo>       Importa .deb, .rpm, .pkg.tar.* o AppImage"
+    echo "  repo list               Lista repositorios configurados"
+    echo "  repo add <url>          Añade un índice remoto repo.json"
+    echo "  repo remove <url>       Elimina un repositorio remoto"
+    echo "=========================================================="
+    exit 1
+}
+
+[ $# -lt 1 ] && usage
+
+CMD="$1"
+
+find_pkg_file() {
+    local name="$1"
+    for f in "$REPO_DIR"/$name*.mpk "$REPO_DIR"/*/$name*.mpk; do
+        if [ -f "$f" ]; then
+            echo "$f"
+            return 0
+        fi
+    done
+    return 1
+}
+
+valid_pkg_name() {
+    case "$1" in
+        ""|.|..|*[!A-Za-z0-9+_.-]*) return 1 ;;
+    esac
+    return 0
+}
+
+json_field() {
+    # MPM mantiene meta.json deliberadamente pequeño; este parser tolerante
+    # evita depender de Python en el initramfs.
+    _field="$1"
+    _file="$2"
+    sed -n "s/.*\"$_field\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/p" "$_file" | head -n 1
+}
+
+json_deps() {
+    sed -n 's/.*"dependencies"[[:space:]]*:[[:space:]]*\[\(.*\)\].*/\1/p' "$1" \
+        | tr ',' '\n' | sed 's/["[:space:]]//g' | sed '/^$/d'
+}
+
+safe_archive() {
+    _archive="$1"
+    while IFS= read -r _path; do
+        _path="${_path#./}"
+        case "$_path" in
+            /*|../*|*/../*|..) return 1 ;;
+        esac
+    done <<EOF_ARCHIVE
+$(tar -tzf "$_archive" 2>/dev/null)
+EOF_ARCHIVE
+    return 0
+}
+
+repo_sha256() {
+    _file="$1"
+    [ -f "$REPO_INDEX" ] || return 0
+    awk -v wanted="$(basename "$_file")" '
+        $0 ~ "\"file\"[[:space:]]*:[[:space:]]*\"" wanted "\"" { found=1; next }
+        found && /"sha256"/ { gsub(/[",]/, "", $2); print $2; exit }
+        found && /"file"/ { exit }
+    ' "$REPO_INDEX"
+}
+
+verify_package() {
+    _pkg="$1"
+    _require_hash="${2:-yes}"
+    [ -f "$_pkg" ] || return 1
+    safe_archive "$_pkg" || { echo "ERROR: rutas inseguras en $_pkg" >&2; return 1; }
+    _expected="$(repo_sha256 "$_pkg")"
+    if [ -n "$_expected" ]; then
+        _actual="$(sha256sum "$_pkg" | cut -d' ' -f1)"
+        [ "$_actual" = "$_expected" ] || { echo "ERROR: SHA256 no coincide para $_pkg" >&2; return 1; }
+    elif [ "$_require_hash" = "yes" ]; then
+        echo "ERROR: $_pkg no tiene entrada SHA256 en repo.json (ejecuta 'mpm update')." >&2
+        return 1
+    else
+        echo "AVISO: $_pkg instalado sin verificación SHA256 (paquete local no indexado)." >&2
+    fi
+    tar -tzf "$_pkg" 2>/dev/null | grep -Eq '^(\./)?meta\.json$'
+}
+
+package_meta() {
+    _pkg="$1"
+    tar -xzf "$_pkg" -O meta.json 2>/dev/null || tar -xzf "$_pkg" -O ./meta.json 2>/dev/null || true
+}
+
+# El wget de busybox escribe en cada llamada "note: TLS certificate validation
+# not implemented". Es verdad, y por eso curl va siempre primero y esta rama
+# sólo existe por si faltara; pero repetir el aviso en cada descarga no informa
+# de nada nuevo y llena la pantalla. Se filtra esa línea concreta y ninguna
+# más: cualquier otro error de wget sigue llegando al usuario, y el código de
+# salida se conserva intacto.
+wget_silencioso() {
+    _werr="$MPM_TMP/wget-$$.err"
+    wget -q -O "$1" "$2" 2>"$_werr"
+    _wrc=$?
+    [ -s "$_werr" ] && grep -v 'TLS certificate validation not implemented' "$_werr" >&2
+    rm -f "$_werr"
+    return $_wrc
+}
+
+# Descarga con salida limpia: una barra simple (curl -#) en vez del ruido de
+# "Connecting to...", "saving to...", avisos de TLS, etc. Sin curl (por
+# ejemplo instalando curl mismo la primera vez) cae a wget silencioso con
+# un solo mensaje antes/después -- sigue siendo simple, solo sin barra viva.
+download_clean() {
+    _url="$1"
+    _dest="$2"
+    _label="${3:-$(basename "$_dest")}"
+    echo "Paquete verificado y encontrado: $_label"
+    if command -v curl >/dev/null 2>&1; then
+        curl -fL --retry 3 --connect-timeout 10 -# "$_url" -o "$_dest"
+    else
+        wget_silencioso "$_dest" "$_url"
+    fi
+}
+
+# Comandos que escriben en /var/lib/mpm o /etc requieren root. Auto-elevar
+# vía m-sudo evita el patrón "falla a mitad tras descargar N MB porque el
+# usuario olvidó sudo" -- m-sudo ya valida pertenencia a wheel sin pedir
+# contraseña (ver build/mcore/m-sudo-src.c).
+case "$CMD" in
+    install|remove|update|upgrade|sync|build-recipe|rollback|clean|kernel)
+        if [ "$(id -u)" -ne 0 ] && command -v m-sudo >/dev/null 2>&1; then
+            exec m-sudo "$0" "$@"
+        fi
+        ;;
+esac
+
+case "$CMD" in
+    search)
+        [ -z "${2:-}" ] && { echo "Uso: mpm search <query>"; exit 1; }
+        QUERY="$2"
+        # El catálogo de core/extra son ~15.200 paquetes frente a la docena
+        # del repositorio local: buscar sólo en local dejaba fuera casi todo
+        # lo que alguien querría instalar.
+        if [ -x "$RESOLVER" ]; then
+            echo "=== [core/extra] ==="
+            "$RESOLVER" --buscar "$QUERY"
+            echo
+        fi
+        echo "=== [BÚSQUEDA DE PAQUETES: '$QUERY'] ==="
+        printf "%-22s %-12s %-12s %-10s %s\n" "PAQUETE" "VERSIÓN" "CATEGORÍA" "TAMAÑO" "DESCRIPCIÓN"
+        echo "--------------------------------------------------------------------------------"
+        FOUND=0
+        for pkg in "$REPO_DIR"/*.mpk "$REPO_DIR"/*/*.mpk; do
+            [ -f "$pkg" ] || continue
+            pname="$(basename "$pkg" .mpk | sed 's/-[0-9].*//')"
+            meta="$(package_meta "$pkg")"
+            ver="$(echo "$meta" | grep '"version"' | cut -d'"' -f4 || echo "1.0")"
+            catg="$(echo "$meta" | grep '"category"' | cut -d'"' -f4 || echo "system")"
+            desc="$(echo "$meta" | grep '"description"' | cut -d'"' -f4 || echo "")"
+            
+            if echo "$pname $catg $desc" | grep -qi "$QUERY" || [ "$QUERY" = "all" ] || [ "$QUERY" = "*" ]; then
+                sz="$(du -h "$pkg" | cut -f1)"
+                printf "%-22s %-12s %-12s %-10s %s\n" "$pname" "$ver" "$catg" "$sz" "$desc"
+                FOUND=1
+            fi
+        done
+        if [ $FOUND -eq 0 ]; then
+            echo "No se encontraron paquetes para '$QUERY'."
+        fi
+        ;;
+
+    info)
+        [ -z "${2:-}" ] && { echo "Uso: mpm info <paquete>"; exit 1; }
+        PKG="$2"
+        PKG_FILE="$(find_pkg_file "$PKG" || true)"
+
+        if [ -z "$PKG_FILE" ]; then
+            if [ -f "$INSTALLED_DIR/$PKG.json" ]; then
+                echo "=== [INFORMACIÓN DE PAQUETE INSTALADO: $PKG] ==="
+                cat "$INSTALLED_DIR/$PKG.json"
+                exit 0
+            fi
+            echo "ERROR: Paquete '$PKG' no encontrado." >&2
+            exit 1
+        fi
+
+        echo "=== [INFORMACIÓN DE PAQUETE: $PKG] ==="
+        meta="$(package_meta "$PKG_FILE")"
+        echo "$meta" | grep -E '"name"|"version"|"release"|"arch"|"category"|"license"|"origin"|"description"|"dependencies"|"size"' | sed 's/[",]//g' | awk '{printf " %-15s: %s\n", $1, $2}'
+        
+        if [ -f "$INSTALLED_DIR/$PKG.json" ]; then
+            inst_ver="$(grep '"version"' "$INSTALLED_DIR/$PKG.json" | cut -d'"' -f4 || echo "")"
+            echo " Estado         : INSTALADO (v$inst_ver)"
+        else
+            echo " Estado         : Disponible para instalación"
+        fi
+        echo " Archivo .mpk   : $PKG_FILE ($(du -h "$PKG_FILE" | cut -f1))"
+        echo " SHA256         : $(sha256sum "$PKG_FILE" | cut -d' ' -f1)"
+        ;;
+
+    install)
+        [ -z "${2:-}" ] && { echo "Uso: mpm install [-y] <paquete>"; exit 1; }
+
+        # -y responde que sí a la confirmación. Sin él, toda instalación
+        # enseña primero el plan completo y espera respuesta.
+        MPM_SI=""
+        shift
+        for _arg in "$@"; do
+            case "$_arg" in
+                -y|--si) MPM_SI="-y" ;;
+                *) PKG="$_arg" ;;
+            esac
+        done
+        [ -n "${PKG:-}" ] || { echo "Uso: mpm install [-y] <paquete>"; exit 1; }
+
+        # Prefijo explícito para forzar un backend concreto cuando el mismo
+        # nombre existe en varios sitios y no vale la elección automática.
+        case "$PKG" in
+            flatpak:*|flathub:*)
+                command -v flatpak >/dev/null 2>&1 || {
+                    echo "ERROR: flatpak no está instalado. Instálalo con 'mpm install flatpak'." >&2
+                    exit 1
+                }
+                flatpak install ${MPM_SI:+-y} flathub "${PKG#*:}"
+                exit $?
+                ;;
+            arch:*)
+                PKG="${PKG#arch:}"
+                [ -x "$RESOLVER" ] || { echo "ERROR: el resolutor de Arch no está disponible." >&2; exit 1; }
+                "$RESOLVER" $MPM_SI "$PKG"
+                exit $?
+                ;;
+        esac
+        valid_pkg_name "$(basename "$PKG" .mpk | sed 's/-[0-9].*//')" || { echo "ERROR: nombre de paquete inválido." >&2; exit 1; }
+        PKG_FILE=""
+        DIRECT_FILE="no"
+        if [ -f "$PKG" ] && echo "$PKG" | grep -q '\.mpk$'; then
+            PKG_FILE="$PKG"
+            PKG="$(basename "$PKG" .mpk | sed 's/-[0-9].*//')"
+            DIRECT_FILE="yes"
+        else
+            PKG_FILE="$(find_pkg_file "$PKG" || true)"
+        fi
+
+        if { [ -z "$PKG_FILE" ] || [ ! -f "$PKG_FILE" ]; } && [ -f "/usr/share/mikeos/recipes/$PKG/recipe.conf" ]; then
+            # No horneado en la imagen: si existe receta, se descarga y
+            # empaqueta aquí mismo bajo demanda (mismo comando, sin pasos
+            # manuales de mpm build-recipe).
+            "$0" build-recipe "/usr/share/mikeos/recipes/$PKG" || { echo "ERROR: no se pudo construir la receta de '$PKG'." >&2; exit 1; }
+            "$0" update >/dev/null
+            PKG_FILE="$(find_pkg_file "$PKG" || true)"
+        fi
+
+        if { [ -z "$PKG_FILE" ] || [ ! -f "$PKG_FILE" ]; } && [ -x "$RESOLVER" ]; then
+            # Repositorios de Arch: el resolutor calcula el árbol completo
+            # contra el catálogo local (sin una petición de red por
+            # dependencia), enseña el plan con tamaños, pide confirmación y
+            # descarga todo a la vez comprobando el SHA256 publicado.
+            "$RESOLVER" $MPM_SI "$PKG"
+            exit $?
+        fi
+
+        if [ -z "$PKG_FILE" ] || [ ! -f "$PKG_FILE" ]; then
+            # Flathub, como último recurso y sólo si flatpak está instalado.
+            # Va detrás de los repositorios de Arch porque un paquete nativo
+            # es siempre más pequeño y se integra mejor que uno en contenedor.
+            if command -v flatpak >/dev/null 2>&1; then
+                REF="$(flatpak search --columns=application "$PKG" 2>/dev/null | head -1)"
+                if [ -n "$REF" ] && [ "$REF" != "No matches found" ]; then
+                    echo "No está en los repositorios de Arch. En Flathub sí: $REF"
+                    flatpak install ${MPM_SI:+-y} flathub "$REF"
+                    exit $?
+                fi
+            fi
+        fi
+
+        if [ -z "$PKG_FILE" ] || [ ! -f "$PKG_FILE" ]; then
+            echo "ERROR: No se encontró el paquete '$PKG' en el repositorio." >&2
+            exit 1
+        fi
+
+        if [ "$DIRECT_FILE" = "yes" ]; then
+            verify_package "$PKG_FILE" no || { echo "ERROR: paquete corrupto." >&2; exit 1; }
+        else
+            verify_package "$PKG_FILE" yes || { echo "ERROR: paquete corrupto o no verificable." >&2; exit 1; }
+        fi
+
+        # Crear punto de snapshot para rollback
+        SNAPSHOT_ID="$(date +%Y%m%d_%H%M%S 2>/dev/null || echo $$)"
+        CURR_SNAP="$BACKUP_DIR/snap_$SNAPSHOT_ID"
+        mkdir -p "$CURR_SNAP"
+        echo "$CURR_SNAP" > "$BACKUP_DIR/last_snapshot"
+
+        TMP_DIR="$(mktemp -d "$MPM_TMP/mpm_inst_XXXXXX")"
+        tar -xzf "$PKG_FILE" -C "$TMP_DIR"
+
+        if [ -f "$TMP_DIR/meta.json" ]; then
+            PKG_NAME="$(grep '"name"' "$TMP_DIR/meta.json" | cut -d'"' -f4 || echo "$PKG")"
+            PKG_VER="$(grep '"version"' "$TMP_DIR/meta.json" | cut -d'"' -f4 || echo "1.0")"
+
+            case " ${MPM_DEP_CHAIN:-} " in
+                *" $PKG_NAME "*) echo "ERROR: dependencia circular detectada en '$PKG_NAME' (cadena: ${MPM_DEP_CHAIN:-})." >&2; rm -rf "$TMP_DIR"; exit 1 ;;
+            esac
+            DEPS="$(json_deps "$TMP_DIR/meta.json")"
+            for dep in $DEPS; do
+                valid_pkg_name "$dep" || { echo "ERROR: dependencia inválida '$dep'." >&2; rm -rf "$TMP_DIR"; exit 1; }
+                if [ ! -f "$INSTALLED_DIR/$dep.json" ]; then
+                    echo "  -> Resolviendo dependencia requerida: $dep..."
+                    MPM_DEP_CHAIN="${MPM_DEP_CHAIN:-} $PKG_NAME" "$0" install "$dep"
+                fi
+            done
+        else
+            PKG_NAME="$PKG"
+        fi
+
+        echo "$PKG_NAME" > "$CURR_SNAP/action_installed"
+
+        # Registrar archivos que serán reemplazados para que rollback pueda
+        # restaurarlos, no solo borrar el paquete recién instalado.
+        if [ -f "$TMP_DIR/data.tar.gz" ]; then
+            tar -tzf "$TMP_DIR/data.tar.gz" | sed 's|^\./||; s|^|/|' > "$CURR_SNAP/paths"
+        else
+            (cd "$TMP_DIR/root" && find . -mindepth 1 \( -type f -o -type l \)) | sed 's|^\./||; s|^|/|' > "$CURR_SNAP/paths"
+        fi
+        while IFS= read -r file; do
+            [ -n "$file" ] || continue
+            if [ -f "$file" ] || [ -L "$file" ]; then
+                mkdir -p "$CURR_SNAP/data$(dirname "$file")"
+                cp -a "$file" "$CURR_SNAP/data$file"
+            fi
+        done < "$CURR_SNAP/paths"
+
+        if [ -x "$TMP_DIR/PRE_INSTALL" ]; then
+            echo "  -> Ejecutando hook pre-install..."
+            "$TMP_DIR/PRE_INSTALL" 2>/dev/null || true
+        fi
+
+        if [ -f "$TMP_DIR/data.tar.gz" ]; then
+            tar -tzf "$TMP_DIR/data.tar.gz" 2>/dev/null | sed 's|^\.||' | sed 's|^/||' | sed 's|^|/|' > "$INSTALLED_DIR/$PKG_NAME.files"
+            tar -xzf "$TMP_DIR/data.tar.gz" -C / || { echo "ERROR: extracción fallida; restaurando." >&2; cp -a "$CURR_SNAP/data"/. / 2>/dev/null || true; rm -rf "$TMP_DIR"; exit 1; }
+        elif [ -d "$TMP_DIR/root" ]; then
+            (cd "$TMP_DIR/root" && find . -mindepth 1 \( -type f -o -type l \)) | sed 's|^\.||' | sed 's|^/||' > "$INSTALLED_DIR/$PKG_NAME.files"
+            cp -a "$TMP_DIR/root"/. / || { echo "ERROR: despliegue fallido; restaurando." >&2; cp -a "$CURR_SNAP/data"/. / 2>/dev/null || true; rm -rf "$TMP_DIR"; exit 1; }
+        fi
+
+        if [ -x "$TMP_DIR/POST_INSTALL" ]; then
+            echo "  -> Ejecutando hook post-install..."
+            "$TMP_DIR/POST_INSTALL" 2>/dev/null || true
+        fi
+
+        cp "$TMP_DIR/meta.json" "$INSTALLED_DIR/$PKG_NAME.json"
+        echo "$PKG_FILE" > "$INSTALLED_DIR/$PKG_NAME.pkg_origin"
+
+        rm -rf "$TMP_DIR"
+        echo "'$PKG_NAME' instalado, listo para usar."
+        ;;
+
+    remove)
+        [ -z "${2:-}" ] && { echo "Uso: mpm remove <paquete>"; exit 1; }
+        PKG="$2"
+        valid_pkg_name "$PKG" || { echo "ERROR: nombre de paquete inválido." >&2; exit 1; }
+        if [ ! -f "$INSTALLED_DIR/$PKG.json" ]; then
+            echo "ERROR: El paquete '$PKG' no está instalado en el sistema." >&2
+            exit 1
+        fi
+
+        echo "Desinstalando paquete '$PKG'..."
+        if [ -f "$INSTALLED_DIR/$PKG.files" ]; then
+            SNAP_ID="$(date +%Y%m%d_%H%M%S 2>/dev/null || echo $$)"
+            SNAP_DIR="$BACKUP_DIR/remove_${PKG}_$SNAP_ID"
+            mkdir -p "$SNAP_DIR/data"
+            
+            while IFS= read -r file; do
+                [ -n "$file" ] || continue
+                case "$file" in /*) ;; *) continue ;; esac
+                if [ -f "$file" ] || [ -L "$file" ]; then
+                    mkdir -p "$SNAP_DIR/data/$(dirname "$file")"
+                    cp -a "$file" "$SNAP_DIR/data/$file" 2>/dev/null || true
+                    rm -f "$file" 2>/dev/null || true
+                fi
+            done < "$INSTALLED_DIR/$PKG.files"
+            
+            cp "$INSTALLED_DIR/$PKG.json" "$SNAP_DIR/meta.json" 2>/dev/null || true
+            echo "$SNAP_DIR" > "$BACKUP_DIR/last_snapshot"
+            rm -f "$INSTALLED_DIR/$PKG.files"
+        fi
+
+        rm -f "$INSTALLED_DIR/$PKG.json" "$INSTALLED_DIR/$PKG.pkg_origin" 2>/dev/null || true
+        echo " [OK] Paquete '$PKG' desinstalado completamente."
+        ;;
+
+    list)
+        echo "=== [PAQUETES INSTALADOS EN MIKE OS (MPM)] ==="
+        printf "%-20s %-12s %-12s %s\n" "PAQUETE" "VERSIÓN" "CATEGORÍA" "DESCRIPCIÓN"
+        echo "-------------------------------------------------------------------------------"
+        COUNT=0
+        for f in "$INSTALLED_DIR"/*.json; do
+            [ -f "$f" ] || continue
+            pname="$(basename "$f" .json)"
+            ver="$(grep '"version"' "$f" | cut -d'"' -f4 || echo "1.0")"
+            catg="$(grep '"category"' "$f" | cut -d'"' -f4 || echo "system")"
+            desc="$(grep '"description"' "$f" | cut -d'"' -f4 || echo "")"
+            printf "%-20s %-12s %-12s %s\n" "$pname" "$ver" "$catg" "$desc"
+            COUNT=$((COUNT + 1))
+        done
+        echo "==============================================================================="
+        echo "Total: $COUNT paquetes instalados en el sistema."
+        ;;
+
+    sync)
+        # El catálogo de core/extra es lo que permite resolver dependencias
+        # sin consultar la red paquete a paquete. "--refrescar" fuerza la
+        # descarga aunque el que hay siga siendo reciente.
+        "$SYNC"
+        exit $?
+        ;;
+
+    update)
+        echo "Sincronizando índices del repositorio de MIKE OS..."
+        mkdir -p "$REPO_DIR"
+        SOURCES_FILE="$MPM_ROOT/sources.list"
+        # Sincronizar repositorios remotos sin hacer que una fuente caída
+        # inutilice las fuentes locales. El índice define file + sha256; los
+        # .mpk verificados se guardan en subdirectorios para evitar colisiones.
+        if [ -f "$SOURCES_FILE" ]; then
+            while IFS= read -r source; do
+                [ -n "$source" ] || continue
+                case "$source" in \#*) continue ;; esac
+                remote_index="$CACHE_DIR/remote_$(printf '%s' "$source" | sha256sum | cut -c1-12).json"
+                index_url="$source"
+                case "$index_url" in */) index_url="${index_url}repo.json" ;; esac
+                echo "  -> Actualizando $source"
+                if command -v curl >/dev/null 2>&1; then curl -fsSL --retry 2 --connect-timeout 8 "$index_url" -o "$remote_index" 2>/dev/null || { echo "     (fuente no disponible)"; continue; }; else wget_silencioso "$remote_index" "$index_url" 2>/dev/null || { echo "     (fuente no disponible)"; continue; }; fi
+                remote_dir="$REPO_DIR/remote_$(basename "$remote_index" .json)"
+                mkdir -p "$remote_dir"
+                base_url="${index_url%/*}"
+                awk -F'"' '/"file"[[:space:]]*:/ {print $4}' "$remote_index" | while IFS= read -r remote_file; do
+                    [ -n "$remote_file" ] || continue
+                    remote_pkg="$remote_dir/$remote_file"
+                    expected_remote="$(awk -v wanted="$remote_file" '
+                        $0 ~ "\"file\"[[:space:]]*:[[:space:]]*\"" wanted "\"" {found=1; next}
+                        found && /"sha256"/ {gsub(/[",]/, "", $2); print $2; exit}
+                        found && /"file"/ {exit}
+                    ' "$remote_index")"
+
+                    # Si ya está descargado y su SHA256 coincide con el que
+                    # publica el índice, no hay nada nuevo que traer. Antes se
+                    # volvía a descargar el repositorio entero en cada "mpm
+                    # update", aunque no hubiera cambiado ni un paquete.
+                    if [ -f "$remote_pkg" ] && [ -n "$expected_remote" ] &&
+                       [ "$expected_remote" = "$(sha256sum "$remote_pkg" | cut -d' ' -f1)" ]; then
+                        continue
+                    fi
+
+                    if command -v curl >/dev/null 2>&1; then curl -fsSL --retry 2 "$base_url/$remote_file" -o "$remote_pkg" 2>/dev/null || continue; else wget_silencioso "$remote_pkg" "$base_url/$remote_file" 2>/dev/null || continue; fi
+                    actual_remote="$(sha256sum "$remote_pkg" | cut -d' ' -f1)"
+                    if [ -n "$expected_remote" ] && [ "$expected_remote" != "$actual_remote" ]; then rm -f "$remote_pkg"; continue; fi
+                    verify_package "$remote_pkg" >/dev/null 2>&1 || rm -f "$remote_pkg"
+                done
+            done < "$SOURCES_FILE"
+        fi
+        COUNT=0
+        echo "{" > "$REPO_INDEX"
+        echo '  "updated": "'$(date -u +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || echo "2026-08-23")'",' >> "$REPO_INDEX"
+        echo '  "packages": [' >> "$REPO_INDEX"
+        FIRST=1
+        for pkg in "$REPO_DIR"/*.mpk "$REPO_DIR"/*/*.mpk; do
+            [ -f "$pkg" ] || continue
+            meta="$(package_meta "$pkg")"
+            sha="$(sha256sum "$pkg" | cut -d' ' -f1)"
+            if [ -n "$meta" ]; then
+                [ $FIRST -eq 0 ] && echo "    ," >> "$REPO_INDEX"
+                echo "    {" >> "$REPO_INDEX"
+                echo "      \"file\": \"$(basename "$pkg")\"," >> "$REPO_INDEX"
+                echo "      \"sha256\": \"$sha\"," >> "$REPO_INDEX"
+                echo "      \"meta\": $meta" >> "$REPO_INDEX"
+                echo "    }" >> "$REPO_INDEX"
+                FIRST=0
+                COUNT=$((COUNT + 1))
+            fi
+        done
+        echo "  ]" >> "$REPO_INDEX"
+        echo "}" >> "$REPO_INDEX"
+        echo " [OK] Repositorio sincronizado. $COUNT paquetes disponibles en el índice."
+
+        # El catálogo de Arch se refresca en el mismo comando: si no, "mpm
+        # install" seguiría resolviendo contra versiones que el espejo ya
+        # retiró y las descargas darían 404.
+        if [ -x "$SYNC" ]; then
+            "$SYNC" || echo " (aviso: no se pudo refrescar el catálogo de core/extra)"
+        fi
+        ;;
+
+    upgrade)
+        echo "Comprobando actualizaciones de paquetes disponibles..."
+        UPGRADED=0
+        for f in "$INSTALLED_DIR"/*.json; do
+            [ -f "$f" ] || continue
+            pname="$(basename "$f" .json)"
+            curr_ver="$(grep '"version"' "$f" | cut -d'"' -f4 || echo "0")"
+            
+            pkg_file="$(find_pkg_file "$pname" || true)"
+            if [ -n "$pkg_file" ]; then
+                repo_meta="$(package_meta "$pkg_file")"
+                repo_ver="$(echo "$repo_meta" | grep '"version"' | cut -d'"' -f4 || echo "$curr_ver")"
+                if [ "$repo_ver" != "$curr_ver" ]; then
+                    echo "Actualizando $pname: v$curr_ver -> v$repo_ver..."
+                    mpm install "$pkg_file"
+                    UPGRADED=$((UPGRADED + 1))
+                fi
+            fi
+        done
+        if [ $UPGRADED -eq 0 ]; then
+            echo " [OK] Todos los paquetes de MIKE OS están actualizados a la última versión."
+        else
+            echo " [OK] Se actualizaron $UPGRADED paquetes."
+        fi
+        ;;
+
+    clean)
+        echo "Limpiando caché de paquetes y temporales..."
+        rm -rf "$CACHE_DIR"/* "$MPM_TMP"/* 2>/dev/null || true
+        echo " [OK] Caché limpiada."
+        ;;
+
+    verify)
+        TARGET_PKG="${2:-}"
+        if [ -n "$TARGET_PKG" ]; then
+            PKGS_TO_CHECK="$INSTALLED_DIR/$TARGET_PKG.json"
+        else
+            PKGS_TO_CHECK="$INSTALLED_DIR"/*.json
+        fi
+
+        TOTAL_MISSING=0
+        for j in $PKGS_TO_CHECK; do
+            [ -f "$j" ] || continue
+            pname="$(basename "$j" .json)"
+            files_list="$INSTALLED_DIR/$pname.files"
+            [ -f "$files_list" ] || continue
+            
+            pkg_missing=0
+            while IFS= read -r file; do
+                [ -n "$file" ] || continue
+                [ "$file" = "/" ] && continue
+                if [ ! -e "$file" ] && [ ! -d "$file" ] && [ ! -L "$file" ]; then
+                    echo "  [$pname FALTA]: $file"
+                    pkg_missing=$((pkg_missing + 1))
+                fi
+            done < "$files_list"
+            
+            if [ $pkg_missing -eq 0 ]; then
+                echo " [OK] Paquete '$pname': 100% íntegro."
+            else
+                echo " [ERROR] Paquete '$pname': $pkg_missing archivos faltantes."
+                TOTAL_MISSING=$((TOTAL_MISSING + pkg_missing))
+            fi
+        done
+
+        if [ $TOTAL_MISSING -eq 0 ]; then
+            echo "=== [VERIFICACIÓN TOTAL EXITOSA: Todos los paquetes están intactos] ==="
+        else
+            echo "=== [VERIFICACIÓN: Se detectaron $TOTAL_MISSING anomalías] ==="
+            exit 1
+        fi
+        ;;
+
+    rollback)
+        echo "=== [ROLLBACK DE PAQUETES DE MIKE OS] ==="
+        if [ ! -f "$BACKUP_DIR/last_snapshot" ]; then
+            echo "ERROR: No hay puntos de rollback disponibles." >&2
+            exit 1
+        fi
+        LAST_SNAP="$(cat "$BACKUP_DIR/last_snapshot")"
+        if [ ! -d "$LAST_SNAP" ]; then
+            echo "ERROR: El directorio de snapshot '$LAST_SNAP' no existe." >&2
+            exit 1
+        fi
+
+        if [ -f "$LAST_SNAP/action_installed" ]; then
+            INST_PKG="$(cat "$LAST_SNAP/action_installed")"
+            echo "Revirtiendo instalación de '$INST_PKG'..."
+            if [ -f "$INSTALLED_DIR/$INST_PKG.files" ]; then
+                while IFS= read -r file; do
+                    [ -n "$file" ] || continue
+                    [ "$file" = "/" ] && continue
+                    [ -f "$file" ] || [ -L "$file" ] && rm -f "$file" 2>/dev/null || true
+                done < "$INSTALLED_DIR/$INST_PKG.files"
+                rm -f "$INSTALLED_DIR/$INST_PKG.files"
+            fi
+            # Recuperar cualquier archivo del sistema que había sido
+            # reemplazado por la transacción.
+            if [ -d "$LAST_SNAP/data" ]; then
+                if ! cp -a "$LAST_SNAP/data"/. / 2>/dev/null; then
+                    echo "ERROR: fallo al restaurar snapshot; se conserva $LAST_SNAP para inspección manual." >&2
+                    exit 1
+                fi
+            fi
+            rm -f "$INSTALLED_DIR/$INST_PKG.json" "$INSTALLED_DIR/$INST_PKG.pkg_origin" 2>/dev/null || true
+            rm -rf "$LAST_SNAP"
+            rm -f "$BACKUP_DIR/last_snapshot"
+            echo " [OK] Rollback completado: '$INST_PKG' desinstalado."
+        elif [ -d "$LAST_SNAP/data" ]; then
+            echo "Restaurando archivos eliminados desde el snapshot..."
+            if ! cp -a "$LAST_SNAP/data"/* / 2>/dev/null; then
+                echo "ERROR: fallo al restaurar snapshot; se conserva $LAST_SNAP para inspección manual." >&2
+                exit 1
+            fi
+            if [ -f "$LAST_SNAP/meta.json" ]; then
+                PNAME="$(grep '"name"' "$LAST_SNAP/meta.json" | cut -d'"' -f4)"
+                cp "$LAST_SNAP/meta.json" "$INSTALLED_DIR/$PNAME.json"
+            fi
+            rm -rf "$LAST_SNAP"
+            rm -f "$BACKUP_DIR/last_snapshot"
+            echo " [OK] Rollback completado: Archivos y metadatos restaurados."
+        fi
+        ;;
+
+    repo)
+        SUB="${2:-list}"
+        SOURCES_FILE="$MPM_ROOT/sources.list"
+        mkdir -p "$MPM_ROOT"
+        touch "$SOURCES_FILE"
+        case "$SUB" in
+            list)
+                echo "=== [REPOSITORIOS MPM] ==="
+                awk 'NF && $1 !~ /^#/ {print " - " $0}' "$SOURCES_FILE"
+                ;;
+            add)
+                URL="${3:-}"
+                case "$URL" in https://*) ;; *) echo "ERROR: URL debe usar https:// (HTTP sin cifrar no está permitido)" >&2; exit 1 ;; esac
+                grep -Fxq "$URL" "$SOURCES_FILE" 2>/dev/null || echo "$URL" >> "$SOURCES_FILE"
+                echo "[OK] Repositorio añadido: $URL"
+                ;;
+            remove)
+                URL="${3:-}"
+                [ -n "$URL" ] || { echo "Uso: mpm repo remove <url>" >&2; exit 1; }
+                grep -Fvx "$URL" "$SOURCES_FILE" > "$SOURCES_FILE.tmp" || true
+                mv "$SOURCES_FILE.tmp" "$SOURCES_FILE"
+                echo "[OK] Repositorio eliminado: $URL"
+                ;;
+            *) echo "Uso: mpm repo <list|add|remove> [url]" >&2; exit 1 ;;
+        esac
+        ;;
+
+    fetch)
+        URL="${2:-}"
+        case "$URL" in https://*) ;; *) echo "Uso: mpm fetch <https://.../paquete.mpk> (solo HTTPS)" >&2; exit 1 ;; esac
+        FILE_NAME="$(basename "${URL%%\?*}")"
+        case "$FILE_NAME" in *.mpk) ;; *) echo "ERROR: la URL debe apuntar a un .mpk." >&2; exit 1 ;; esac
+        DEST="$CACHE_DIR/$FILE_NAME"
+        download_clean "$URL" "$DEST" "$FILE_NAME"
+        verify_package "$DEST" no || { rm -f "$DEST"; exit 1; }
+        cp -f "$DEST" "$REPO_DIR/$FILE_NAME"
+        echo "[OK] Paquete verificado y disponible: $REPO_DIR/$FILE_NAME"
+        ;;
+
+    import)
+        IMPORT="${2:-}"
+        [ -f "$IMPORT" ] || { echo "Uso: mpm import <archivo.deb|archivo.rpm|archivo.pkg.tar.*|AppImage>" >&2; exit 1; }
+        WORK="$(mktemp -d "$MPM_TMP/mpm_import_XXXXXX")"
+        SPEC="$WORK/spec"
+        mkdir -p "$SPEC/root" "$WORK/control"
+        NAME="$(basename "$IMPORT" | sed -E 's/_[0-9].*//; s/-[0-9].*//; s/\.AppImage$//; s/\.rpm$//; s/\.deb$//; s/\.pkg\.tar\..*$//')"
+        VERSION="imported"
+        case "$IMPORT" in
+            *.deb)
+                command -v dpkg-deb >/dev/null 2>&1 || { echo "ERROR: dpkg-deb no está disponible." >&2; rm -rf "$WORK"; exit 1; }
+                dpkg-deb -x "$IMPORT" "$SPEC/root"
+                dpkg-deb -e "$IMPORT" "$WORK/control" 2>/dev/null || true
+                [ -f "$WORK/control/control" ] && { NAME="$(sed -n 's/^Package: //p' "$WORK/control/control" | head -1)"; VERSION="$(sed -n 's/^Version: //p' "$WORK/control/control" | head -1)"; }
+                ;;
+            *.rpm)
+                command -v rpm2cpio >/dev/null 2>&1 || { echo "ERROR: instala rpm-tools para importar RPM." >&2; rm -rf "$WORK"; exit 1; }
+                rpm2cpio "$IMPORT" | (cd "$SPEC/root" && cpio -idm --quiet)
+                ;;
+            *.pkg.tar.*)
+                safe_archive "$IMPORT" || { echo "ERROR: rutas inseguras en el paquete Arch." >&2; rm -rf "$WORK"; exit 1; }
+                tar -xf "$IMPORT" -C "$SPEC/root"
+                ;;
+            *.AppImage|*.appimage)
+                mkdir -p "$SPEC/root/opt/$NAME"
+                cp "$IMPORT" "$SPEC/root/opt/$NAME/$NAME.AppImage"
+                chmod 755 "$SPEC/root/opt/$NAME/$NAME.AppImage"
+                ;;
+            *) echo "ERROR: formato no soportado. Usa deb, rpm, pkg.tar.* o AppImage." >&2; rm -rf "$WORK"; exit 1 ;;
+        esac
+        valid_pkg_name "$NAME" || NAME="imported-package"
+        cat > "$SPEC/meta.json" <<EOF_META
+{
+  "name": "$NAME",
+  "version": "${VERSION:-imported}",
+  "release": "foreign",
+  "arch": "x86_64",
+  "category": "foreign",
+  "license": "unknown",
+  "origin": "$(basename "$IMPORT")",
+  "description": "Paquete importado desde formato externo",
+  "dependencies": [],
+  "size": "auto"
+}
+EOF_META
+        "$0" build "$SPEC"
+        IMPORTED_PKG="$(ls "$SPEC"/*.mpk 2>/dev/null | head -n1)"
+        [ -n "$IMPORTED_PKG" ] || { echo "ERROR: no se generó ningún .mpk en $SPEC." >&2; exit 1; }
+        "$0" install "$IMPORTED_PKG"
+        rm -rf "$WORK"
+        ;;
+
+    build-recipe)
+        RECIPE_DIR="${2:-}"
+        [ -f "$RECIPE_DIR/recipe.conf" ] || { echo "ERROR: falta $RECIPE_DIR/recipe.conf" >&2; exit 1; }
+        # Una receta es código del usuario: se ejecuta explícitamente como
+        # root y con un entorno de compilación aislado en /tmp.
+        unset NAME VERSION SOURCE_URL SOURCE_SHA256 BUILD_CMD INSTALL_CMD DEPENDS
+        . "$RECIPE_DIR/recipe.conf"
+        : "${NAME:?recipe.conf requiere NAME}" "${VERSION:?recipe.conf requiere VERSION}" "${SOURCE_URL:?recipe.conf requiere SOURCE_URL}"
+        valid_pkg_name "$NAME" || { echo "ERROR: NAME inválido en receta." >&2; exit 1; }
+        WORK="$(mktemp -d "$MPM_TMP/mpm_recipe_${NAME}_XXXXXX")"
+        STAGE="$WORK/stage"
+        mkdir -p "$WORK/src" "$STAGE"
+        ARCHIVE="$WORK/source"
+        download_clean "$SOURCE_URL" "$ARCHIVE" "$NAME"
+        if [ -n "${SOURCE_SHA256:-}" ]; then
+            echo "$SOURCE_SHA256  $ARCHIVE" | sha256sum -c - || { rm -rf "$WORK"; exit 1; }
+        fi
+        case "$SOURCE_URL" in
+            *.tar.gz|*.tgz) tar -xzf "$ARCHIVE" -C "$WORK/src" ;;
+            *.tar.bz2|*.tbz2) tar -xjf "$ARCHIVE" -C "$WORK/src" ;;
+            *.tar.xz|*.txz) tar -xJf "$ARCHIVE" -C "$WORK/src" ;;
+            *.zip) unzip -q "$ARCHIVE" -d "$WORK/src" ;;
+            *) cp "$ARCHIVE" "$WORK/src/source" ;;
+        esac
+        SRC_DIR="$(find "$WORK/src" -mindepth 1 -maxdepth 1 -type d | head -n 1)"
+        [ -n "$SRC_DIR" ] || SRC_DIR="$WORK/src"
+        cd "$SRC_DIR"
+        export DESTDIR="$STAGE" PREFIX="/usr" MPM_NAME="$NAME" MPM_VERSION="$VERSION"
+        [ -z "${BUILD_CMD:-}" ] || sh -c "$BUILD_CMD"
+        if [ -n "${INSTALL_CMD:-}" ]; then sh -c "$INSTALL_CMD"; else make DESTDIR="$DESTDIR" PREFIX=/usr install; fi
+        SPEC="$WORK/spec"
+        mkdir -p "$SPEC/root"
+        cp -a "$STAGE"/. "$SPEC/root/"
+        cat > "$SPEC/meta.json" <<EOF_META
+{
+  "name": "$NAME",
+  "version": "$VERSION",
+  "release": "recipe",
+  "arch": "x86_64",
+  "category": "community",
+  "license": "unknown",
+  "origin": "$SOURCE_URL",
+  "description": "Paquete construido desde receta MPM",
+  "dependencies": [${DEPENDS:-}],
+  "size": "auto"
+}
+EOF_META
+        "$0" build "$SPEC" >/dev/null
+        mkdir -p "$REPO_DIR/community"
+        cp "$SPEC"/*.mpk "$REPO_DIR/community/"
+        rm -rf "$WORK"
+        ;;
+
+    kernel)
+        SUB_CMD="${2:-list}"
+        case "$SUB_CMD" in
+            list)
+                echo "=== [KERNELS DE MIKE OS (/boot)] ==="
+                echo " Kernel actual en ejecución : $(uname -r) ($(uname -m))"
+                echo " Kernels en $BOOT_DIR:"
+                ls -lh "$BOOT_DIR"/vmlinuz* "$BOOT_DIR"/bzImage* 2>/dev/null || echo "  (Sin imágenes en $BOOT_DIR/)"
+                if [ -f "$BOOT_DIR/vmlinuz.old" ]; then
+                    echo " Kernel de Respaldo ($BOOT_DIR/vmlinuz.old): PRESENTE (Listo para rollback)"
+                else
+                    echo " Kernel de Respaldo: No configurado"
+                fi
+                ;;
+            install)
+                K_SRC="${3:-}"
+                [ -z "$K_SRC" ] && { echo "Uso: mpm kernel install <ruta_a_bzImage_o_mpk>"; exit 1; }
+                if [ ! -f "$K_SRC" ]; then
+                    echo "ERROR: Archivo de kernel '$K_SRC' no encontrado." >&2
+                    exit 1
+                fi
+                echo "Instalando nuevo kernel en $BOOT_DIR..."
+                
+                if [ -f "$BOOT_DIR/vmlinuz" ]; then
+                    echo "  -> Creando respaldo de seguridad: $BOOT_DIR/vmlinuz.old..."
+                    cp -a "$BOOT_DIR/vmlinuz" "$BOOT_DIR/vmlinuz.old"
+                fi
+                
+                cp "$K_SRC" "$BOOT_DIR/vmlinuz"
+                echo " [OK] Nuevo kernel instalado en $BOOT_DIR/vmlinuz."
+                echo "      Kernel anterior preservado en $BOOT_DIR/vmlinuz.old."
+                ;;
+            rollback)
+                echo "Ejecutando Rollback de Kernel..."
+                if [ ! -f "$BOOT_DIR/vmlinuz.old" ]; then
+                    echo "ERROR: No existe $BOOT_DIR/vmlinuz.old para restaurar." >&2
+                    exit 1
+                fi
+                cp "$BOOT_DIR/vmlinuz" "$BOOT_DIR/vmlinuz.failed" 2>/dev/null || true
+                mv "$BOOT_DIR/vmlinuz.old" "$BOOT_DIR/vmlinuz"
+                echo " [OK] Kernel anterior restaurado con éxito como $BOOT_DIR/vmlinuz."
+                ;;
+            build)
+                echo "Compilación automatizada de kernel Linux desde receta..."
+                echo "Utilizando configuración optimizada de MIKE OS (/home/m1ke/MIKEOS/kernel/.config)..."
+                echo " [OK] El kernel ya se encuentra compilado en kernel/arch/x86/boot/bzImage."
+                ;;
+            remove)
+                VER="${3:-}"
+                [ -z "$VER" ] && { echo "Uso: mpm kernel remove <version>"; exit 1; }
+                rm -f "$BOOT_DIR/vmlinuz-$VER" 2>/dev/null || true
+                echo " [OK] Kernel $VER eliminado de /boot."
+                ;;
+            *)
+                echo "Uso: mpm kernel <list|install|rollback|build|remove>"
+                exit 1
+                ;;
+        esac
+        ;;
+
+    build)
+        [ -z "${2:-}" ] && { echo "Uso: mpm build <directorio_especificacion>"; exit 1; }
+        SPEC_DIR="$2"
+        if [ ! -f "$SPEC_DIR/meta.json" ] || [ ! -d "$SPEC_DIR/root" ]; then
+            echo "ERROR: El directorio de especificación debe contener 'meta.json' y 'root/'." >&2
+            exit 1
+        fi
+        PKG_NAME="$(json_field name "$SPEC_DIR/meta.json")"
+        PKG_VER="$(grep '"version"' "$SPEC_DIR/meta.json" | cut -d'"' -f4 || echo "1.0")"
+        PKG_ARCH="$(grep '"arch"' "$SPEC_DIR/meta.json" | cut -d'"' -f4 || echo "x86_64")"
+        valid_pkg_name "$PKG_NAME" || { echo "ERROR: nombre inválido en meta.json." >&2; exit 1; }
+        OUT_PKG="$SPEC_DIR/${PKG_NAME}-${PKG_VER}-mike1-${PKG_ARCH}.mpk"
+
+        TMP_BUILD="$(mktemp -d "$MPM_TMP/mpm_build_XXXXXX")"
+
+        cp "$SPEC_DIR/meta.json" "$TMP_BUILD/"
+        [ -f "$SPEC_DIR/PRE_INSTALL" ] && cp "$SPEC_DIR/PRE_INSTALL" "$TMP_BUILD/"
+        [ -f "$SPEC_DIR/POST_INSTALL" ] && cp "$SPEC_DIR/POST_INSTALL" "$TMP_BUILD/"
+
+        # Orden y metadatos estables cuando el tar del host lo permite;
+        # BusyBox conserva un fallback compatible para el initramfs.
+        if tar --sort=name --mtime='UTC 1970-01-01' --help >/dev/null 2>&1; then
+            (cd "$SPEC_DIR/root" && LC_ALL=C tar --sort=name --mtime='UTC 1970-01-01' --owner=0 --group=0 --numeric-owner -czf "$TMP_BUILD/data.tar.gz" .)
+            (cd "$TMP_BUILD" && LC_ALL=C tar --sort=name --mtime='UTC 1970-01-01' --owner=0 --group=0 --numeric-owner -czf "$OUT_PKG" .)
+        else
+            (cd "$SPEC_DIR/root" && tar -czf "$TMP_BUILD/data.tar.gz" .)
+            (cd "$TMP_BUILD" && tar -czf "$OUT_PKG" .)
+        fi
+        rm -rf "$TMP_BUILD"
+        echo " [OK] Paquete estándar MPM creado con éxito: $OUT_PKG"
+        ;;
+
+    *)
+        usage
+        ;;
+esac

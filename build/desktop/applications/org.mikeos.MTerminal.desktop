@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Terminal
+Comment=MTerminal — terminal nativa de MIKE OS
+Exec=/usr/bin/m-terminal
+Icon=utilities-terminal
+Terminal=false
+Categories=System;TerminalEmulator;
