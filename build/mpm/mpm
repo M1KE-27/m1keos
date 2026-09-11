@@ -197,35 +197,53 @@ case "$CMD" in
     search)
         [ -z "${2:-}" ] && { echo "Uso: mpm search <query>"; exit 1; }
         QUERY="$2"
-        # El catálogo de core/extra son ~15.200 paquetes frente a la docena
-        # del repositorio local: buscar sólo en local dejaba fuera casi todo
-        # lo que alguien querría instalar.
-        if [ -x "$RESOLVER" ]; then
-            echo "=== [core/extra] ==="
-            "$RESOLVER" --buscar "$QUERY"
-            echo
-        fi
-        echo "=== [BÚSQUEDA DE PAQUETES: '$QUERY'] ==="
-        printf "%-22s %-12s %-12s %-10s %s\n" "PAQUETE" "VERSIÓN" "CATEGORÍA" "TAMAÑO" "DESCRIPCIÓN"
-        echo "--------------------------------------------------------------------------------"
-        FOUND=0
+        # Una sola búsqueda y un solo resultado.
+        #
+        # Antes eran dos búsquedas independientes que imprimían cada una por
+        # su cuenta: primero salían los resultados de core/extra y justo
+        # después una cabecera nueva rematada con "No se encontraron paquetes
+        # para 'ripgrep'", debajo de tres ripgrep. El propio gestor se
+        # contradecía en la misma pantalla.
+        # Los resultados se juntan en una variable, no en un archivo: buscar
+        # es de sólo lectura y lo hace cualquiera, pero $MPM_TMP vive dentro
+        # de /var/lib/mpm y es de root, así que un usuario normal recibía
+        # "Permission denied" al intentar buscar un paquete.
+        RESULTADOS=""
+
+        # Repositorio de MIKE OS: lo propio va primero, que es lo que está
+        # probado en este sistema.
         for pkg in "$REPO_DIR"/*.mpk "$REPO_DIR"/*/*.mpk; do
             [ -f "$pkg" ] || continue
             pname="$(basename "$pkg" .mpk | sed 's/-[0-9].*//')"
             meta="$(package_meta "$pkg")"
             ver="$(echo "$meta" | grep '"version"' | cut -d'"' -f4 || echo "1.0")"
-            catg="$(echo "$meta" | grep '"category"' | cut -d'"' -f4 || echo "system")"
             desc="$(echo "$meta" | grep '"description"' | cut -d'"' -f4 || echo "")"
-            
-            if echo "$pname $catg $desc" | grep -qi "$QUERY" || [ "$QUERY" = "all" ] || [ "$QUERY" = "*" ]; then
-                sz="$(du -h "$pkg" | cut -f1)"
-                printf "%-22s %-12s %-12s %-10s %s\n" "$pname" "$ver" "$catg" "$sz" "$desc"
-                FOUND=1
+            if echo "$pname $desc" | grep -qi "$QUERY" || [ "$QUERY" = "all" ] || [ "$QUERY" = "*" ]; then
+                RESULTADOS="$RESULTADOS$(printf "%-24s %-12s %-10s %s" "$pname" "$ver" "mikeos" "$desc")
+"
             fi
         done
-        if [ $FOUND -eq 0 ]; then
-            echo "No se encontraron paquetes para '$QUERY'."
+
+        # core/extra de Arch: ~15.200 paquetes, que es de donde sale casi
+        # todo lo que alguien quiere instalar de verdad.
+        if [ -x "$RESOLVER" ]; then
+            ARCH_RES="$("$RESOLVER" --buscar "$QUERY" 2>/dev/null | while read -r rnom rrepo rdesc; do
+                [ -n "$rnom" ] || continue
+                printf "%-24s %-12s %-10s %s\n" "$rnom" "-" "$rrepo" "$rdesc"
+            done)"
+            [ -n "$ARCH_RES" ] && RESULTADOS="$RESULTADOS$ARCH_RES
+"
         fi
+
+        RESULTADOS="$(printf '%s' "$RESULTADOS" | sed '/^[[:space:]]*$/d')"
+        if [ -z "$RESULTADOS" ]; then
+            echo "Nada que coincida con '$QUERY'."
+            exit 0
+        fi
+        printf "%-24s %-12s %-10s %s\n" "PAQUETE" "VERSIÓN" "ORIGEN" "DESCRIPCIÓN"
+        printf '%s\n' "$RESULTADOS"
+        echo
+        echo "$(printf '%s\n' "$RESULTADOS" | wc -l | tr -d ' ') resultado(s). Instalar: mpm install <paquete>"
         ;;
 
     info)
@@ -780,7 +798,16 @@ EOF_META
         ARCHIVE="$WORK/source"
         download_clean "$SOURCE_URL" "$ARCHIVE" "$NAME"
         if [ -n "${SOURCE_SHA256:-}" ]; then
-            echo "$SOURCE_SHA256  $ARCHIVE" | sha256sum -c - || { rm -rf "$WORK"; exit 1; }
+            # sha256sum -c imprime la ruta temporal completa del archivo
+            # ("/var/lib/mpm/tmp/mpm_recipe_ripgrep_JNNJHJ/source: OK"), que
+            # no le dice nada a nadie. El resultado se dice con nuestras
+            # palabras y la ruta interna se queda dentro.
+            if echo "$SOURCE_SHA256  $ARCHIVE" | sha256sum -c - >/dev/null 2>&1; then
+                echo "  integridad verificada"
+            else
+                echo "  ERROR: la descarga no coincide con su firma SHA256." >&2
+                rm -rf "$WORK"; exit 1
+            fi
         fi
         case "$SOURCE_URL" in
             *.tar.gz|*.tgz) tar -xzf "$ARCHIVE" -C "$WORK/src" ;;

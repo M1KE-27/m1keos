@@ -299,7 +299,7 @@ mv -f "$AJUSTES_JSON.tmp" "$AJUSTES_JSON"
 # disparar sin motivo el vigilante de archivos de la barra.
 QS_DIR="$CFG_DIR/quickshell"
 mkdir -p "$QS_DIR"
-for _src in /etc/mikeos/desktop/*.qml "$QS_DIR"/*.qml.src; do
+for _src in /etc/mikeos/desktop/*.qml /etc/mikeos/desktop/qmldir "$QS_DIR"/*.qml.src; do
     [ -f "$_src" ] || continue
     _dst="$QS_DIR/$(basename "$_src" .src)"
     cmp -s "$_src" "$_dst" || cp -f "$_src" "$_dst"

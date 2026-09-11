@@ -5,7 +5,7 @@ import QtQuick.Layouts
 Text {
     property string texto: ""
     text: texto
-    color: "#c9d1dc"
+    color: Paleta.texto
     font.pixelSize: 11
     Layout.preferredWidth: 150
 }

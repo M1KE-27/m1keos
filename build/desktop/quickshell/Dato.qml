@@ -4,7 +4,7 @@ import QtQuick
 Text {
     property string texto: ""
     text: texto
-    color: "#ffffff"
+    color: Paleta.texto
     font.pixelSize: 11
     font.bold: true
 }

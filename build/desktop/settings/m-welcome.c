@@ -67,6 +67,19 @@ static const Bind SYSTEM[] = {
     { "SUPER + M / F12",     "Salir de la sesión" },
 };
 
+/* Los cinco que hacen falta para empezar. El resto sigue estando, pero
+ * plegado: la primera pantalla del sistema enseñaba veinticuatro atajos en
+ * tres columnas y nadie lee veinticuatro atajos de golpe. */
+static const Bind ESENCIALES[] = {
+    { "SUPER/ALT + Return", "Abrir terminal" },
+    { "SUPER/ALT + Space",  "Buscar y abrir aplicaciones" },
+    { "SUPER/ALT + Q",      "Cerrar la ventana activa" },
+    { "SUPER/ALT + 1..4",   "Cambiar de escritorio" },
+    { "SUPER + F1",         "Diagnóstico del sistema" },
+};
+
+static const Section ESENCIAL = { "Para empezar", ESENCIALES, G_N_ELEMENTS(ESENCIALES) };
+
 static const Section SECTIONS[] = {
     { "Terminal",       TERMINAL,   G_N_ELEMENTS(TERMINAL) },
     { "Aplicaciones",   APPS,       G_N_ELEMENTS(APPS) },
@@ -120,7 +133,7 @@ static GtkWidget *build_hardware(void) {
     gtk_widget_set_name(caja, "customizebox");
     gtk_container_set_border_width(GTK_CONTAINER(caja), 16);
 
-    GtkWidget *tit = gtk_label_new("⚙ Tu equipo");
+    GtkWidget *tit = gtk_label_new("Tu equipo");
     gtk_widget_set_name(tit, "customizetitle");
     gtk_widget_set_halign(tit, GTK_ALIGN_START);
     gtk_box_pack_start(GTK_BOX(caja), tit, FALSE, FALSE, 0);
@@ -174,10 +187,9 @@ static GtkWidget *build_hardware(void) {
     gtk_box_pack_start(GTK_BOX(caja), lst, FALSE, FALSE, 0);
 
     if (recomendado->len > 0) {
-        char *txt = g_strdup_printf(
-            "Para aprovecharlo del todo faltan:%s\n"
-            "Se descargan de los repositorios oficiales; puedes hacerlo ahora "
-            "o más tarde con «m-drivers» en la terminal.", recomendado->str);
+        /* El botón de abajo dice lo que hace; no hace falta un párrafo que
+         * además tranquilice sobre cuándo pulsarlo. */
+        char *txt = g_strdup_printf("Faltan por instalar:%s", recomendado->str);
         GtkWidget *rec = gtk_label_new(txt);
         g_free(txt);
         gtk_widget_set_name(rec, "customizetext");
@@ -192,9 +204,7 @@ static GtkWidget *build_hardware(void) {
         g_signal_connect(btn, "clicked", G_CALLBACK(on_instalar_drivers), NULL);
         gtk_box_pack_start(GTK_BOX(caja), btn, FALSE, FALSE, 6);
     } else {
-        GtkWidget *ok = gtk_label_new(
-            "Todo lo que lleva este equipo funciona ya: no hace falta instalar "
-            "ningún controlador.");
+        GtkWidget *ok = gtk_label_new("Nada pendiente de instalar.");
         gtk_widget_set_name(ok, "customizetext");
         gtk_widget_set_halign(ok, GTK_ALIGN_START);
         gtk_label_set_line_wrap(GTK_LABEL(ok), TRUE);
@@ -219,20 +229,26 @@ int main(int argc, char **argv) {
 
     GtkCssProvider *css = gtk_css_provider_new();
     gtk_css_provider_load_from_data(css,
-        "window { background-color: rgba(8, 10, 16, 0.88); }"
-        "#title { color: #ffffff; font-size: 34px; font-weight: bold; }"
-        "#subtitle { color: #8a8a9a; font-size: 15px; }"
-        "#sechdr { color: #00d4ff; font-size: 14px; font-weight: bold;"
+        /* Los mismos cinco colores que el resto del escritorio (ver
+         * quickshell/Paleta.qml). El acento se reserva para el único botón
+         * que hace algo: antes teñía los títulos, las teclas, los bordes y
+         * las tarjetas, y todo gritaba a la vez. */
+        "window { background-color: rgba(11, 13, 17, 0.92); }"
+        "#title { color: #e8ebf0; font-size: 32px; font-weight: bold; }"
+        "#subtitle { color: #79818f; font-size: 14px; }"
+        "#sechdr { color: #79818f; font-size: 12px; font-weight: bold;"
         "  letter-spacing: 1px; }"
-        "#key { color: #7fe8ff; font-family: monospace; font-weight: bold; font-size: 13px; }"
-        "#desc { color: #d6d6df; font-size: 13px; }"
-        "#gobtn { background-color: #00d4ff; color: #000000; font-weight: bold;"
-        "  font-size: 16px; border-radius: 8px; padding: 14px 30px; }"
+        "#key { color: #e8ebf0; font-family: monospace; font-weight: bold; font-size: 13px; }"
+        "#desc { color: #79818f; font-size: 13px; }"
+        "#gobtn { background-color: #00d4ff; color: #05070c; font-weight: bold;"
+        "  font-size: 15px; border-radius: 8px; padding: 12px 26px; border: none; }"
         "#gobtn:hover { background-color: #33ddff; }"
-        "#customizebox { background-color: rgba(13, 43, 51, 0.9);"
-        "  border: 1px solid #00d4ff; border-radius: 10px; }"
-        "#customizetitle { color: #00d4ff; font-weight: bold; font-size: 15px; }"
-        "#customizetext { color: #c9d6da; font-size: 13px; }",
+        "#expander { color: #79818f; font-size: 13px; }"
+        "#expander > label { color: #79818f; }"
+        "#customizebox { background-color: #161a21;"
+        "  border: 1px solid #262c36; border-radius: 10px; }"
+        "#customizetitle { color: #e8ebf0; font-weight: bold; font-size: 14px; }"
+        "#customizetext { color: #79818f; font-size: 13px; }",
         -1, NULL);
     gtk_style_context_add_provider_for_screen(gdk_screen_get_default(),
         GTK_STYLE_PROVIDER(css), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
@@ -297,34 +313,25 @@ int main(int argc, char **argv) {
     gtk_box_pack_start(GTK_BOX(cols), col2, TRUE, TRUE, 0);
     gtk_box_pack_start(GTK_BOX(cols), col3, TRUE, TRUE, 0);
 
-    gtk_box_pack_start(GTK_BOX(col1), build_section(&SECTIONS[0]), FALSE, FALSE, 0);
-    gtk_box_pack_start(GTK_BOX(col1), build_section(&SECTIONS[1]), FALSE, FALSE, 0);
-    gtk_box_pack_start(GTK_BOX(col2), build_section(&SECTIONS[2]), FALSE, FALSE, 0);
-    gtk_box_pack_start(GTK_BOX(col2), build_section(&SECTIONS[3]), FALSE, FALSE, 0);
-    gtk_box_pack_start(GTK_BOX(col3), build_section(&SECTIONS[4]), FALSE, FALSE, 0);
+    /* Columna 1: sólo lo esencial. Columna 2: todo lo demás, plegado.
+     * Columna 3: lo que hay dentro de este equipo. */
+    gtk_box_pack_start(GTK_BOX(col1), build_section(&ESENCIAL), FALSE, FALSE, 0);
 
-    gtk_box_pack_start(GTK_BOX(col3), build_hardware(), FALSE, FALSE, 12);
+    GtkWidget *todos = gtk_expander_new("Ver todos los atajos");
+    gtk_widget_set_name(todos, "expander");
+    GtkWidget *caja_todos = gtk_box_new(GTK_ORIENTATION_VERTICAL, 18);
+    for (guint i = 0; i < G_N_ELEMENTS(SECTIONS); i++)
+        gtk_box_pack_start(GTK_BOX(caja_todos), build_section(&SECTIONS[i]), FALSE, FALSE, 0);
+    gtk_container_add(GTK_CONTAINER(todos), caja_todos);
+    gtk_box_pack_start(GTK_BOX(col2), todos, FALSE, FALSE, 0);
 
-    GtkWidget *custbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
-    gtk_widget_set_name(custbox, "customizebox");
-    gtk_container_set_border_width(GTK_CONTAINER(custbox), 16);
-    GtkWidget *custtitle = gtk_label_new("↗ Personaliza MIKE OS a tu ritmo");
-    gtk_widget_set_name(custtitle, "customizetitle");
-    gtk_widget_set_halign(custtitle, GTK_ALIGN_START);
-    GtkWidget *custtext = gtk_label_new(
-        "El icono ⚙ arriba a la derecha de la barra abre el panel de control: "
-        "WiFi, Bluetooth, volumen, workspaces, blur, animaciones, color de "
-        "acento y teclado. Ahí mismo, en \"Fondo de pantalla\", puedes buscar "
-        "y aplicar wallpapers reales de Wallhaven (lo mismo que SUPER+W). "
-        "No hace falta configurarlo todo ahora: puedes ir cambiándolo poco a "
-        "poco, cuando quieras.");
-    gtk_widget_set_name(custtext, "customizetext");
-    gtk_widget_set_halign(custtext, GTK_ALIGN_START);
-    gtk_label_set_line_wrap(GTK_LABEL(custtext), TRUE);
-    gtk_label_set_max_width_chars(GTK_LABEL(custtext), 40);
-    gtk_box_pack_start(GTK_BOX(col3), custbox, FALSE, FALSE, 12);
-    gtk_box_pack_start(GTK_BOX(custbox), custtitle, FALSE, FALSE, 0);
-    gtk_box_pack_start(GTK_BOX(custbox), custtext, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(col3), build_hardware(), FALSE, FALSE, 0);
+
+    /* Aquí vivía una tarjeta que explicaba en un párrafo dónde estaba el
+     * panel de control y que "no hace falta configurarlo todo ahora, puedes
+     * ir cambiándolo poco a poco, cuando quieras". Una interfaz no se
+     * tranquiliza a sí misma en prosa: o el botón se encuentra solo, o el
+     * párrafo no lo va a arreglar. */
 
     GtkWidget *btnbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
     gtk_widget_set_halign(btnbox, GTK_ALIGN_END);

@@ -1,0 +1,17 @@
+# Generado por scripts/qmldir.sh -- no editar a mano.
+# Con un qmldir presente, QML deja de descubrir los componentes de la
+# carpeta por su cuenta: hay que declararlos todos o dejan de existir.
+
+CtlButton 1.0 CtlButton.qml
+Dato 1.0 Dato.qml
+Deslizador 1.0 Deslizador.qml
+Etiqueta 1.0 Etiqueta.qml
+Fondos 1.0 Fondos.qml
+Icono 1.0 Icono.qml
+Numero 1.0 Numero.qml
+singleton Paleta 1.0 Paleta.qml
+Pendiente 1.0 Pendiente.qml
+Pulsable 1.0 Pulsable.qml
+Separador 1.0 Separador.qml
+Titulo 1.0 Titulo.qml
+ZonaEditor 1.0 ZonaEditor.qml

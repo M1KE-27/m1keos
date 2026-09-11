@@ -904,6 +904,11 @@ mkdir -p "$ROOTFS_DIR/etc/mikeos/desktop"
 for _qc in "$BUILD_DIR"/desktop/quickshell/*.qml; do
     cp "$_qc" "$ROOTFS_DIR/etc/mikeos/desktop/$(basename "$_qc")"
 done
+# qmldir declara el singleton Paleta -- de donde salen los colores de todo el
+# escritorio -- y, con él presente, también el resto de componentes: QML deja
+# de descubrirlos solo. Se regenera para que añadir uno nuevo no rompa nada.
+"$PROJECT_ROOT/scripts/qmldir.sh"
+cp "$BUILD_DIR/desktop/quickshell/qmldir" "$ROOTFS_DIR/etc/mikeos/desktop/qmldir"
 cp "$BUILD_DIR/desktop/theme/colors.conf" "$ROOTFS_DIR/etc/skel/.config/mike/theme/"
 cp "$BUILD_DIR/desktop/waybar/config.jsonc" "$ROOTFS_DIR/etc/skel/.config/mike/waybar/"
 cp "$BUILD_DIR/desktop/waybar/style.css" "$ROOTFS_DIR/etc/skel/.config/mike/waybar/"

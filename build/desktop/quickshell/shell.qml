@@ -48,7 +48,10 @@ ShellRoot {
         }
     }
 
-    property string accent: ajuste("accent_color", "#00d4ff")
+    // El acento vive en Paleta, que lo lee del mismo settings.json. Así lo
+    // comparten la barra, el Centro de Control y los botones, en vez de que
+    // cada uno se lo lea (o se lo invente) por su cuenta.
+    readonly property color accent: Paleta.acento
 
     // Lista de espacios de trabajo. Antes la generaba m-apply-settings como
     // "1, 2, 3, 4" y se cosía al código; ahora sale del número guardado, así
@@ -98,9 +101,10 @@ ShellRoot {
     // bajando la opacidad del elemento se irían también el texto y los
     // iconos, y la barra quedaría ilegible en vez de translúcida.
     property real barOpacity: ajuste("bar_opacity", 100) / 100
-    readonly property color pillBgBase: "#12151d"
+    readonly property color pillBgBase: Paleta.superficie
     property color pillBg: Qt.rgba(pillBgBase.r, pillBgBase.g, pillBgBase.b, barOpacity)
-    property color pillBorder: Qt.rgba(0.141, 0.165, 0.220, Math.max(barOpacity, 0.35))
+    property color pillBorder: Qt.rgba(Paleta.borde.r, Paleta.borde.g, Paleta.borde.b,
+                                       Math.max(barOpacity, 0.35))
 
     // Autoocultar: la barra se retira y sólo vuelve al acercar el cursor al
     // borde. Con autoocultar no reserva espacio, o dejaría un hueco vacío.
@@ -155,14 +159,15 @@ ShellRoot {
         // la marca, en lugar de recortar el nombre o girarlo de lado.
         Row {
             spacing: 5
-            Text {
-                text: "◆"; color: root.accent
-                font.pixelSize: root.vertical ? root.fontSize + 2 : root.fontSize - 1
+            Icono {
+                nombre: "logo"
+                color: Paleta.texto
+                tamano: root.vertical ? root.fontSize + 4 : root.fontSize + 2
                 anchors.verticalCenter: parent.verticalCenter
             }
             Text {
                 visible: !root.vertical
-                text: "MIKE"; color: "#ffffff"; font.bold: true
+                text: "MIKE"; color: Paleta.texto; font.bold: true
                 font.pixelSize: root.fontSize
                 anchors.verticalCenter: parent.verticalCenter
             }
@@ -196,7 +201,7 @@ ShellRoot {
                                    : (encima.hovered ? Math.round(root.wsPunto * 1.5) : root.wsPunto)
                     radius: Math.min(width, height) / 2
                     color: actual ? root.accent
-                                  : (encima.hovered ? Qt.lighter(root.pillBorder, 1.9) : "#3a3f4d")
+                                  : (encima.hovered ? Qt.lighter(root.pillBorder, 1.9) : Paleta.borde)
 
                     Behavior on width  { NumberAnimation { duration: 130; easing.type: Easing.OutCubic } }
                     Behavior on height { NumberAnimation { duration: 130; easing.type: Easing.OutCubic } }
@@ -206,7 +211,7 @@ ShellRoot {
                         anchors.centerIn: parent
                         text: modelData
                         visible: punto.actual
-                        color: "#05070c"
+                        color: Paleta.sobreAcento
                         font.pixelSize: Math.max(8, Math.round(root.fontSize * 0.8))
                         font.bold: true
                     }
@@ -231,13 +236,13 @@ ShellRoot {
 
             Text {
                 text: root.vertical ? bloqueReloj.hora.split(":")[0] : bloqueReloj.hora
-                color: "#ffffff"; font.bold: true
+                color: Paleta.texto; font.bold: true
                 font.pixelSize: root.fontSize
             }
             Text {
                 visible: root.vertical
                 text: bloqueReloj.hora.split(":")[1] || ""
-                color: "#ffffff"; font.bold: true
+                color: Paleta.texto; font.bold: true
                 font.pixelSize: root.fontSize
             }
 
@@ -266,17 +271,17 @@ ShellRoot {
         id: modVolumen
         Row {
             spacing: 5
-            Text {
-                text: root.volNivel < 0 ? "🔇"
-                    : (root.volMute ? "🔇" : (root.volNivel > 50 ? "🔊" : "🔉"))
-                font.pixelSize: root.fontSize
-                color: root.volNivel < 0 ? "#55606f" : "#c9d1dc"
+            Icono {
+                nombre: (root.volNivel < 0 || root.volMute) ? "volumen-mudo"
+                      : (root.volNivel > 50 ? "volumen-alto" : "volumen-bajo")
+                tamano: root.fontSize + 2
+                color: root.volNivel < 0 ? Paleta.textoTenue : Paleta.texto
                 anchors.verticalCenter: parent.verticalCenter
             }
             Text {
                 text: root.volNivel < 0 ? "sin audio"
                     : (root.volMute ? "mudo" : root.volNivel + "%")
-                color: root.volNivel < 0 ? "#55606f" : "#ffffff"
+                color: root.volNivel < 0 ? Paleta.textoTenue : Paleta.texto
                 font.pixelSize: root.fontSize
                 font.bold: root.volNivel >= 0
                 anchors.verticalCenter: parent.verticalCenter
@@ -291,15 +296,16 @@ ShellRoot {
         id: modRed
         Row {
             spacing: 5
-            Text {
-                text: root.redTipo === "wifi" ? "◍" : (root.redTipo === "cable" ? "⇄" : "⊘")
-                color: root.redTipo === "none" ? "#55606f" : root.accent
-                font.pixelSize: root.fontSize
+            Icono {
+                nombre: root.redTipo === "wifi" ? "wifi"
+                      : (root.redTipo === "cable" ? "cable" : "sin-red")
+                color: root.redTipo === "none" ? Paleta.textoTenue : Paleta.texto
+                tamano: root.fontSize + 2
                 anchors.verticalCenter: parent.verticalCenter
             }
             Text {
                 text: root.redNombre
-                color: root.redTipo === "none" ? "#55606f" : "#ffffff"
+                color: root.redTipo === "none" ? Paleta.textoTenue : Paleta.texto
                 font.pixelSize: root.fontSize
                 font.bold: root.redTipo !== "none"
                 anchors.verticalCenter: parent.verticalCenter
@@ -326,7 +332,7 @@ ShellRoot {
                     spacing: 4
                     Text {
                         text: modelData.etiqueta
-                        color: "#7d8794"
+                        color: Paleta.textoTenue
                         font.pixelSize: Math.max(8, root.fontSize - 3)
                         font.bold: true
                         anchors.verticalCenter: parent.verticalCenter
@@ -338,19 +344,19 @@ ShellRoot {
                         width: Math.round(root.fontSize * 2.2)
                         height: Math.max(4, Math.round(root.fontSize * 0.42))
                         radius: height / 2
-                        color: "#2b3243"
+                        color: Paleta.borde
                         anchors.verticalCenter: parent.verticalCenter
                         Rectangle {
                             width: parent.width * Math.min(100, Math.max(0, modelData.valor)) / 100
                             height: parent.height
                             radius: parent.radius
-                            color: modelData.valor >= 75 ? "#ffb454" : root.accent
+                            color: modelData.valor >= 75 ? Paleta.aviso : root.accent
                             Behavior on width { NumberAnimation { duration: 250 } }
                         }
                     }
                     Text {
                         text: modelData.valor + "%"
-                        color: "#ffffff"
+                        color: Paleta.texto
                         font.pixelSize: root.fontSize
                         font.bold: true
                         // Ancho fijo: sin esto la barra se movía a cada
@@ -375,7 +381,7 @@ ShellRoot {
                 model: ajuste("bar_buttons", ["captura", "teclado"])
                 Text {
                     text: root.iconoBoton(modelData)
-                    color: pulsable.hovered ? root.accent : "#c9d1dc"
+                    color: pulsable.hovered ? root.accent : Paleta.texto
                     font.pixelSize: root.fontSize + 2
                     anchors.verticalCenter: parent.verticalCenter
                     Behavior on color { ColorAnimation { duration: 120 } }
@@ -388,10 +394,10 @@ ShellRoot {
 
     Component {
         id: modAjustes
-        Text {
-            text: "⚙"
-            font.pixelSize: root.fontSize + 1
-            color: root.panelOpen ? "#05070c" : "#c9d1dc"
+        Icono {
+            nombre: "ajustes"
+            tamano: root.fontSize + 3
+            color: root.panelOpen ? Paleta.sobreAcento : Paleta.texto
             rotation: root.panelOpen ? 90 : 0
             Behavior on rotation { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
         }
@@ -893,14 +899,14 @@ ShellRoot {
     }
 
     readonly property var secciones: [
-        { id: "vistazo",    nombre: "Vistazo",     icono: "◈" },
-        { id: "sistema",    nombre: "Sistema",     icono: "▣" },
-        { id: "barra",      nombre: "Barra",       icono: "▤" },
-        { id: "escritorio", nombre: "Escritorio",  icono: "◨" },
-        { id: "interfaz",   nombre: "Interfaz",    icono: "◐" },
-        { id: "servicios",  nombre: "Servicios",   icono: "⚙" },
-        { id: "avanzado",   nombre: "Avanzado",    icono: "⌥" },
-        { id: "acercade",   nombre: "Acerca de",   icono: "ⓘ" }
+        { id: "vistazo",    nombre: "Vistazo",     icono: "vistazo" },
+        { id: "sistema",    nombre: "Sistema",     icono: "sistema" },
+        { id: "barra",      nombre: "Barra",       icono: "barra" },
+        { id: "escritorio", nombre: "Escritorio",  icono: "escritorio" },
+        { id: "interfaz",   nombre: "Interfaz",    icono: "interfaz" },
+        { id: "servicios",  nombre: "Servicios",   icono: "servicios" },
+        { id: "avanzado",   nombre: "Avanzado",    icono: "avanzado" },
+        { id: "acercade",   nombre: "Acerca de",   icono: "info" }
     ]
 
     PanelWindow {
@@ -953,7 +959,7 @@ ShellRoot {
                     Layout.fillWidth: true
                     Text {
                         text: "Centro de Control"
-                        color: "#ffffff"; font.pixelSize: 17; font.bold: true
+                        color: Paleta.texto; font.pixelSize: 17; font.bold: true
                         Layout.fillWidth: true
                     }
                     CtlButton {
@@ -981,7 +987,8 @@ ShellRoot {
 
                         CtlButton {
                             Layout.fillWidth: true
-                            text: "✎  Editar a mano"
+                            text: "Editar a mano"
+                            icono: "editar"
                             onClicked: abrirAjustes.running = true
                         }
 
@@ -1004,15 +1011,15 @@ ShellRoot {
                                     anchors.leftMargin: 12
                                     anchors.verticalCenter: parent.verticalCenter
                                     spacing: 9
-                                    Text {
-                                        text: modelData.icono
-                                        color: entrada.aqui ? "#05070c" : root.accent
-                                        font.pixelSize: 12
+                                    Icono {
+                                        nombre: modelData.icono
+                                        color: entrada.aqui ? Paleta.sobreAcento : Paleta.textoTenue
+                                        tamano: 15
                                         anchors.verticalCenter: parent.verticalCenter
                                     }
                                     Text {
                                         text: modelData.nombre
-                                        color: entrada.aqui ? "#05070c" : "#c9d1dc"
+                                        color: entrada.aqui ? Paleta.sobreAcento : Paleta.texto
                                         font.pixelSize: 12
                                         font.bold: entrada.aqui
                                         anchors.verticalCenter: parent.verticalCenter
@@ -1028,7 +1035,7 @@ ShellRoot {
 
                         Text {
                             text: "MIKE OS 0.2.0"
-                            color: "#55606f"; font.pixelSize: 10
+                            color: Paleta.textoTenue; font.pixelSize: 10
                             Layout.leftMargin: 12
                         }
                     }
@@ -1057,13 +1064,33 @@ ShellRoot {
                                 Titulo { texto: "Sonido" }
                                 RowLayout {
                                     Layout.fillWidth: true
-                                    spacing: 8
-                                    CtlButton { text: "−"; onClicked: volDown.running = true }
-                                    Text {
-                                        text: "Volumen"; color: "#c9d1dc"; font.pixelSize: 12
-                                        Layout.fillWidth: true; horizontalAlignment: Text.AlignHCenter
+                                    spacing: 10
+                                    Icono {
+                                        nombre: (root.volNivel < 0 || root.volMute)
+                                                ? "volumen-mudo"
+                                                : (root.volNivel > 50 ? "volumen-alto"
+                                                                      : "volumen-bajo")
+                                        tamano: 16
+                                        color: root.volNivel < 0 ? Paleta.textoTenue : Paleta.texto
+                                        TapHandler {
+                                            enabled: root.volNivel >= 0
+                                            onTapped: volMute.running = true
+                                        }
                                     }
-                                    CtlButton { text: "+"; onClicked: volUp.running = true }
+                                    Deslizador {
+                                        Layout.fillWidth: true
+                                        activo: root.volNivel >= 0
+                                        valor: Math.max(0, root.volNivel)
+                                        onCambiado: (nuevo) => {
+                                            root.volNivel = nuevo
+                                            volFijar.command = ["m-volume", "set", String(nuevo)]
+                                            volFijar.running = true
+                                        }
+                                    }
+                                }
+                                Pendiente {
+                                    visible: root.volNivel < 0
+                                    texto: "No hay ninguna salida de audio conectada."
                                 }
 
                                 Separador {}
@@ -1082,7 +1109,7 @@ ShellRoot {
                                           : (root.redTipo === "cable"
                                              ? "Conectado por cable · " + root.redNombre
                                              : "Conectado a " + root.redNombre)
-                                    color: root.redTipo === "none" ? "#55606f" : "#ffffff"
+                                    color: root.redTipo === "none" ? Paleta.textoTenue : Paleta.texto
                                     font.pixelSize: 12
                                     font.bold: root.redTipo !== "none"
                                     Layout.fillWidth: true
@@ -1094,7 +1121,7 @@ ShellRoot {
                                     function refresh() { wifiListProc.running = true }
                                     delegate: Text {
                                         text: "▸ " + model.line
-                                        color: "#c9d1dc"; font.pixelSize: 11
+                                        color: Paleta.texto; font.pixelSize: 11
                                         Layout.fillWidth: true
                                         elide: Text.ElideRight
                                     }
@@ -1102,7 +1129,7 @@ ShellRoot {
                                 Text {
                                     visible: wifiList.count === 0
                                     text: "Redes inalámbricas: no se detecta adaptador."
-                                    color: "#55606f"; font.pixelSize: 10; font.italic: true
+                                    color: Paleta.textoTenue; font.pixelSize: 10; font.italic: true
                                 }
 
                                 Separador {}
@@ -1118,7 +1145,7 @@ ShellRoot {
                                     function refresh() { btListProc.running = true }
                                     delegate: Text {
                                         text: "▸ " + model.line
-                                        color: "#c9d1dc"; font.pixelSize: 11
+                                        color: Paleta.texto; font.pixelSize: 11
                                         Layout.fillWidth: true
                                         elide: Text.ElideRight
                                     }
@@ -1126,7 +1153,7 @@ ShellRoot {
                                 Text {
                                     visible: btList.count === 0
                                     text: "No se detecta adaptador Bluetooth."
-                                    color: "#55606f"; font.pixelSize: 10; font.italic: true
+                                    color: Paleta.textoTenue; font.pixelSize: 10; font.italic: true
                                 }
 
                                 Separador {}
@@ -1291,7 +1318,7 @@ ShellRoot {
                                 Titulo { texto: "Módulos de la barra" }
                                 Text {
                                     text: "‹ y › mueven dentro de la zona; ✕ quita de la barra."
-                                    color: "#7d8794"; font.pixelSize: 11
+                                    color: Paleta.textoTenue; font.pixelSize: 11
                                     Layout.fillWidth: true
                                     wrapMode: Text.WordWrap
                                 }
@@ -1322,7 +1349,7 @@ ShellRoot {
                                         spacing: 8
                                         Text {
                                             text: modelData.nombre
-                                            color: "#c9d1dc"; font.pixelSize: 11
+                                            color: Paleta.texto; font.pixelSize: 11
                                             Layout.fillWidth: true
                                         }
                                         CtlButton {
@@ -1367,7 +1394,7 @@ ShellRoot {
                                         Layout.alignment: Qt.AlignRight
                                         CtlButton { text: "−"; small: true; onClicked: if (settingsState.workspaceCount > 1) settingsState.workspaceCount-- }
                                         Text {
-                                            text: settingsState.workspaceCount; color: "#ffffff"; font.pixelSize: 11
+                                            text: settingsState.workspaceCount; color: Paleta.texto; font.pixelSize: 11
                                             width: 22; height: 22
                                             horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
                                         }
@@ -1388,7 +1415,7 @@ ShellRoot {
                                         Layout.alignment: Qt.AlignRight
                                         CtlButton { text: "−"; small: true; onClicked: if (settingsState.opacity > 40) settingsState.opacity -= 2 }
                                         Text {
-                                            text: settingsState.opacity + "%"; color: "#ffffff"; font.pixelSize: 11
+                                            text: settingsState.opacity + "%"; color: Paleta.texto; font.pixelSize: 11
                                             width: 34; height: 22
                                             horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
                                         }
@@ -1414,7 +1441,7 @@ ShellRoot {
                                                 width: 22; height: 22; radius: 11
                                                 color: modelData
                                                 border.width: settingsState.accentColor === modelData ? 2 : 0
-                                                border.color: "#ffffff"
+                                                border.color: Paleta.texto
                                                 TapHandler { onTapped: settingsState.accentColor = modelData }
                                             }
                                         }
@@ -1457,7 +1484,7 @@ ShellRoot {
                                     spacing: 14
                                     Rectangle {
                                         width: 58; height: 58; radius: 14
-                                        color: "#0d2b33"
+                                        color: Paleta.tenue(0.16)
                                         border.color: root.accent; border.width: 1
                                         Text {
                                             anchors.centerIn: parent
@@ -1467,8 +1494,8 @@ ShellRoot {
                                     }
                                     ColumnLayout {
                                         spacing: 3
-                                        Text { text: "MIKE OS"; color: "#ffffff"; font.pixelSize: 18; font.bold: true }
-                                        Text { text: "Versión 0.2.0 · x86_64"; color: "#8a94a3"; font.pixelSize: 11 }
+                                        Text { text: "MIKE OS"; color: Paleta.texto; font.pixelSize: 18; font.bold: true }
+                                        Text { text: "Versión 0.2.0 · x86_64"; color: Paleta.textoTenue; font.pixelSize: 11 }
                                     }
                                 }
 
@@ -1492,7 +1519,7 @@ ShellRoot {
                                 Titulo { texto: "Se apoya en" }
                                 Text {
                                     text: "Hyprland · Quickshell · BusyBox · runit · Mesa"
-                                    color: "#8a94a3"; font.pixelSize: 11
+                                    color: Paleta.textoTenue; font.pixelSize: 11
                                     Layout.fillWidth: true
                                     wrapMode: Text.WordWrap
                                 }
@@ -1513,7 +1540,7 @@ ShellRoot {
                     }
                     Text {
                         text: "Los cambios se guardan solos"
-                        color: "#7a8090"; font.pixelSize: 11
+                        color: Paleta.textoTenue; font.pixelSize: 11
                     }
                 }
             }
@@ -1635,6 +1662,9 @@ ShellRoot {
         id: abrirAjustes
         command: ["m-terminal", "-e", "vi ~/.config/mike/settings.conf"]
     }
+    // El deslizador no sube y baja a pasos desde donde estuviera: salta al
+    // valor que sueltas, así que necesita fijar un número, no un incremento.
+    Process { id: volFijar; command: ["m-volume", "set", "50"]; onExited: volTrasRueda.restart() }
     Process { id: volUp; command: ["m-volume", "5"] }
     Process { id: volDown; command: ["m-volume", "-5"] }
     Process { id: wifiScan; command: ["m-wifi", "scan"]; onExited: wifiList.refresh() }

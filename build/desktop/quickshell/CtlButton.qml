@@ -12,23 +12,41 @@ Rectangle {
 
     // Ancho mínimo fijo: sin esto "US"/"Instant"/"Arriba" quedaban con
     // botones de tamaños dispares y la fila se veía desalineada.
-    implicitWidth: Math.max(label.implicitWidth + (small ? 18 : 24), small ? 48 : 62)
+    // Icono opcional a la izquierda del texto. Antes se colaba un carácter
+    // suelto dentro del propio texto ("✎  Editar a mano"), que ni se alineaba
+    // ni compartía grosor con los iconos de al lado.
+    property string icono: ""
+
+    implicitWidth: Math.max(contenido.implicitWidth + (small ? 18 : 24), small ? 48 : 62)
     implicitHeight: small ? 22 : 26
     // Cápsula completa, a juego con las islas redondeadas de la barra.
     radius: height / 2
-    color: active ? "#00d4ff" : (mouseArea.containsMouse ? "#252b38" : "#1a1f2b")
+    color: active ? Paleta.acento : (mouseArea.containsMouse ? Paleta.superficieAlta : Paleta.superficie)
     border.width: active ? 0 : 1
-    border.color: "#2b3243"
+    border.color: Paleta.borde
 
     Behavior on color { ColorAnimation { duration: 120 } }
 
-    Text {
-        id: label
+    Row {
+        id: contenido
         anchors.centerIn: parent
-        text: btn.text
-        color: btn.active ? "#000000" : "#c9c9d4"
-        font.pixelSize: btn.small ? 10 : 11
-        font.bold: true
+        spacing: 6
+
+        Icono {
+            visible: btn.icono !== ""
+            nombre: btn.icono
+            tamano: btn.small ? 12 : 13
+            color: btn.active ? Paleta.sobreAcento : Paleta.texto
+            anchors.verticalCenter: parent.verticalCenter
+        }
+        Text {
+            id: label
+            text: btn.text
+            color: btn.active ? Paleta.sobreAcento : Paleta.texto
+            font.pixelSize: btn.small ? 10 : 11
+            font.bold: true
+            anchors.verticalCenter: parent.verticalCenter
+        }
     }
 
     MouseArea {

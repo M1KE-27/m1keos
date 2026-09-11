@@ -447,7 +447,11 @@ static int buscar(const char *texto, int tope) {
     int mostrados = n < tope ? n : tope;
     for (int i = 0; i < mostrados; i++) {
         Paquete *p = &paquetes[cands[i].idx];
-        printf("  %-24s %-7s %.60s\n", p->nombre, p->repo, p->desc ? p->desc : "");
+        /* Sin sangría y sin recortar a 60: la sangría descuadraba la tabla
+         * que monta mpm, y el recorte partía las descripciones a mitad de
+         * palabra ("...search in PDFs, E-Books, Office docum"). Si hay que
+         * cortar, que lo haga la terminal por su ancho real. */
+        printf("%s %s %s\n", p->nombre, p->repo, p->desc ? p->desc : "");
     }
     if (n > mostrados)
         printf("  ... y %d más. Afina la búsqueda o usa 'mpm search'.\n", n - mostrados);

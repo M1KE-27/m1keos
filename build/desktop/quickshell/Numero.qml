@@ -24,7 +24,7 @@ Row {
     }
     Text {
         text: control.valor + control.sufijo
-        color: "#ffffff"
+        color: Paleta.texto
         font.pixelSize: 11
         width: 40
         height: 22

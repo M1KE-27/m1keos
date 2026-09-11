@@ -125,9 +125,12 @@ do_qml() {
     c_step "Copiando QML"
     # Todos los .qml, shell.qml incluido: al añadir un componente nuevo y
     # copiar sólo dos, el panel fallaba con "X is not a type".
+    "$PROJECT_ROOT/scripts/qmldir.sh"
     for _c in "$PROJECT_ROOT"/build/desktop/quickshell/*.qml; do
         push "$_c" "/etc/mikeos/desktop/$(basename "$_c")" || return 1
     done
+    push "$PROJECT_ROOT/build/desktop/quickshell/qmldir" \
+         "/etc/mikeos/desktop/qmldir" || return 1
     c_step "Publicando QML y reiniciando la barra"
     # Cambiar el código QML sí exige reiniciar quickshell (no recarga QML en
     # caliente). Cambiar un *ajuste* ya no: para eso está settings.json, que

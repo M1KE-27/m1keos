@@ -8,7 +8,23 @@ set -eu
 
 case "${1:-list}" in
     list)
-        bluetoothctl devices
+        # bluetoothctl escribe sus propios avisos por la salida normal, así
+        # que sin adaptador imprimía "No default controller available" y quien
+        # lo leyera lo tomaba por un dispositivo: el Centro de Control llegó a
+        # enseñar esa frase, en inglés, como si fuera un aparato emparejado.
+        # Aquí sólo salen líneas de dispositivo de verdad ("Device <MAC> ...").
+        bluetoothctl devices 2>/dev/null | grep '^Device ' || true
+        ;;
+    estado)
+        # "sin-adaptador" | "apagado" | "listo". Un estado que se pueda mirar
+        # sin tener que interpretar el texto de otra herramienta.
+        if ! bluetoothctl show 2>/dev/null | grep -q '^Controller '; then
+            echo "sin-adaptador"
+        elif bluetoothctl show 2>/dev/null | grep -q 'Powered: no'; then
+            echo "apagado"
+        else
+            echo "listo"
+        fi
         ;;
     scan)
         timeout "${2:-10}" bluetoothctl scan on
@@ -26,7 +42,7 @@ case "${1:-list}" in
         bluetoothctl power "$2"
         ;;
     *)
-        echo "Uso: m-bluetooth [list|scan [seg]|connect <MAC>|pair <MAC>|power <on|off>]"
+        echo "Uso: m-bluetooth [list|estado|scan [seg]|connect <MAC>|pair <MAC>|power <on|off>]"
         exit 1
         ;;
 esac

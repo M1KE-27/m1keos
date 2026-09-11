@@ -6,7 +6,7 @@ import QtQuick
 Item {
     id: raiz
     property string texto: ""
-    property color colorTexto: "#c9d1dc"
+    property color colorTexto: Paleta.texto
     property int tamano: 14
     property bool activable: true
     signal activado()

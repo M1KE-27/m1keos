@@ -6,7 +6,7 @@ import QtQuick.Layouts
 Text {
     property string texto: ""
     text: "— " + texto
-    color: "#55606f"
+    color: Paleta.textoTenue
     font.pixelSize: 11
     font.italic: true
     wrapMode: Text.WordWrap

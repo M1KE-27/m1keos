@@ -19,9 +19,9 @@ PanelWindow {
     id: ventanaFondos
 
     property bool abierto: false
-    property string acento: "#00d4ff"
-    property color fondoPanel: "#14161d"
-    property color bordePanel: "#252530"
+    property string acento: Paleta.acento
+    property color fondoPanel: Paleta.superficie
+    property color bordePanel: Paleta.superficieAlta
 
     // Directorio de la caché. Persiste entre sesiones: volver a abrir el
     // selector con las mismas búsquedas no descarga nada.
@@ -86,14 +86,14 @@ PanelWindow {
 
                 Text {
                     text: "Fondos de pantalla"
-                    color: "#ffffff"; font.pixelSize: 17; font.bold: true
+                    color: Paleta.texto; font.pixelSize: 17; font.bold: true
                 }
 
                 Rectangle {
                     Layout.fillWidth: true
                     height: 32
                     radius: 8
-                    color: "#0e1017"
+                    color: Paleta.fondo
                     border.color: campo.activeFocus ? ventanaFondos.acento : ventanaFondos.bordePanel
                     border.width: 1
 
@@ -103,7 +103,7 @@ PanelWindow {
                         anchors.leftMargin: 10
                         anchors.rightMargin: 10
                         verticalAlignment: TextInput.AlignVCenter
-                        color: "#e6e8ee"
+                        color: Paleta.texto
                         font.pixelSize: 12
                         selectByMouse: true
                         selectionColor: ventanaFondos.acento
@@ -112,7 +112,7 @@ PanelWindow {
                         Text {
                             anchors.verticalCenter: parent.verticalCenter
                             text: "Buscar en Wallhaven: montañas, espacio, minimal..."
-                            color: "#6a7080"
+                            color: Paleta.textoTenue
                             font.pixelSize: 12
                             visible: campo.text.length === 0 && !campo.activeFocus
                         }
@@ -151,7 +151,7 @@ PanelWindow {
                             width: 204
                             height: 128
                             radius: 10
-                            color: "#0e1017"
+                            color: Paleta.fondo
                             border.color: raton.hovered ? ventanaFondos.acento : ventanaFondos.bordePanel
                             border.width: raton.hovered ? 2 : 1
                             clip: true
@@ -199,7 +199,7 @@ PanelWindow {
                             Text {
                                 anchors.centerIn: parent
                                 text: "..."
-                                color: "#3a4050"
+                                color: Paleta.borde
                                 font.pixelSize: 20
                                 visible: miniatura.status !== Image.Ready
                             }

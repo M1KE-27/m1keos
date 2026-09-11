@@ -30,6 +30,23 @@ if [ "${1:-}" = "get" ]; then
     exit 1
 fi
 
+# "set <0-100>" fija un nivel concreto. Lo pide el deslizador del Centro de
+# Control, que salta al valor donde sueltas en vez de ir de cinco en cinco.
+if [ "${1:-}" = "set" ]; then
+    nivel="${2:-}"
+    case "$nivel" in
+        ''|*[!0-9]*) echo "Uso: m-volume set <0-100>" >&2; exit 2 ;;
+    esac
+    [ "$nivel" -gt 100 ] && nivel=100
+    if command -v wpctl >/dev/null 2>&1; then
+        exec wpctl set-volume @DEFAULT_AUDIO_SINK@ "$(awk -v n="$nivel" 'BEGIN { printf "%.2f", n/100 }')"
+    fi
+    if command -v pactl >/dev/null 2>&1; then
+        exec pactl set-sink-volume @DEFAULT_SINK@ "${nivel}%"
+    fi
+    exit 1
+fi
+
 # "mute" alterna el silencio.
 if [ "${1:-}" = "mute" ]; then
     command -v wpctl >/dev/null 2>&1 && exec wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle
@@ -38,7 +55,7 @@ if [ "${1:-}" = "mute" ]; then
 fi
 
 DELTA="${1:-0}"
-case "$DELTA" in -5|5) ;; *) echo "Uso: m-volume <5|-5|get|mute>" >&2; exit 2 ;; esac
+case "$DELTA" in -5|5) ;; *) echo "Uso: m-volume <5|-5|get|set N|mute>" >&2; exit 2 ;; esac
 if command -v wpctl >/dev/null 2>&1; then
     current="$(wpctl get-volume @DEFAULT_AUDIO_SINK@ 2>/dev/null | awk '{print $2}' | head -1)"
     [ -n "$current" ] || exit 1

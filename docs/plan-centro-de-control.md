@@ -460,6 +460,99 @@ verificación por resumen.
 
 ---
 
+## Bloque 10 — Que no parezca hecho por una máquina
+
+El sistema funcionaba y aun así se sentía barato. Mirando una captura con
+calma, los motivos eran concretos, no una sensación: un solo color para todo,
+iconos que eran caracteres de texto, párrafos de prosa dentro de la interfaz y
+un gestor de paquetes que se contradecía a sí mismo en la misma pantalla.
+
+- [x] **10.1 Cinco colores y un acento** — *11 sep 2026*
+  `quickshell/Paleta.qml`, singleton que lee el mismo `settings.json` que la
+  barra. Los dieciocho valores sueltos repartidos por los archivos se
+  reducen a cinco (fondo, superficie, borde, texto, texto tenue) más cuatro
+  derivados. **El acento sólo tiñe lo que está activo ahora mismo**; antes iba
+  en títulos, iconos, bordes, teclas, el logo y las tarjetas a la vez, y
+  cuando todo resalta no resalta nada.
+  *Fallo corregido de paso:* `CtlButton` llevaba `#00d4ff` escrito dentro, así
+  que los botones se quedaban en cian aunque eligieras otro acento.
+  *Verificado:* con el acento en naranja, la barra, los medidores, el apartado
+  activo y los botones cambian los cuatro; al volver a cian, vuelven.
+
+- [x] **10.2 Iconos dibujados, no caracteres** — *11 sep 2026*
+  `quickshell/Icono.qml`: treinta iconos trazados sobre una rejilla de 24×24,
+  mismo grosor y misma escala, sólo con Canvas — ni fuentes de iconos, ni SVG,
+  ni plugins de imagen que puedan faltar en la imagen final.
+  Fuera los `◆ ◐ ⌥ ⓘ ⚙` y fuera los emoji del volumen, que **salían como un
+  cuadrado vacío** porque no hay glifo para 🔊 en la fuente del sistema.
+  La marca deja de ser un rombo genérico y pasa a ser un cursor de terminal.
+  *Verificado por captura:* ningún cuadrado vacío en la barra.
+
+- [x] **10.3 Deslizador de volumen** — *11 sep 2026*
+  `quickshell/Deslizador.qml`. El control eran dos botones `−` y `+` en los
+  extremos opuestos de setecientos píxeles, con la palabra "Volumen" en medio
+  y **sin enseñar el nivel en ningún momento**. Ahora se arrastra, responde a
+  la rueda y se lee de un vistazo. Añadido `m-volume set N`, porque un
+  deslizador salta a un valor en vez de ir de cinco en cinco.
+
+- [x] **10.4 Fuera la prosa de la interfaz** — *11 sep 2026*
+  Eliminada la tarjeta "Personaliza MIKE OS a tu ritmo", que tranquilizaba en
+  un párrafo sobre cuándo configurar las cosas. La bienvenida pasa de
+  veinticuatro atajos en tres columnas a **cinco**, con el resto detrás de
+  "Ver todos los atajos". Nadie lee veinticuatro atajos de golpe.
+  *También:* `m-bluetooth` dejaba pasar los avisos de bluez por la salida
+  normal, así que el panel enseñaba `No default controller available` —en
+  inglés— **como si fuera un aparato emparejado**. Ahora sólo salen líneas de
+  dispositivo de verdad, y hay `m-bluetooth estado` para preguntar sin tener
+  que interpretar el texto de otra herramienta.
+
+- [x] **10.5 Una sola salida en `mpm`** — *11 sep 2026*
+  `mpm search ripgrep` imprimía los resultados de core/extra y, justo debajo,
+  una cabecera nueva rematada con "No se encontraron paquetes para 'ripgrep'":
+  el gestor se contradecía a sí mismo en la misma pantalla. Eran dos búsquedas
+  independientes imprimiendo cada una por su cuenta. Ahora es una tabla, un
+  recuento y una línea de qué hacer después.
+  *Dos fallos más:* el resolutor recortaba las descripciones a 60 caracteres y
+  las partía a mitad de palabra ("...Office docum"); y al instalar por receta
+  se filtraba la ruta temporal interna
+  (`/var/lib/mpm/tmp/mpm_recipe_ripgrep_JNNJHJ/source: OK`).
+
+- [x] **10.6 Fondo sin circuito impreso** — *11 sep 2026*
+  Un degradado con dos focos de luz muy tenues, sin motivo y sin texto, en
+  lugar de la placa de circuitos, que es el cliché número uno de "esto lo
+  generó una máquina".
+
+---
+
+## Bloque 11 — Cómo se verifica
+
+- [x] **11.1 `tests/humo.sh`** — *11 sep 2026* · dieciocho comprobaciones:
+  arranque, red, audio de punta a punta, escritorio, paquetes y **clics de
+  verdad** sobre el Centro de Control y la rueda del volumen, inyectados por
+  QMP. Cada una corresponde a un fallo que ya ocurrió. `./tests/humo.sh` sale
+  con 0 si pasan todas.
+  *Se ganó el sueldo el primer día:* de seis fallos en la primera pasada,
+  cuatro eran del propio test y **dos eran bugs reales recién introducidos** —
+  `mpm search` escribía en `/var/lib/mpm/tmp`, que es de root, así que un
+  usuario normal recibía "Permission denied" al buscar un paquete.
+
+- [x] **11.2 Socket QMP en `run-qemu.sh`** — *11 sep 2026* · es lo que permite
+  mover el ratón y pulsar dentro de la máquina desde fuera, y por tanto
+  comprobar que un botón hace lo que dice sin una persona delante.
+
+- [x] **11.3 El proyecto está en git** — *11 sep 2026* · tres semanas de
+  trabajo sin control de versiones. Al preparar el `.gitignore` se vio que
+  excluía `quickshell/shell.qml` por una plantilla eliminada en el punto 9.1:
+  **los 81 KB de la barra y el Centro de Control se habrían quedado fuera**.
+
+- [x] **11.4 El build vuelve a funcionar desde cero** — *11 sep 2026* ·
+  no se hacía un build limpio desde hacía semanas y estaba roto en dos sitios.
+  BusyBox pasa `$(srctree)` y `$(CONFIG_PREFIX)` sin comillas, y kbuild se
+  niega en seco a compilar desde una ruta con espacios. El proyecto se movió
+  de `Proyectos 2026/mikeos` a `~/mikeos`.
+
+---
+
 ## Estado
 
 | Bloque | Puntos | Hechos |
@@ -474,7 +567,9 @@ verificación por resumen.
 | 7 · Acerca de | 4 | 0 |
 | 8 · Gestor de paquetes | 11 | **9** |
 | 9 · Reacción inmediata | 5 | **4** |
-| **Total** | **84** | **36** |
+| 10 · Que no parezca de máquina | 6 | **6 ✓** |
+| 11 · Cómo se verifica | 4 | **4 ✓** |
+| **Total** | **94** | **46** |
 
 ---
 
@@ -508,6 +603,8 @@ resuelve.
 | 31 ago 2026 | 1.10 Reloj | Verificado los cuatro formatos |
 | 31 ago 2026 | 1.11 Volumen | Abierto — sin destino de audio |
 | 11 sep 2026 | 1.11 Volumen | Verificado con rueda y clic reales — 95 % → 80 % |
+| 11 sep 2026 | 10.1–10.6 Paso de diseño | Verificado por captura — acento sólo en lo activo |
+| 11 sep 2026 | 11.1 Prueba de humo | 18 de 18 comprobaciones en verde |
 | 31 ago 2026 | 1.12 Red | Verificado — eth0 real y clic al panel |
 | 31 ago 2026 | 1.15 Medidores | Verificado con carga real — 0 % a 92 % |
 | 31 ago 2026 | 1.17 Botones rápidos | Verificado — captura y teclado con clics |

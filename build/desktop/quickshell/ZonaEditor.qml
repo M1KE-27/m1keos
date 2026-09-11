@@ -16,7 +16,7 @@ ColumnLayout {
 
     Text {
         text: editor.titulo
-        color: "#c9d1dc"
+        color: Paleta.texto
         font.pixelSize: 11
         font.bold: true
     }
@@ -40,9 +40,9 @@ ColumnLayout {
                 Rectangle {
                     anchors.fill: parent
                     radius: 13
-                    color: "#1a1f2b"
+                    color: Paleta.superficie
                     border.width: 1
-                    border.color: "#2b3243"
+                    border.color: Paleta.borde
                 }
 
                 Row {
@@ -53,7 +53,7 @@ ColumnLayout {
 
                     Pulsable {
                         texto: "‹"
-                        colorTexto: index > 0 ? "#7fe8ff" : "#3a3f4d"
+                        colorTexto: index > 0 ? Paleta.acento : Paleta.borde
                         activable: index > 0
                         anchors.verticalCenter: parent.verticalCenter
                         onActivado: editor.cambiada(editor.raiz.moverEn(editor.lista, index, -1))
@@ -61,21 +61,21 @@ ColumnLayout {
 
                     Text {
                         text: editor.raiz ? editor.raiz.nombreModulo(modelData) : modelData
-                        color: "#ffffff"
+                        color: Paleta.texto
                         font.pixelSize: 11
                         anchors.verticalCenter: parent.verticalCenter
                     }
 
                     Pulsable {
                         texto: "›"
-                        colorTexto: "#7fe8ff"
+                        colorTexto: Paleta.acento
                         anchors.verticalCenter: parent.verticalCenter
                         onActivado: editor.cambiada(editor.raiz.moverEn(editor.lista, index, 1))
                     }
 
                     Pulsable {
                         texto: "✕"
-                        colorTexto: "#ff5c5c"
+                        colorTexto: Paleta.aviso
                         tamano: 12
                         anchors.verticalCenter: parent.verticalCenter
                         onActivado: editor.cambiada(editor.raiz.quitarDe(editor.lista, index))
@@ -87,7 +87,7 @@ ColumnLayout {
         Text {
             visible: !editor.lista || editor.lista.length === 0
             text: "vacía"
-            color: "#55606f"
+            color: Paleta.textoTenue
             font.pixelSize: 11
             font.italic: true
         }
