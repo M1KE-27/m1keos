@@ -1,0 +1,83 @@
+# El servidor de MIKE OS en el mini PC.
+#
+# Convive con lo que ya hay (Coolify, Portainer, la tienda) y usa el Traefik
+# que Coolify tiene en marcha, así que no hace falta ni un proxy más ni
+# gestionar certificados: las etiquetas de abajo son las mismas que usa Coolify
+# para sus aplicaciones.
+#
+# El reparto del dominio:
+#   /api/*    y  /estado   -> esto (Phoenix)
+#   todo lo demás          -> nginx con las páginas y el repositorio
+#
+# La prioridad importa, y hay que pasarse de alta a propósito. Cuando no se
+# indica, Traefik la calcula con la LONGITUD de la regla, y la del nginx que
+# cubre "/" es bastante larga. Un 20 aquí perdía contra ella y /api acababa
+# sirviéndose como archivo estático: 404.
+services:
+  api:
+    build: .
+    image: mikeos-servidor:ultima
+    container_name: mikeos-api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://mikeos:${POSTGRES_PASSWORD}@db/mikeos_servidor
+      SECRET_KEY_BASE: ${SECRET_KEY_BASE}
+      PHX_HOST: m1keos.duckdns.org
+      PORT: "4000"
+      # Es el repo.json que sube publicar.sh. Se monta en sólo lectura: el
+      # servidor lo lee para responder /api/version y no tiene por qué poder
+      # tocarlo.
+      REPO_JSON: /repo/repo.json
+    volumes:
+      - /home/m1ke/mikeos-backend/web/mpm:/repo:ro
+    networks:
+      - coolify
+      - interna
+    labels:
+      - traefik.enable=true
+      # Con el contenedor en DOS redes (la de Coolify y la interna con la base
+      # de datos), Traefik tiene que saber por cuál hablarle. Sin esto elegía
+      # la interna, a la que el proxy no llega, y la petición se quedaba
+      # esperando hasta agotar el tiempo: ni error, ni respuesta.
+      - traefik.docker.network=coolify
+      - traefik.http.routers.http-mikeos-api.entryPoints=http
+      - traefik.http.routers.http-mikeos-api.rule=Host(`m1keos.duckdns.org`) && (PathPrefix(`/api`) || PathPrefix(`/estado`))
+      - traefik.http.routers.http-mikeos-api.priority=100
+      - traefik.http.routers.https-mikeos-api.entryPoints=https
+      - traefik.http.routers.https-mikeos-api.rule=Host(`m1keos.duckdns.org`) && (PathPrefix(`/api`) || PathPrefix(`/estado`))
+      - traefik.http.routers.https-mikeos-api.priority=100
+      - traefik.http.routers.https-mikeos-api.tls.certresolver=letsencrypt
+      - traefik.http.services.mikeos-api.loadbalancer.server.port=4000
+
+  db:
+    image: postgres:16-alpine
+    container_name: mikeos-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: mikeos
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: mikeos_servidor
+    volumes:
+      - datos:/var/lib/postgresql/data
+    # Sin healthcheck, el servidor arranca antes que la base y se cae en el
+    # primer arranque de cada reinicio de la máquina.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mikeos"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    # Deliberadamente NO está en la red de Coolify: la base de datos no tiene
+    # por qué ser alcanzable desde donde vive el proxy.
+    networks:
+      - interna
+
+volumes:
+  datos:
+
+networks:
+  coolify:
+    external: true
+  interna:

@@ -112,8 +112,23 @@ th{color:var(--tenue);font-size:12px;text-transform:uppercase;letter-spacing:.6p
 .aviso p{margin:0;font-size:14px}
 footer{padding:40px 0 64px;margin-top:56px;border-top:1px solid var(--borde);
   color:var(--tenue);font-size:13px}
-ul{padding-left:20px}
+ul,ol{padding-left:22px}
 li{margin:5px 0}
+li > ul,li > ol{margin:5px 0}
+/* Dentro de un documento, los encabezados son jerarquía real, no etiquetas de
+   sección: h2 en mayúsculas pequeñas se come la estructura de un texto largo. */
+article h2{font-size:22px;text-transform:none;letter-spacing:-.3px;
+  color:var(--texto);margin:40px 0 12px;font-weight:700}
+article h3{font-size:17px;margin:26px 0 8px}
+article h4{font-size:15px;margin:22px 0 6px;color:var(--tenue)}
+blockquote{margin:16px 0;padding:2px 0 2px 16px;border-left:3px solid var(--borde);
+  color:var(--tenue)}
+blockquote p{margin:6px 0}
+hr{border:none;border-top:1px solid var(--borde);margin:32px 0}
+table code{font-size:12px}
+td strong{color:var(--texto)}
+/* Una tabla ancha desborda el móvil; que se desplace ella, no la página. */
+.tabla-ancha{overflow-x:auto}
 CSS
 
 # --- Cabecera y pie compartidos ----------------------------------------------
@@ -257,65 +272,43 @@ verde "  index.html y descargas.html"
 # significaría dos verdades distintas en cuanto alguien tocara una.
 paso "Documentación"
 python3 - "$RAIZ" "$WEB" <<'PYEOF'
-import os, re, sys, html
+import os, re, sys
 raiz, web = sys.argv[1], sys.argv[2]
 docs = os.path.join(raiz, "docs")
 
 def md_a_html(texto):
-    """Conversor mínimo: lo que usan los documentos de este proyecto y nada más.
-    No pretende cubrir Markdown entero; pretende no depender de pandoc."""
-    salida, en_lista, en_codigo, en_tabla = [], False, False, False
-    for linea in texto.split("\n"):
-        if linea.startswith("```"):
-            if en_codigo:
-                salida.append("</code></pre>"); en_codigo = False
-            else:
-                if en_lista: salida.append("</ul>"); en_lista = False
-                salida.append("<pre><code>"); en_codigo = True
-            continue
-        if en_codigo:
-            salida.append(html.escape(linea)); continue
+    """Markdown de verdad, con python-markdown.
 
-        l = html.escape(linea)
-        # Lo de dentro de la línea.
-        l = re.sub(r'`([^`]+)`', r'<code>\1</code>', l)
-        l = re.sub(r'\*\*([^*]+)\*\*', r'<strong>\1</strong>', l)
-        l = re.sub(r'(?<![\w*])\*([^*]+)\*(?![\w*])', r'<em>\1</em>', l)
-        l = re.sub(r'\[([^\]]+)\]\(([^)]+)\)', r'<a href="\2">\1</a>', l)
+    Aquí había un conversor escrito a mano de cuarenta líneas. Cubría lo que
+    usaban los documentos ese día y nada más: las listas anidadas se aplanaban,
+    el texto dentro de las celdas de una tabla no se formateaba, los bloques de
+    cita desaparecían y cualquier cosa que no estuviera prevista salía como
+    texto suelto. Y fallaba en silencio, que es lo peor: la página se generaba
+    igual, sólo que mal.
 
-        if l.startswith("|"):
-            celdas = [c.strip() for c in l.strip("|").split("|")]
-            if set("".join(celdas)) <= set("-: "):
-                continue                      # la fila de guiones no se pinta
-            if not en_tabla:
-                salida.append("<table>"); en_tabla = True
-                salida.append("<tr>" + "".join(f"<th>{c}</th>" for c in celdas) + "</tr>")
-            else:
-                salida.append("<tr>" + "".join(f"<td>{c}</td>" for c in celdas) + "</tr>")
-            continue
-        elif en_tabla:
-            salida.append("</table>"); en_tabla = False
+    Las extensiones son las que usan los documentos del proyecto:
+      tables      las comparativas y el registro del plan
+      fenced_code los bloques con ```
+      sane_lists  listas anidadas que no se mezclan entre sí
+      attr_list   poder poner clases en un elemento suelto
+      toc         índices dentro de un documento
+      nl2br       NO se usa: los saltos sueltos son del ancho del archivo,
+                  no párrafos nuevos
+    """
+    import markdown
+    html_generado = markdown.markdown(
+        texto,
+        extensions=["tables", "fenced_code", "sane_lists", "attr_list", "toc"],
+        output_format="html",
+    )
+    # Una tabla de atajos con dos columnas anchas desborda el móvil. Que se
+    # desplace la tabla, no la página entera: una página que se mueve de lado
+    # se siente rota.
+    html_generado = html_generado.replace(
+        "<table>", '<div class="tabla-ancha"><table>').replace(
+        "</table>", "</table></div>")
+    return html_generado
 
-        if re.match(r'^\s*[-*] ', l):
-            if not en_lista: salida.append("<ul>"); en_lista = True
-            salida.append("<li>" + re.sub(r'^\s*[-*] ', '', l) + "</li>")
-            continue
-        if en_lista and l.strip() == "":
-            salida.append("</ul>"); en_lista = False
-
-        m = re.match(r'^(#{1,4}) (.*)$', l)
-        if m:
-            if en_lista: salida.append("</ul>"); en_lista = False
-            n = len(m.group(1))
-            salida.append(f"<h{min(n+1,4)}>{m.group(2)}</h{min(n+1,4)}>")
-            continue
-        if l.strip() == "---":
-            salida.append("<hr>"); continue
-        if l.strip():
-            salida.append(f"<p>{l}</p>")
-    for cierre, activo in (("</ul>", en_lista), ("</table>", en_tabla), ("</code></pre>", en_codigo)):
-        if activo: salida.append(cierre)
-    return "\n".join(salida)
 
 TITULOS = {
     "architecture": "Arquitectura", "boot": "Arranque", "kernel": "Kernel",
@@ -356,7 +349,8 @@ if os.path.isdir(docs):
         titulo = TITULOS.get(base, base.replace("-", " ").capitalize())
         cuerpo = md_a_html(open(os.path.join(docs, archivo)).read())
         open(os.path.join(web, "docs", base + ".html"), "w").write(
-            pagina(titulo, f"<header><h1>{titulo}</h1></header>\n" + cuerpo))
+            pagina(titulo,
+                   f"<header><h1>{titulo}</h1></header>\n<article>{cuerpo}</article>"))
         generadas.append((base, titulo))
 
 enlaces = "\n".join(

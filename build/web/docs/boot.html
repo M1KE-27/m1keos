@@ -14,10 +14,9 @@
 </div></nav>
 <div class="cont">
 <header><h1>Arranque</h1></header>
-<h2>MIKE OS — Boot Process and Initialization</h2>
-<h3>1. Boot Stages</h3>
-<pre><code>
-BIOS / UEFI
+<article><h1 id="mike-os-boot-process-and-initialization">MIKE OS — Boot Process and Initialization</h1>
+<h2 id="1-boot-stages">1. Boot Stages</h2>
+<pre><code class="language-text">BIOS / UEFI
     │
     ▼
 Linux Kernel (bzImage)
@@ -34,7 +33,7 @@ Linux Kernel (bzImage)
           └── Direct execution -&gt; /sbin/runit
 </code></pre>
 <hr>
-<h3>2. Kernel Parameters Supported</h3>
+<h2 id="2-kernel-parameters-supported">2. Kernel Parameters Supported</h2>
 <ul>
 <li><code>root=/dev/vda rw</code>: Selects persistent root block device.</li>
 <li><code>console=ttyS0</code> or <code>console=tty0</code>: Configures primary system console.</li>
@@ -43,9 +42,11 @@ Linux Kernel (bzImage)
 <li><code>mikeos_test_suite=1</code>: Executes the 21-check automated test suite.</li>
 </ul>
 <hr>
-<h3>3. Runit Stage Flow</h3>
-<p>1. <strong>Stage 1 (<code>/etc/runit/1</code>)</strong>: Mounts virtual filesystems (<code>/proc</code>, <code>/sys</code>, <code>/dev</code>, <code>/dev/pts</code>, <code>/run</code>, <code>/tmp</code>), brings up loopback, sets hostname from <code>/etc/mikeos/system.conf</code>, and displays the welcome banner.</p>
-<p>2. <strong>Stage 2 (<code>/etc/runit/2</code>)</strong>: Starts <code>runsvdir</code> supervising <code>/var/service</code>.</p>
-<p>3. <strong>Stage 3 (<code>/etc/runit/3</code>)</strong>: Gracefully shuts down all services, syncs storage, unmounts filesystems, and halts/reboots.</p>
+<h2 id="3-runit-stage-flow">3. Runit Stage Flow</h2>
+<ol>
+<li><strong>Stage 1 (<code>/etc/runit/1</code>)</strong>: Mounts virtual filesystems (<code>/proc</code>, <code>/sys</code>, <code>/dev</code>, <code>/dev/pts</code>, <code>/run</code>, <code>/tmp</code>), brings up loopback, sets hostname from <code>/etc/mikeos/system.conf</code>, and displays the welcome banner.</li>
+<li><strong>Stage 2 (<code>/etc/runit/2</code>)</strong>: Starts <code>runsvdir</code> supervising <code>/var/service</code>.</li>
+<li><strong>Stage 3 (<code>/etc/runit/3</code>)</strong>: Gracefully shuts down all services, syncs storage, unmounts filesystems, and halts/reboots.</li>
+</ol></article>
 <footer>MIKE OS · <a href="../index.html">Inicio</a></footer>
 </div></body></html>

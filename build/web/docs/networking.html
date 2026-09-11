@@ -14,36 +14,33 @@
 </div></nav>
 <div class="cont">
 <header><h1>Red</h1></header>
-<h2>MIKE OS — Networking and SSH</h2>
-<h3>1. Network Architecture</h3>
+<article><h1 id="mike-os-networking-and-ssh">MIKE OS — Networking and SSH</h1>
+<h2 id="1-network-architecture">1. Network Architecture</h2>
 <p>MIKE OS manages network interfaces via <code>/etc/mikeos/network.conf</code> and the supervised <code>network</code> service.</p>
-<h4>Configuration (<code>/etc/mikeos/network.conf</code>)</h4>
-<pre><code>
-INTERFACE=&quot;eth0&quot;
+<h3 id="configuration-etcmikeosnetworkconf">Configuration (<code>/etc/mikeos/network.conf</code>)</h3>
+<pre><code class="language-sh">INTERFACE=&quot;eth0&quot;
 MODE=&quot;dhcp&quot;                    # Options: dhcp or static
 STATIC_IP=&quot;192.168.1.100/24&quot;
 GATEWAY=&quot;192.168.1.1&quot;
 DNS=&quot;1.1.1.1 8.8.8.8&quot;
 </code></pre>
-<h4>Management via <code>m-network</code></h4>
-<pre><code>
-m-network status        # Displays interface IPs, routing table, and DNS
+<h3 id="management-via-m-network">Management via <code>m-network</code></h3>
+<pre><code class="language-bash">m-network status        # Displays interface IPs, routing table, and DNS
 m-network test          # Tests connectivity with 1.1.1.1 and 8.8.8.8
 m-network dhcp eth0     # Requests IP address using udhcpc
 m-network static eth0 192.168.1.50/24 192.168.1.1
 </code></pre>
 <hr>
-<h3>2. Dropbear SSH Server</h3>
+<h2 id="2-dropbear-ssh-server">2. Dropbear SSH Server</h2>
 <p>MIKE OS includes a statically compiled Dropbear SSH server.</p>
 <ul>
 <li><strong>Host Keys</strong>: Auto-generated on first boot in <code>/etc/dropbear/</code> (RSA, ECDSA, Ed25519).</li>
 <li><strong>Port</strong>: 22 (forwarded to <code>localhost:2222</code> in QEMU).</li>
-<li><strong>Connecting from Host</strong>:</li>
-<p>  ```bash</p>
-<p>  ssh -p 2222 root@localhost</p>
-<p>  ssh -p 2222 mike@localhost</p>
-<p>  ```</p>
+<li><strong>Connecting from Host</strong>:
+  <code>bash
+  ssh -p 2222 root@localhost
+  ssh -p 2222 mike@localhost</code></li>
 <li><strong>Client Tool</strong>: <code>ssh</code> / <code>dbclient</code> and <code>scp</code> are pre-installed in <code>/usr/bin/</code>.</li>
-</ul>
+</ul></article>
 <footer>MIKE OS · <a href="../index.html">Inicio</a></footer>
 </div></body></html>

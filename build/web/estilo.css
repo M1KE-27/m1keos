@@ -63,5 +63,20 @@ th{color:var(--tenue);font-size:12px;text-transform:uppercase;letter-spacing:.6p
 .aviso p{margin:0;font-size:14px}
 footer{padding:40px 0 64px;margin-top:56px;border-top:1px solid var(--borde);
   color:var(--tenue);font-size:13px}
-ul{padding-left:20px}
+ul,ol{padding-left:22px}
 li{margin:5px 0}
+li > ul,li > ol{margin:5px 0}
+/* Dentro de un documento, los encabezados son jerarquía real, no etiquetas de
+   sección: h2 en mayúsculas pequeñas se come la estructura de un texto largo. */
+article h2{font-size:22px;text-transform:none;letter-spacing:-.3px;
+  color:var(--texto);margin:40px 0 12px;font-weight:700}
+article h3{font-size:17px;margin:26px 0 8px}
+article h4{font-size:15px;margin:22px 0 6px;color:var(--tenue)}
+blockquote{margin:16px 0;padding:2px 0 2px 16px;border-left:3px solid var(--borde);
+  color:var(--tenue)}
+blockquote p{margin:6px 0}
+hr{border:none;border-top:1px solid var(--borde);margin:32px 0}
+table code{font-size:12px}
+td strong{color:var(--texto)}
+/* Una tabla ancha desborda el móvil; que se desplace ella, no la página. */
+.tabla-ancha{overflow-x:auto}

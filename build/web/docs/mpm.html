@@ -14,21 +14,19 @@
 </div></nav>
 <div class="cont">
 <header><h1>Gestor de paquetes</h1></header>
-<h2>MPM — MIKE Package Manager (v0.2.0 Core)</h2>
+<article><h1 id="mpm-mike-package-manager-v020-core">MPM — MIKE Package Manager (v0.2.0 Core)</h1>
 <p><strong>MPM</strong> is the central package management and deployment system for MIKE OS.</p>
 <hr>
-<h3>1. Package Structure (<code>.mpk</code>)</h3>
+<h2 id="1-package-structure-mpk">1. Package Structure (<code>.mpk</code>)</h2>
 <p>An <code>.mpk</code> package is a compressed archive containing:</p>
-<pre><code>
-package-name-version-release-arch.mpk
+<pre><code class="language-text">package-name-version-release-arch.mpk
 ├── meta.json         # Metadata (name, version, dependencies, origin, license, sha256)
 ├── PRE_INSTALL       # Optional pre-installation hook
 ├── POST_INSTALL      # Optional post-installation hook
 └── data.tar.gz       # Payloads to deploy to root filesystem
 </code></pre>
-<h4>Example <code>meta.json</code>:</h4>
-<pre><code>
-{
+<h3 id="example-metajson">Example <code>meta.json</code>:</h3>
+<pre><code class="language-json">{
   &quot;name&quot;: &quot;mcore&quot;,
   &quot;version&quot;: &quot;0.1.0&quot;,
   &quot;release&quot;: &quot;mike1&quot;,
@@ -42,9 +40,8 @@ package-name-version-release-arch.mpk
 }
 </code></pre>
 <hr>
-<h3>2. Command Reference</h3>
-<pre><code>
-# Search packages
+<h2 id="2-command-reference">2. Command Reference</h2>
+<pre><code class="language-bash"># Search packages
 mpm search &lt;query&gt;
 
 # Show detailed package information
@@ -78,6 +75,6 @@ mpm rollback
 mpm kernel list
 mpm kernel install &lt;bzImage&gt;
 mpm kernel rollback
-</code></pre>
+</code></pre></article>
 <footer>MIKE OS · <a href="../index.html">Inicio</a></footer>
 </div></body></html>

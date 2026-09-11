@@ -14,31 +14,29 @@
 </div></nav>
 <div class="cont">
 <header><h1>Modo rescate</h1></header>
-<h2>MIKE OS — Recovery Mode and Troubleshooting</h2>
-<h3>1. Entering Recovery Mode</h3>
+<article><h1 id="mike-os-recovery-mode-and-troubleshooting">MIKE OS — Recovery Mode and Troubleshooting</h1>
+<h2 id="1-entering-recovery-mode">1. Entering Recovery Mode</h2>
 <p>To enter Recovery Mode, add the following parameter to the kernel command line during boot:</p>
-<pre><code>
-mikeos_recovery=1
+<pre><code class="language-text">mikeos_recovery=1
 </code></pre>
 <p>Or run via the runner script:</p>
-<pre><code>
-./scripts/run-qemu.sh --recovery
+<pre><code class="language-bash">./scripts/run-qemu.sh --recovery
 </code></pre>
 <hr>
-<h3>2. Recovery Environment</h3>
+<h2 id="2-recovery-environment">2. Recovery Environment</h2>
 <ul>
 <li>The <code>/init</code> entrypoint immediately halts the normal boot process and launches <code>/bin/mkshell</code> as <code>root</code> directly on <code>/dev/console</code>.</li>
 <li>Virtual filesystems (<code>/proc</code>, <code>/sys</code>, <code>/dev</code>, <code>/run</code>, <code>/tmp</code>) are mounted.</li>
 <li>Services are <strong>not</strong> started, allowing safe recovery of broken network configs, corrupt user accounts, or broken storage mounts.</li>
 </ul>
 <hr>
-<h3>3. Emergency Repairs</h3>
+<h2 id="3-emergency-repairs">3. Emergency Repairs</h2>
 <ul>
 <li><strong>Repair Filesystem</strong>: <code>fsck.ext4 -y /dev/vda</code></li>
 <li><strong>Reset User Passwords</strong>: Edit <code>/etc/passwd</code> or <code>/etc/shadow</code></li>
 <li><strong>Revert Package</strong>: <code>mpm rollback</code></li>
 <li><strong>Revert Kernel</strong>: <code>mpm kernel rollback</code></li>
 <li><strong>Reboot System</strong>: <code>reboot -f</code></li>
-</ul>
+</ul></article>
 <footer>MIKE OS · <a href="../index.html">Inicio</a></footer>
 </div></body></html>

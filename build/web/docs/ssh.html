@@ -14,22 +14,21 @@
 </div></nav>
 <div class="cont">
 <header><h1>SSH</h1></header>
-<h2>MIKE OS — SSH Architecture and Security</h2>
-<h3>Overview</h3>
+<article><h1 id="mike-os-ssh-architecture-and-security">MIKE OS — SSH Architecture and Security</h1>
+<h2 id="overview">Overview</h2>
 <p>MIKE OS includes a drop-in static Dropbear SSH daemon configured for minimal attack surface.</p>
-<h3>Features</h3>
+<h2 id="features">Features</h2>
 <ul>
 <li><strong>Zero dynamic library dependencies</strong> (fully static build).</li>
 <li><strong>Persistent host keys</strong>: Keys are generated once and stored in <code>/etc/dropbear/</code>.</li>
 <li><strong>User isolation</strong>: Supports <code>root</code> (UID 0) and unprivileged user <code>mike</code> (UID 1000).</li>
 <li><strong>Client utilities</strong>: <code>dbclient</code> (aliased to <code>ssh</code>) and <code>scp</code>.</li>
 </ul>
-<h3>Service Management</h3>
-<p>The SSH server is supervised by runit under <code>/etc/sv/dropbear</code>.</p>
-<p>To restart or stop SSH:</p>
-<pre><code>
-m-service restart dropbear
+<h2 id="service-management">Service Management</h2>
+<p>The SSH server is supervised by runit under <code>/etc/sv/dropbear</code>.
+To restart or stop SSH:</p>
+<pre><code class="language-bash">m-service restart dropbear
 m-service stop dropbear
-</code></pre>
+</code></pre></article>
 <footer>MIKE OS · <a href="../index.html">Inicio</a></footer>
 </div></body></html>

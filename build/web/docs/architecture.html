@@ -14,13 +14,12 @@
 </div></nav>
 <div class="cont">
 <header><h1>Arquitectura</h1></header>
-<h2>MIKE OS — System Architecture (v0.2.0 Core)</h2>
+<article><h1 id="mike-os-system-architecture-v020-core">MIKE OS — System Architecture (v0.2.0 Core)</h1>
 <p><strong>MIKE OS</strong> is an independent, ultra-lightweight, customizable, and high-performance Linux/Unix distribution built from scratch without systemd.</p>
 <hr>
-<h3>1. System Layering</h3>
+<h2 id="1-system-layering">1. System Layering</h2>
 <p>MIKE OS follows a strict, decoupled two-layer design:</p>
-<pre><code>
-┌─────────────────────────────────────────────────────────────┐
+<pre><code class="language-text">┌─────────────────────────────────────────────────────────────┐
 │                      MIKE DESKTOP (Optional)                │
 │       Hyprland · Wayland · Quickshell · MIKE UI Theme       │
 ├─────────────────────────────────────────────────────────────┤
@@ -32,16 +31,17 @@
 </code></pre>
 <p>The Core is completely autonomous and operates at maximum performance without any graphical dependencies.</p>
 <hr>
-<h3>2. Fundamental Design Principles</h3>
-<p>1. <strong>Strictly Customizable</strong>: Every system configuration resides in plain text under <code>/etc/mikeos/</code>.</p>
-<p>2. <strong>Ultra-Fast &amp; Lightweight</strong>: Sub-second boot times (<strong>~0.60s</strong>), low RAM consumption (<strong>45–80 MB</strong>).</p>
-<p>3. <strong>Zero Systemd</strong>: Utilizes <strong>runit 2.1.2</strong> as true PID 1 and service supervisor.</p>
-<p>4. <strong>POSIX/Unix Standard</strong>: Standard commands powered by static BusyBox, native tools, and full shell piping.</p>
-<p>5. <strong>Atomic &amp; Verifiable</strong>: Every package and kernel operation managed through MPM with SHA256 validation and instant rollback.</p>
+<h2 id="2-fundamental-design-principles">2. Fundamental Design Principles</h2>
+<ol>
+<li><strong>Strictly Customizable</strong>: Every system configuration resides in plain text under <code>/etc/mikeos/</code>.</li>
+<li><strong>Ultra-Fast &amp; Lightweight</strong>: Sub-second boot times (<strong>~0.60s</strong>), low RAM consumption (<strong>45–80 MB</strong>).</li>
+<li><strong>Zero Systemd</strong>: Utilizes <strong>runit 2.1.2</strong> as true PID 1 and service supervisor.</li>
+<li><strong>POSIX/Unix Standard</strong>: Standard commands powered by static BusyBox, native tools, and full shell piping.</li>
+<li><strong>Atomic &amp; Verifiable</strong>: Every package and kernel operation managed through MPM with SHA256 validation and instant rollback.</li>
+</ol>
 <hr>
-<h3>3. Filesystem Hierarchy</h3>
-<pre><code>
-/
+<h2 id="3-filesystem-hierarchy">3. Filesystem Hierarchy</h2>
+<pre><code class="language-text">/
 ├── boot/                   # Kernel images (vmlinuz, vmlinuz.old)
 ├── bin/ &amp; sbin/            # Essential binaries (runit, busybox, mkshell)
 ├── usr/
@@ -59,6 +59,6 @@
 │   └── lib/mpm/            # MPM database, packages repository, and backups
 ├── dev/, proc/, sys/       # Virtual kernel interfaces
 └── root/, home/mike/       # User home directories with .mkshellrc
-</code></pre>
+</code></pre></article>
 <footer>MIKE OS · <a href="../index.html">Inicio</a></footer>
 </div></body></html>

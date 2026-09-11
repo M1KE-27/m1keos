@@ -14,23 +14,57 @@
 </div></nav>
 <div class="cont">
 <header><h1>Rendimiento</h1></header>
-<h2>MIKE OS — Benchmarking and Telemetry History</h2>
-<h3>1. Evolution Summary</h3>
-<table>
-<tr><th>Metric</th><th>Initial Baseline</th><th>Consolidated Core (v0.2.0)</th><th>Target</th></tr>
-<tr><td><strong>Boot Time</strong></td><td>0.56 s</td><td><strong>0.60 s</strong></td><td>&lt; 1.0 s</td></tr>
-<tr><td><strong>RAM Consumption</strong></td><td>39 MB</td><td><strong>45 – 80 MB</strong></td><td>&lt; 128 MB</td></tr>
-<tr><td><strong>RootFS Image Size</strong></td><td>11 MB</td><td><strong>37 MB</strong> (ext4 disk)</td><td>&lt; 100 MB</td></tr>
-<tr><td><strong>Systemd Presence</strong></td><td>0%</td><td><strong>0%</strong></td><td>0%</td></tr>
-<tr><td><strong>Test Suite Pass Rate</strong></td><td>N/A</td><td><strong>100% (15/15 PASS)</strong></td><td>100%</td></tr>
-</table>
+<article><h1 id="mike-os-benchmarking-and-telemetry-history">MIKE OS — Benchmarking and Telemetry History</h1>
+<h2 id="1-evolution-summary">1. Evolution Summary</h2>
+<div class="tabla-ancha"><table>
+<thead>
+<tr>
+<th style="text-align: left;">Metric</th>
+<th style="text-align: center;">Initial Baseline</th>
+<th style="text-align: center;">Consolidated Core (v0.2.0)</th>
+<th style="text-align: center;">Target</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><strong>Boot Time</strong></td>
+<td style="text-align: center;">0.56 s</td>
+<td style="text-align: center;"><strong>0.60 s</strong></td>
+<td style="text-align: center;">&lt; 1.0 s</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>RAM Consumption</strong></td>
+<td style="text-align: center;">39 MB</td>
+<td style="text-align: center;"><strong>45 – 80 MB</strong></td>
+<td style="text-align: center;">&lt; 128 MB</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>RootFS Image Size</strong></td>
+<td style="text-align: center;">11 MB</td>
+<td style="text-align: center;"><strong>37 MB</strong> (ext4 disk)</td>
+<td style="text-align: center;">&lt; 100 MB</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Systemd Presence</strong></td>
+<td style="text-align: center;">0%</td>
+<td style="text-align: center;"><strong>0%</strong></td>
+<td style="text-align: center;">0%</td>
+</tr>
+<tr>
+<td style="text-align: left;"><strong>Test Suite Pass Rate</strong></td>
+<td style="text-align: center;">N/A</td>
+<td style="text-align: center;"><strong>100% (15/15 PASS)</strong></td>
+<td style="text-align: center;">100%</td>
+</tr>
+</tbody>
+</table></div>
 <hr>
-<h3>2. Telemetry Details</h3>
+<h2 id="2-telemetry-details">2. Telemetry Details</h2>
 <ul>
 <li><strong>Kernel + Init + Runit Boot Time</strong>: ~0.60 seconds.</li>
 <li><strong>Idle Process Count</strong>: ~57 processes (primarily Linux kernel worker threads and runit supervisors).</li>
 <li><strong>Supervised Services Active</strong>: <code>console</code>, <code>syslog</code>, <code>network</code>, <code>dropbear</code>.</li>
 <li><strong>Automated Runner</strong>: <code>./scripts/benchmark.sh</code>.</li>
-</ul>
+</ul></article>
 <footer>MIKE OS · <a href="../index.html">Inicio</a></footer>
 </div></body></html>

@@ -14,28 +14,51 @@
 </div></nav>
 <div class="cont">
 <header><h1>Init con runit</h1></header>
-<h2>MIKE OS — Service Supervision with Runit</h2>
+<article><h1 id="mike-os-service-supervision-with-runit">MIKE OS — Service Supervision with Runit</h1>
 <p>MIKE OS uses <strong>runit 2.1.2</strong> exclusively as its init and service supervisor.</p>
 <hr>
-<h3>1. Directory Structure</h3>
+<h2 id="1-directory-structure">1. Directory Structure</h2>
 <ul>
 <li><code>/etc/sv/&lt;service&gt;/run</code>: Executable service run script.</li>
 <li><code>/etc/sv/&lt;service&gt;/supervise/</code>: Service supervision state directory.</li>
 <li><code>/var/service/&lt;service&gt;</code>: Symlink to <code>/etc/sv/&lt;service&gt;</code> representing active, monitored services.</li>
 </ul>
 <hr>
-<h3>2. Core Services</h3>
-<table>
-<tr><th>Service</th><th>Script</th><th>Purpose</th></tr>
-<tr><td><code>console</code></td><td><code>/etc/sv/console/run</code></td><td>Spawns interactive MKShell on <code>/dev/console</code> with job control.</td></tr>
-<tr><td><code>syslog</code></td><td><code>/etc/sv/syslog/run</code></td><td>Captures system logs into <code>/var/log/messages</code>.</td></tr>
-<tr><td><code>network</code></td><td><code>/etc/sv/network/run</code></td><td>Manages network interfaces and DHCP client (<code>udhcpc</code>).</td></tr>
-<tr><td><code>dropbear</code></td><td><code>/etc/sv/dropbear/run</code></td><td>Runs SSH daemon on port 22 with auto-generated host keys.</td></tr>
-</table>
+<h2 id="2-core-services">2. Core Services</h2>
+<div class="tabla-ancha"><table>
+<thead>
+<tr>
+<th style="text-align: left;">Service</th>
+<th style="text-align: left;">Script</th>
+<th style="text-align: left;">Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><code>console</code></td>
+<td style="text-align: left;"><code>/etc/sv/console/run</code></td>
+<td style="text-align: left;">Spawns interactive MKShell on <code>/dev/console</code> with job control.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>syslog</code></td>
+<td style="text-align: left;"><code>/etc/sv/syslog/run</code></td>
+<td style="text-align: left;">Captures system logs into <code>/var/log/messages</code>.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>network</code></td>
+<td style="text-align: left;"><code>/etc/sv/network/run</code></td>
+<td style="text-align: left;">Manages network interfaces and DHCP client (<code>udhcpc</code>).</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>dropbear</code></td>
+<td style="text-align: left;"><code>/etc/sv/dropbear/run</code></td>
+<td style="text-align: left;">Runs SSH daemon on port 22 with auto-generated host keys.</td>
+</tr>
+</tbody>
+</table></div>
 <hr>
-<h3>3. Controlling Services with <code>m-service</code></h3>
-<pre><code>
-# List all services and their status
+<h2 id="3-controlling-services-with-m-service">3. Controlling Services with <code>m-service</code></h2>
+<pre><code class="language-bash"># List all services and their status
 m-service list
 
 # Enable and start a service
@@ -48,6 +71,6 @@ m-service disable dropbear
 
 # Restart a service
 m-service restart network
-</code></pre>
+</code></pre></article>
 <footer>MIKE OS · <a href="../index.html">Inicio</a></footer>
 </div></body></html>

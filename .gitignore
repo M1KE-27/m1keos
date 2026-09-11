@@ -53,3 +53,11 @@ build/mterminal/m-terminal
 *.so.*
 build/mpm/bin-resolver
 build/mpm/bin/
+
+# Secretos del servidor: nunca al repositorio.
+servidor/.env
+servidor/_build/
+servidor/deps/
+
+# La web es salida generada: se reconstruye con scripts/generar-web.sh.
+build/web/

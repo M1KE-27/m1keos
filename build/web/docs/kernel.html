@@ -14,19 +14,18 @@
 </div></nav>
 <div class="cont">
 <header><h1>Kernel</h1></header>
-<h2>MIKE OS — Kernel Management and Lifecycle</h2>
-<h3>1. Overview</h3>
+<article><h1 id="mike-os-kernel-management-and-lifecycle">MIKE OS — Kernel Management and Lifecycle</h1>
+<h2 id="1-overview">1. Overview</h2>
 <p>The Linux Kernel in MIKE OS (version 7.2.0, x86_64) is optimized for ultra-fast boot times, embedded drivers (ext4, virtio_blk, virtio_net, devtmpfs), and zero systemd dependencies.</p>
 <hr>
-<h3>2. Kernel Lifecycle via MPM</h3>
+<h2 id="2-kernel-lifecycle-via-mpm">2. Kernel Lifecycle via MPM</h2>
 <p>MPM manages the kernel layout under <code>/boot</code>:</p>
 <ul>
 <li><code>/boot/vmlinuz</code>: Current active kernel.</li>
 <li><code>/boot/vmlinuz.old</code>: Previous bootable fallback kernel.</li>
 </ul>
-<h4>Commands</h4>
-<pre><code>
-# List installed kernels
+<h3 id="commands">Commands</h3>
+<pre><code class="language-bash"># List installed kernels
 mpm kernel list
 
 # Install a new kernel bzImage safely
@@ -39,12 +38,12 @@ mpm kernel rollback
 mpm kernel remove 7.1.0
 </code></pre>
 <hr>
-<h3>3. Kernel Configuration Principles</h3>
+<h2 id="3-kernel-configuration-principles">3. Kernel Configuration Principles</h2>
 <ul>
 <li><code>CONFIG_BLK_DEV_INITRD=y</code>: Embedded initramfs support.</li>
 <li><code>CONFIG_DEVTMPFS=y</code> &amp; <code>CONFIG_DEVTMPFS_MOUNT=y</code>: Auto-mounted device nodes.</li>
 <li><code>CONFIG_EXT4_FS=y</code>: Native rootfs filesystem support.</li>
 <li><code>CONFIG_VIRTIO_BLK=y</code> &amp; <code>CONFIG_VIRTIO_NET=y</code>: Hypervisor acceleration.</li>
-</ul>
+</ul></article>
 <footer>MIKE OS · <a href="../index.html">Inicio</a></footer>
 </div></body></html>

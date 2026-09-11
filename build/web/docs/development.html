@@ -14,20 +14,19 @@
 </div></nav>
 <div class="cont">
 <header><h1>Desarrollo</h1></header>
-<h2>MIKE OS — Development Toolchain and C Compilation</h2>
-<h3>1. Package: <code>development.mpk</code></h3>
+<article><h1 id="mike-os-development-toolchain-and-c-compilation">MIKE OS — Development Toolchain and C Compilation</h1>
+<h2 id="1-package-developmentmpk">1. Package: <code>development.mpk</code></h2>
 <p>MIKE OS includes a self-contained native C toolchain packaged in <code>development.mpk</code>.</p>
 <hr>
-<h3>2. Components</h3>
+<h2 id="2-components">2. Components</h2>
 <ul>
 <li><strong>TinyCC (<code>/usr/bin/tcc</code>)</strong>: Ultra-fast, lightweight C compiler.</li>
 <li><strong>GCC Wrapper (<code>/usr/bin/gcc</code> and <code>/usr/bin/cc</code>)</strong>: Automates compilation with embedded header directories.</li>
 <li><strong>System Headers (<code>/usr/include/</code>)</strong>: Self-contained C headers (<code>stdio.h</code>, <code>stdlib.h</code>, <code>unistd.h</code>) with direct Linux x86_64 syscall implementations.</li>
 </ul>
 <hr>
-<h3>3. Usage Example</h3>
-<pre><code>
-// hello.c
+<h2 id="3-usage-example">3. Usage Example</h2>
+<pre><code class="language-c">// hello.c
 #include &lt;stdio.h&gt;
 
 int main() {
@@ -35,9 +34,8 @@ int main() {
     return 0;
 }
 </code></pre>
-<pre><code>
-# Compiling and executing
+<pre><code class="language-bash"># Compiling and executing
 gcc hello.c
-</code></pre>
+</code></pre></article>
 <footer>MIKE OS · <a href="../index.html">Inicio</a></footer>
 </div></body></html>
