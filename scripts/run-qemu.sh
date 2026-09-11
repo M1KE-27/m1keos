@@ -126,7 +126,26 @@ esac
 if [ "$NO_KVM" -eq 0 ] && [ -r /dev/kvm ] && [ -w /dev/kvm ]; then
     ACCEL_FLAGS=(-enable-kvm -cpu host)
 else
-    echo "Aviso: KVM no disponible o desactivado; usando TCG multihilo."
+    # Sin KVM, QEMU emula cada instrucción: la máquina va entre diez y
+    # cincuenta veces más lenta, y eso es casi todo el tiempo que tarda en
+    # arrancar o en instalar un paquete. Merece la pena decir POR QUÉ no hay
+    # KVM, porque casi siempre tiene arreglo y está a dos clics en la BIOS.
+    echo "Aviso: sin KVM; la máquina irá MUY lenta (emulación pura)."
+    if [ "$NO_KVM" -eq 1 ]; then
+        echo "  Motivo: lo has desactivado tú con --no-kvm."
+    elif dmesg 2>/dev/null | grep -qi "SVM disabled (by BIOS)"; then
+        echo "  Motivo: el procesador soporta virtualización pero está"
+        echo "  DESACTIVADA EN LA BIOS. Búscala como «SVM Mode» (AMD) o"
+        echo "  «Intel VT-x» y ponla en Enabled: la máquina irá decenas de"
+        echo "  veces más rápida."
+    elif ! grep -qE '(svm|vmx)' /proc/cpuinfo 2>/dev/null; then
+        echo "  Motivo: este procesador no tiene virtualización por hardware."
+    elif [ ! -e /dev/kvm ]; then
+        echo "  Motivo: falta /dev/kvm. Prueba: sudo modprobe kvm_amd (o kvm_intel)."
+    else
+        echo "  Motivo: /dev/kvm existe pero no puedes usarlo."
+        echo "  Prueba: sudo usermod -aG kvm \"$USER\"  (y vuelve a entrar)."
+    fi
     ACCEL_FLAGS=(-accel tcg,thread=multi -cpu max)
 fi
 

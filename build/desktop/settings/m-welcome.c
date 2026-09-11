@@ -128,6 +128,14 @@ static void on_instalar_drivers(GtkWidget *w, gpointer data) {
     g_spawn_command_line_async("/usr/bin/m-terminal -e \"m-drivers --instalar\"", NULL);
 }
 
+/* Abre el Centro de Control. Sustituye al párrafo que explicaba dónde estaba:
+ * si hay que explicar con palabras dónde se pulsa algo, es que falta el
+ * botón. */
+static void on_abrir_ajustes(GtkWidget *w, gpointer data) {
+    (void)w; (void)data;
+    g_spawn_command_line_async("quickshell ipc call ajustes abrir", NULL);
+}
+
 static GtkWidget *build_hardware(void) {
     GtkWidget *caja = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
     gtk_widget_set_name(caja, "customizebox");
@@ -231,24 +239,44 @@ int main(int argc, char **argv) {
     gtk_css_provider_load_from_data(css,
         /* Los mismos cinco colores que el resto del escritorio (ver
          * quickshell/Paleta.qml). El acento se reserva para el único botón
-         * que hace algo: antes teñía los títulos, las teclas, los bordes y
-         * las tarjetas, y todo gritaba a la vez. */
-        "window { background-color: rgba(11, 13, 17, 0.92); }"
-        "#title { color: #e8ebf0; font-size: 32px; font-weight: bold; }"
-        "#subtitle { color: #79818f; font-size: 14px; }"
-        "#sechdr { color: #79818f; font-size: 12px; font-weight: bold;"
+         * que hace algo. */
+        "window { background-color: #0b0d11; border: 1px solid #262c36;"
+        "  border-radius: 12px; }"
+        "#cabecera { background-color: #0b0d11; }"
+        "#title { color: #e8ebf0; font-size: 26px; font-weight: bold; }"
+        "#subtitle { color: #79818f; font-size: 13px; }"
+        "#raya { background-color: #262c36; min-height: 1px; }"
+        /* Las tarjetas dan la estructura: sin ellas, el contenido flotaba
+         * suelto sobre un fondo enorme y no se sabía qué iba con qué. */
+        "#tarjeta { background-color: #161a21; border: 1px solid #262c36;"
+        "  border-radius: 10px; }"
+        "#tarjetatitulo { color: #e8ebf0; font-weight: bold; font-size: 14px; }"
+        "#sechdr { color: #79818f; font-size: 11px; font-weight: bold;"
         "  letter-spacing: 1px; }"
-        "#key { color: #e8ebf0; font-family: monospace; font-weight: bold; font-size: 13px; }"
-        "#desc { color: #79818f; font-size: 13px; }"
-        "#gobtn { background-color: #00d4ff; color: #05070c; font-weight: bold;"
-        "  font-size: 15px; border-radius: 8px; padding: 12px 26px; border: none; }"
-        "#gobtn:hover { background-color: #33ddff; }"
-        "#expander { color: #79818f; font-size: 13px; }"
+        "#key { color: #e8ebf0; font-family: monospace; font-weight: bold; font-size: 12px; }"
+        "#desc { color: #79818f; font-size: 12px; }"
+        /* background-image: none es obligatorio. Adwaita pinta los botones
+         * con un degradado, y un degradado encima tapa el color de fondo:
+         * el botón principal salía gris por mucho que se le pusiera el
+         * acento. Y va como "button#gobtn" para ganar en especificidad al
+         * selector del tema. */
+        "button#gobtn { background-color: #00d4ff; background-image: none;"
+        "  color: #05070c; font-weight: bold; font-size: 14px;"
+        "  border-radius: 8px; padding: 10px 26px; border: none;"
+        "  text-shadow: none; box-shadow: none; }"
+        "button#gobtn:hover { background-color: #33ddff; background-image: none; }"
+        "button#botonsec { background-color: #1f242d; background-image: none;"
+        "  color: #e8ebf0; font-size: 12px; border: 1px solid #262c36;"
+        "  border-radius: 7px; padding: 7px 14px; text-shadow: none;"
+        "  box-shadow: none; }"
+        "button#botonsec:hover { background-color: #262c36; background-image: none; }"
+        "#expander { color: #79818f; font-size: 12px; }"
         "#expander > label { color: #79818f; }"
         "#customizebox { background-color: #161a21;"
         "  border: 1px solid #262c36; border-radius: 10px; }"
         "#customizetitle { color: #e8ebf0; font-weight: bold; font-size: 14px; }"
-        "#customizetext { color: #79818f; font-size: 13px; }",
+        "#customizetext { color: #79818f; font-size: 12px; }"
+        "scrolledwindow { background-color: transparent; }",
         -1, NULL);
     gtk_style_context_add_provider_for_screen(gdk_screen_get_default(),
         GTK_STYLE_PROVIDER(css), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
@@ -259,6 +287,14 @@ int main(int argc, char **argv) {
      * portátil de 1366x768 se sale por los cuatro lados y deja el botón de
      * cerrar fuera de la vista. */
     {
+        /* Tamaño a la medida del contenido, no un porcentaje de la pantalla.
+         *
+         * Antes eran el 92 % de ancho por el 90 % de alto. En un monitor de
+         * 1920x1080 eso es una ventana de 1766x972 para un contenido que cabe
+         * en una franja: el resultado era una pantalla de bienvenida hecha
+         * casi toda de vacío, con cuatro cosas sueltas flotando. Una ventana
+         * que se ajusta a lo que enseña se ve intencionada; una estirada a
+         * pantalla completa se ve abandonada. */
         GdkRectangle pantalla = { 0, 0, 1280, 720 };
         GdkDisplay *disp = gdk_display_get_default();
         if (disp) {
@@ -267,17 +303,12 @@ int main(int argc, char **argv) {
                 mon = gdk_display_get_monitor(disp, 0);
             if (mon) gdk_monitor_get_geometry(mon, &pantalla);
         }
-        int an = (int)(pantalla.width  * 0.92);
-        int al = (int)(pantalla.height * 0.90);
-        /* Por debajo de estos tamaños el contenido no cabe de ninguna
-         * manera y es mejor que la ventana desborde a que se recorte. */
-        if (an < 900) an = 900;
-        if (al < 560) al = 560;
+        int an = 880, al = 580;
+        /* En pantallas pequeñas manda la pantalla, no la cifra fija. */
+        if (an > pantalla.width  - 80) an = pantalla.width  - 80;
+        if (al > pantalla.height - 80) al = pantalla.height - 80;
         gtk_window_set_default_size(GTK_WINDOW(win), an, al);
-        /* El margen interior también encoge: 48 píxeles por lado en una
-         * pantalla pequeña se come el espacio útil. */
-        gtk_container_set_border_width(GTK_CONTAINER(win),
-                                       pantalla.height < 900 ? 20 : 48);
+        gtk_container_set_border_width(GTK_CONTAINER(win), 0);
     }
     gtk_window_set_resizable(GTK_WINDOW(win), TRUE);
     gtk_window_set_position(GTK_WINDOW(win), GTK_WIN_POS_CENTER);
@@ -287,59 +318,100 @@ int main(int argc, char **argv) {
     GtkWidget *outer = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
     gtk_container_add(GTK_CONTAINER(win), outer);
 
-    GtkWidget *title = gtk_label_new(">_ MIKE OS");
+    /* ---- Cabecera ---------------------------------------------------- */
+    GtkWidget *cabecera = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
+    gtk_widget_set_name(cabecera, "cabecera");
+    gtk_container_set_border_width(GTK_CONTAINER(cabecera), 28);
+    gtk_box_pack_start(GTK_BOX(outer), cabecera, FALSE, FALSE, 0);
+
+    GtkWidget *title = gtk_label_new("MIKE OS");
     gtk_widget_set_name(title, "title");
     gtk_widget_set_halign(title, GTK_ALIGN_START);
-    gtk_box_pack_start(GTK_BOX(outer), title, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(cabecera), title, FALSE, FALSE, 0);
 
-    GtkWidget *subtitle = gtk_label_new(
-        "Bienvenido. Aquí tienes todos los controles del escritorio, resumidos.");
+    GtkWidget *subtitle = gtk_label_new("Cinco atajos y ya te manejas.");
     gtk_widget_set_name(subtitle, "subtitle");
     gtk_widget_set_halign(subtitle, GTK_ALIGN_START);
-    gtk_box_pack_start(GTK_BOX(outer), subtitle, FALSE, FALSE, 6);
+    gtk_box_pack_start(GTK_BOX(cabecera), subtitle, FALSE, FALSE, 0);
 
-    GtkWidget *sep = gtk_separator_new(GTK_ORIENTATION_HORIZONTAL);
-    gtk_box_pack_start(GTK_BOX(outer), sep, FALSE, FALSE, 18);
+    GtkWidget *raya = gtk_separator_new(GTK_ORIENTATION_HORIZONTAL);
+    gtk_widget_set_name(raya, "raya");
+    gtk_box_pack_start(GTK_BOX(outer), raya, FALSE, FALSE, 0);
 
-    /* Tres columnas de secciones para aprovechar el ancho casi-fullscreen. */
-    GtkWidget *cols = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 40);
-    gtk_widget_set_valign(cols, GTK_ALIGN_CENTER);
-    gtk_box_pack_start(GTK_BOX(outer), cols, TRUE, FALSE, 0);
+    /* ---- Dos columnas del mismo peso --------------------------------- */
+    GtkWidget *cuerpo = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 24);
+    gtk_container_set_border_width(GTK_CONTAINER(cuerpo), 28);
+    gtk_box_pack_start(GTK_BOX(outer), cuerpo, TRUE, TRUE, 0);
 
-    GtkWidget *col1 = gtk_box_new(GTK_ORIENTATION_VERTICAL, 22);
-    GtkWidget *col2 = gtk_box_new(GTK_ORIENTATION_VERTICAL, 22);
-    GtkWidget *col3 = gtk_box_new(GTK_ORIENTATION_VERTICAL, 22);
-    gtk_box_pack_start(GTK_BOX(cols), col1, TRUE, TRUE, 0);
-    gtk_box_pack_start(GTK_BOX(cols), col2, TRUE, TRUE, 0);
-    gtk_box_pack_start(GTK_BOX(cols), col3, TRUE, TRUE, 0);
+    GtkWidget *izq = gtk_box_new(GTK_ORIENTATION_VERTICAL, 14);
+    GtkWidget *der = gtk_box_new(GTK_ORIENTATION_VERTICAL, 14);
+    gtk_box_pack_start(GTK_BOX(cuerpo), izq, TRUE, TRUE, 0);
+    gtk_box_pack_start(GTK_BOX(cuerpo), der, TRUE, TRUE, 0);
 
-    /* Columna 1: sólo lo esencial. Columna 2: todo lo demás, plegado.
-     * Columna 3: lo que hay dentro de este equipo. */
-    gtk_box_pack_start(GTK_BOX(col1), build_section(&ESENCIAL), FALSE, FALSE, 0);
+    /* Izquierda: los cinco atajos, y debajo el resto plegado. */
+    GtkWidget *tarjeta_atajos = gtk_box_new(GTK_ORIENTATION_VERTICAL, 10);
+    gtk_widget_set_name(tarjeta_atajos, "tarjeta");
+    gtk_container_set_border_width(GTK_CONTAINER(tarjeta_atajos), 18);
+    /* Sin expandir: una tarjeta estirada a lo alto de la columna es un
+     * rectángulo medio vacío con cinco líneas arriba del todo. */
+    gtk_box_pack_start(GTK_BOX(izq), tarjeta_atajos, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(tarjeta_atajos), build_section(&ESENCIAL), FALSE, FALSE, 0);
 
     GtkWidget *todos = gtk_expander_new("Ver todos los atajos");
     gtk_widget_set_name(todos, "expander");
-    GtkWidget *caja_todos = gtk_box_new(GTK_ORIENTATION_VERTICAL, 18);
+    GtkWidget *desplaza = gtk_scrolled_window_new(NULL, NULL);
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(desplaza),
+                                   GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
+    gtk_widget_set_size_request(desplaza, -1, 200);
+    GtkWidget *caja_todos = gtk_box_new(GTK_ORIENTATION_VERTICAL, 16);
+    gtk_container_set_border_width(GTK_CONTAINER(caja_todos), 8);
     for (guint i = 0; i < G_N_ELEMENTS(SECTIONS); i++)
         gtk_box_pack_start(GTK_BOX(caja_todos), build_section(&SECTIONS[i]), FALSE, FALSE, 0);
-    gtk_container_add(GTK_CONTAINER(todos), caja_todos);
-    gtk_box_pack_start(GTK_BOX(col2), todos, FALSE, FALSE, 0);
+    gtk_container_add(GTK_CONTAINER(desplaza), caja_todos);
+    gtk_container_add(GTK_CONTAINER(todos), desplaza);
+    gtk_box_pack_start(GTK_BOX(izq), todos, FALSE, FALSE, 0);
 
-    gtk_box_pack_start(GTK_BOX(col3), build_hardware(), FALSE, FALSE, 0);
+    /* Derecha: el equipo, y un acceso al Centro de Control.
+     * Donde antes había un párrafo explicando dónde estaba el panel de
+     * ajustes, ahora hay un botón que lo abre. */
+    gtk_box_pack_start(GTK_BOX(der), build_hardware(), FALSE, FALSE, 0);
 
-    /* Aquí vivía una tarjeta que explicaba en un párrafo dónde estaba el
-     * panel de control y que "no hace falta configurarlo todo ahora, puedes
-     * ir cambiándolo poco a poco, cuando quieras". Una interfaz no se
-     * tranquiliza a sí misma en prosa: o el botón se encuentra solo, o el
-     * párrafo no lo va a arreglar. */
+    GtkWidget *tarjeta_ajustes = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
+    gtk_widget_set_name(tarjeta_ajustes, "tarjeta");
+    gtk_container_set_border_width(GTK_CONTAINER(tarjeta_ajustes), 18);
+    GtkWidget *t_aj = gtk_label_new("A tu gusto");
+    gtk_widget_set_name(t_aj, "tarjetatitulo");
+    gtk_widget_set_halign(t_aj, GTK_ALIGN_START);
+    GtkWidget *d_aj = gtk_label_new("Barra, colores, fondo, teclado y sonido.");
+    gtk_widget_set_name(d_aj, "customizetext");
+    gtk_widget_set_halign(d_aj, GTK_ALIGN_START);
+    GtkWidget *b_aj = gtk_button_new_with_label("Abrir el Centro de Control");
+    gtk_widget_set_name(b_aj, "botonsec");
+    gtk_widget_set_halign(b_aj, GTK_ALIGN_START);
+    g_signal_connect(b_aj, "clicked", G_CALLBACK(on_abrir_ajustes), NULL);
+    gtk_box_pack_start(GTK_BOX(tarjeta_ajustes), t_aj, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(tarjeta_ajustes), d_aj, FALSE, FALSE, 0);
+    gtk_box_pack_start(GTK_BOX(tarjeta_ajustes), b_aj, FALSE, FALSE, 6);
+    gtk_box_pack_start(GTK_BOX(der), tarjeta_ajustes, FALSE, FALSE, 0);
 
-    GtkWidget *btnbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
-    gtk_widget_set_halign(btnbox, GTK_ALIGN_END);
-    GtkWidget *btn = gtk_button_new_with_label("Entendido, empezar");
+    /* ---- Barra inferior ---------------------------------------------- */
+    GtkWidget *raya2 = gtk_separator_new(GTK_ORIENTATION_HORIZONTAL);
+    gtk_widget_set_name(raya2, "raya");
+    gtk_box_pack_start(GTK_BOX(outer), raya2, FALSE, FALSE, 0);
+
+    GtkWidget *pie = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+    gtk_container_set_border_width(GTK_CONTAINER(pie), 20);
+    gtk_box_pack_start(GTK_BOX(outer), pie, FALSE, FALSE, 0);
+
+    GtkWidget *aviso = gtk_label_new("Esta ventana sólo aparece la primera vez.");
+    gtk_widget_set_name(aviso, "customizetext");
+    gtk_widget_set_halign(aviso, GTK_ALIGN_START);
+    gtk_box_pack_start(GTK_BOX(pie), aviso, TRUE, TRUE, 0);
+
+    GtkWidget *btn = gtk_button_new_with_label("Empezar");
     gtk_widget_set_name(btn, "gobtn");
     g_signal_connect(btn, "clicked", G_CALLBACK(on_close), NULL);
-    gtk_box_pack_start(GTK_BOX(btnbox), btn, FALSE, FALSE, 0);
-    gtk_box_pack_start(GTK_BOX(outer), btnbox, FALSE, FALSE, 24);
+    gtk_box_pack_end(GTK_BOX(pie), btn, FALSE, FALSE, 0);
 
     gtk_widget_show_all(win);
     gtk_main();

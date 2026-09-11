@@ -1569,6 +1569,18 @@ ShellRoot {
         function abrir(): void { panelFondos.abrir() }
     }
 
+    // Para que otras aplicaciones puedan abrir el Centro de Control. Lo usa
+    // el botón de la pantalla de bienvenida, que antes era un párrafo
+    // explicando dónde había que pulsar.
+    IpcHandler {
+        target: "ajustes"
+        function abrir(): void {
+            root.seccion = "vistazo"
+            root.panelOpen = true
+            wifiList.refresh()
+        }
+    }
+
     // Lectura periódica del volumen. Tres segundos bastan: es un indicador,
     // no un medidor, y consultar más a menudo sólo gasta CPU.
     Process {

@@ -58,7 +58,23 @@ static void terminal_spawn(VteTerminal *terminal, const char *cwd) {
     char *login_argv[] = { (char *)"/bin/bash", (char *)"-l", NULL };
     /* Se pasa por la shell para admitir un comando completo con argumentos
      * ("vi /ruta/al/archivo") sin tener que trocearlo aquí. */
-    char *exec_argv[] = { (char *)"/bin/bash", (char *)"-lc", exec_command, NULL };
+    /* Al terminar el comando se dice que ha terminado y se espera una tecla.
+     *
+     * Antes, la ventana se quedaba abierta sin más: pulsabas "Instalar
+     * controladores", se abría una terminal, la instalación acababa en unos
+     * segundos... y la ventana seguía ahí, idéntica, para siempre. Desde
+     * fuera es indistinguible de una instalación colgada, y así se vivía:
+     * "se queda años instalando y nunca acaba".
+     *
+     * Esperar una tecla en vez de cerrar sola es a propósito: si el comando
+     * falló, el error tiene que poder leerse. */
+    char *exec_envuelto = g_strdup_printf(
+        "%s; _rc=$?; echo; "
+        "if [ $_rc -eq 0 ]; then printf '\\033[32m✓ Terminado.\\033[0m'; "
+        "else printf '\\033[31m✗ Terminó con error (%%s).\\033[0m' \"$_rc\"; fi; "
+        "printf ' Pulsa una tecla para cerrar esta ventana.'; "
+        "read -rsn1 _ </dev/tty", exec_command);
+    char *exec_argv[] = { (char *)"/bin/bash", (char *)"-lc", exec_envuelto, NULL };
 
     g_setenv("TERM", "xterm-256color", TRUE);
     g_setenv("COLORTERM", "truecolor", TRUE);

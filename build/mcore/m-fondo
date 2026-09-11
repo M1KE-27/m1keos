@@ -1,0 +1,101 @@
+#!/bin/sh
+# m-fondo - el fondo de pantalla, en un solo sitio.
+#
+# Antes había dos caminos que no se hablaban. Hyprland arrancaba la sesión con
+#
+#     exec-once = swaybg -i /usr/share/backgrounds/wallpaper.png -m fill
+#
+# una ruta fija, la de fábrica. Y "m-wallhaven set" guardaba lo que elegías en
+# ~/.config/mike/wallpaper.jpg y relanzaba swaybg con esa otra. Resultado: el
+# fondo que ponías se veía hasta que cerrabas la sesión, y al volver a entrar
+# reaparecía el de fábrica. De ahí el "siempre se me quita el fondo".
+#
+# Además swaybg no lo vigilaba nadie: si se moría, el escritorio se quedaba
+# con un rectángulo negro hasta reiniciar la sesión entera.
+#
+# Aquí el fondo es una clave más de settings.conf, como el resto de ajustes, y
+# el proceso que lo pinta está supervisado igual que la barra.
+#
+#   m-fondo actual           imprime la ruta del fondo en uso
+#   m-fondo poner <ruta>     lo guarda y lo aplica ya
+#   m-fondo aplicar          relanza swaybg con el fondo guardado
+#   m-fondo servicio         supervisa swaybg (lo llama Hyprland al arrancar)
+set -u
+
+CFG_DIR="${HOME:-/root}/.config/mike"
+DE_FABRICA="/usr/share/backgrounds/wallpaper.png"
+
+# Lee la clave del mismo settings.json que mira la barra. Si no hay archivo,
+# si la clave falta o si el archivo al que apunta ya no existe (lo borraste,
+# venía de otro usuario), se cae al de fábrica en vez de dejar la pantalla en
+# negro.
+actual() {
+    _ruta=""
+    if [ -f "$CFG_DIR/settings.json" ]; then
+        _ruta="$(sed -n 's/.*"wallpaper"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
+                 "$CFG_DIR/settings.json" | head -1)"
+    fi
+    [ -n "$_ruta" ] && [ -f "$_ruta" ] || _ruta="$DE_FABRICA"
+    printf '%s\n' "$_ruta"
+}
+
+pintar() {
+    _f="$(actual)"
+    pkill -x swaybg 2>/dev/null || true
+    # Un respiro: sin él, el swaybg nuevo puede arrancar antes de que el
+    # viejo suelte la superficie y se queda sin pintar nada.
+    sleep 0.2
+    swaybg -i "$_f" -m fill >/dev/null 2>&1 &
+}
+
+case "${1:-actual}" in
+    actual)
+        actual
+        ;;
+
+    poner)
+        [ -z "${2:-}" ] && { echo "Uso: m-fondo poner <ruta>" >&2; exit 1; }
+        [ -f "$2" ] || { echo "m-fondo: no existe $2" >&2; exit 1; }
+        # Ruta absoluta: guardar una relativa haría que el fondo dependiera
+        # de desde dónde se lanzara la sesión.
+        case "$2" in
+            /*) _abs="$2" ;;
+            *)  _abs="$(cd "$(dirname "$2")" && pwd)/$(basename "$2")" ;;
+        esac
+        m-apply-settings set "wallpaper=$_abs" >/dev/null 2>&1
+        pintar
+        echo "[OK] Fondo: $_abs"
+        ;;
+
+    aplicar)
+        pintar
+        ;;
+
+    servicio)
+        # Mismo trato que la barra (ver m-panel): si swaybg se cae, vuelve
+        # solo. Se corta tras varios fallos seguidos para no quemar CPU si
+        # el fondo no se puede pintar nunca.
+        fallos=0
+        while [ "$fallos" -lt 5 ]; do
+            _f="$(actual)"
+            _t0="$(date +%s)"
+            swaybg -i "$_f" -m fill >/dev/null 2>&1
+            _t1="$(date +%s)"
+            # Si aguantó más de diez segundos, no es un fallo de arranque:
+            # es que alguien lo mató (un cambio de fondo, por ejemplo).
+            if [ "$((_t1 - _t0))" -gt 10 ]; then
+                fallos=0
+            else
+                fallos=$((fallos + 1))
+            fi
+            sleep 1
+        done
+        echo "m-fondo: swaybg no arranca; se deja de intentar." >&2
+        exit 1
+        ;;
+
+    *)
+        echo "Uso: m-fondo [actual|poner <ruta>|aplicar|servicio]" >&2
+        exit 1
+        ;;
+esac

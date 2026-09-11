@@ -132,6 +132,14 @@ comprobar "la barra está viva"           'pgrep -x quickshell >/dev/null && ech
 # que ejecuta la orden lleva "m-panel" escrito y se cuenta a sí mismo.
 comprobar "una sola barra, no dos"       'pgrep -f "[m]-panel" | wc -l'    '^ *1$'
 comprobar "la captura de pantalla funciona" 'grim /tmp/humo.png >/dev/null 2>&1 && test -s /tmp/humo.png && echo ok' 'ok'
+comprobar "hay fondo de pantalla pintado"  'pgrep -x swaybg >/dev/null && echo ok' 'ok'
+# El fondo elegido tiene que sobrevivir a la sesión: durante semanas se
+# perdía al salir, porque Hyprland arrancaba swaybg con una ruta fija.
+comprobar "el fondo sale de los ajustes, no de una ruta fija" \
+    'm-fondo actual' '^/'
+comprobar "el fondo elegido se recuerda" \
+    'cp /usr/share/backgrounds/wallpaper.png /tmp/otro.png && m-fondo poner /tmp/otro.png >/dev/null && m-fondo actual' \
+    '/tmp/otro.png'
 echo
 
 # --- Gestor de paquetes -----------------------------------------------------

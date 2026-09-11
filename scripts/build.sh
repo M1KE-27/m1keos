@@ -378,7 +378,7 @@ else
 fi
 
 # Instalar MCore
-for util in m-service m-system m-network m-user m-disk m-info m-doctor m-log m-sudo m-install m-screenshot m-volume m-metrics m-audio-setup m-fastfetch m-workspace-cycle m-drivers m-wifi m-bluetooth m-wallhaven; do
+for util in m-service m-system m-network m-user m-disk m-info m-doctor m-log m-sudo m-install m-screenshot m-volume m-metrics m-audio-setup m-fastfetch m-workspace-cycle m-drivers m-wifi m-bluetooth m-wallhaven m-fondo; do
     cp "$BUILD_DIR/mcore/$util" "$ROOTFS_DIR/usr/bin/"
     chmod 755 "$ROOTFS_DIR/usr/bin/$util"
 done
@@ -402,6 +402,18 @@ chmod 755 "$ROOTFS_DIR/usr/lib/mpm/resolver" "$ROOTFS_DIR/usr/lib/mpm/sync"
 # antes de empezar. Se refresca solo cuando pasa de una semana.
 echo "Generando catálogo de paquetes de Arch..."
 mkdir -p "$ROOTFS_DIR/var/lib/mpm/sync" "$ROOTFS_DIR/var/lib/mpm/installed" "$ROOTFS_DIR/var/lib/mpm/tmp"
+
+# El repositorio oficial viene configurado de fábrica. Sin esto, un sistema
+# recién instalado no sabe dónde buscar actualizaciones y hay que escribir un
+# "mpm source add" que nadie adivina: en la práctica, nadie se actualizaría
+# nunca. Configurado no significa automático -- sigue haciendo falta pedir el
+# "mpm upgrade" a mano, que es como debe ser.
+MIKEOS_REPO_OFICIAL="${MIKEOS_REPO_OFICIAL:-https://m1keos.duckdns.org/mpm/}"
+cat > "$ROOTFS_DIR/var/lib/mpm/sources.list" <<EOF
+# Repositorios que consulta "mpm update".
+# Añadir otro:  mpm source add <url>
+$MIKEOS_REPO_OFICIAL
+EOF
 if MPM_SYNC_DIR="$ROOTFS_DIR/var/lib/mpm/sync" "$PROJECT_ROOT/build/mpm/sync"; then
     :
 else
@@ -439,7 +451,18 @@ build_dir = os.environ['MIKEOS_BUILD_DIR']
 # suelto que NO pasa por este resolutor, así que llegaban al sistema sin sus
 # bibliotecas: wpctl moría con "libwireplumber-0.5.so.0: cannot open shared
 # object file" y el volumen no se podía leer.
-bins = ['/usr/bin/Hyprland', '/usr/bin/Xwayland', '/usr/bin/start-hyprland', '/usr/bin/hyprctl', '/usr/bin/quickshell', '/usr/bin/fuzzel', '/usr/bin/seatd', '/usr/bin/seatd-launch', '/usr/bin/swaybg', '/usr/bin/bwrap', '/usr/bin/wpctl', '/usr/bin/pactl', '/usr/bin/amixer', '/usr/bin/grim', '/usr/bin/slurp', '/usr/bin/wl-copy', '/usr/bin/pipewire', '/usr/bin/pipewire-pulse', '/usr/bin/wireplumber', '/usr/bin/dbus-daemon', '/usr/bin/dbus-launch', '/usr/bin/dbus-run-session', '/usr/bin/zstd', '/usr/bin/unzstd', '/usr/bin/iwctl', '/usr/bin/bluetoothctl', f'{build_dir}/mterminal/m-terminal', f'{build_dir}/settings/m-settings', f'{build_dir}/settings/m-wallpapers', f'{build_dir}/settings/m-welcome']
+bins = ['/usr/bin/Hyprland', '/usr/bin/Xwayland', '/usr/bin/start-hyprland', '/usr/bin/hyprctl', '/usr/bin/quickshell', '/usr/bin/fuzzel', '/usr/bin/seatd', '/usr/bin/seatd-launch', '/usr/bin/swaybg', '/usr/bin/bwrap', '/usr/bin/wpctl', '/usr/bin/pactl', '/usr/bin/amixer', '/usr/bin/grim', '/usr/bin/slurp', '/usr/bin/wl-copy', '/usr/bin/pipewire', '/usr/bin/pipewire-pulse', '/usr/bin/wireplumber', '/usr/bin/dbus-daemon', '/usr/bin/dbus-launch', '/usr/bin/dbus-run-session', '/usr/bin/zstd', '/usr/bin/unzstd', '/usr/bin/iwctl', '/usr/bin/bluetoothctl', f'{build_dir}/mterminal/m-terminal', f'{build_dir}/settings/m-settings', f'{build_dir}/settings/m-wallpapers', f'{build_dir}/settings/m-welcome',
+    # Herramientas de disco. Hacen falta para que el instalador pueda crear
+    # una instalación que arranque de verdad: tabla GPT (sfdisk), partición
+    # EFI en FAT32 (mkfs.vfat) y raíz en btrfs (mkfs.btrfs, btrfs). BusyBox
+    # no trae ninguna de las tres, así que hasta ahora m-install sólo sabía
+    # formatear el disco entero en ext4 y sin tabla de particiones -- algo
+    # que en un portátil UEFI no arranca.
+    '/usr/bin/mkfs.btrfs', '/usr/bin/btrfs', '/usr/bin/btrfstune',
+    '/usr/bin/mkfs.vfat', '/usr/bin/fatlabel',
+    '/usr/bin/sfdisk', '/usr/bin/partx', '/usr/bin/blkid', '/usr/bin/lsblk',
+    '/usr/bin/mkfs.ext4', '/usr/bin/e2label', '/usr/bin/findmnt',
+    '/usr/bin/efibootmgr']
 lib_links = {}
 
 os.makedirs(f"{rootfs}/usr/bin", exist_ok=True)
@@ -764,6 +787,14 @@ if os.path.exists(wallpaper):
 # Optimizar tamaño: strip de símbolos ELF
 print("Optimizando tamaño: eliminando símbolos de depuración ELF...")
 for r_root, r_dirs, r_files in os.walk(rootfs):
+    # /lib/firmware queda fuera pase lo que pase. Algunos blobs de firmware
+    # son ELF por dentro (los de la GPU, entre otros) y "strip" los daría por
+    # buenos y les quitaría secciones que el dispositivo necesita: el
+    # resultado es una gráfica o una WiFi que no arranca, y el motivo no se
+    # ve por ninguna parte.
+    if '/lib/firmware' in r_root:
+        r_dirs[:] = []
+        continue
     for r_f in r_files:
         r_p = os.path.join(r_root, r_f)
         if not os.path.islink(r_p) and os.path.isfile(r_p):
@@ -774,6 +805,72 @@ for r_root, r_dirs, r_files in os.walk(rootfs):
             except Exception:
                 pass
 PYEOF
+
+echo "Copiando firmware de hardware real..."
+# ---------------------------------------------------------------------------
+# FIRMWARE
+#
+# Hasta ahora /lib/firmware no existía siquiera. Da igual tener el driver de
+# la gráfica o del WiFi compilado: la mayoría del hardware moderno no arranca
+# con el driver solo, necesita además un binario que el kernel le carga al
+# encenderlo. Sin esta carpeta, en una Surface no hay ni gráficos ni red.
+#
+# No se copia /lib/firmware entero (534 MiB en el equipo de construcción):
+# sólo lo que estas máquinas piden de verdad. La lista se amplía cuando haga
+# falta, y "m-drivers" ya sabe decir qué falta en un equipo concreto.
+#
+# El anfitrión los guarda comprimidos con zstd (*.bin.zst). El kernel sólo
+# sabe leerlos así con CONFIG_FW_LOADER_COMPRESS, que no está, de modo que se
+# descomprimen al copiarlos. Ocupan más y se cargan más rápido.
+# ---------------------------------------------------------------------------
+FW_ORIGEN="/lib/firmware"
+FW_DESTINO="$ROOTFS_DIR/lib/firmware"
+if [ -d "$FW_ORIGEN" ]; then
+    mkdir -p "$FW_DESTINO"
+    # Gráficos AMD: Picasso y Raven son la Surface Laptop 3 AMD; Renoir, la 4.
+    # Vega10/Vega20 por si aparece una tarjeta dedicada.
+    # Sólo lo que este hardware pide de verdad. La primera versión de esta
+    # lista metía i915 (28 MB) y todas las revisiones de iwlwifi (239 MB) por
+    # llevarlas "de propina", y dejaba una imagen de 937 MB para un sistema
+    # que presume de ocupar poco. Lo de otros fabricantes se instala a
+    # demanda: para eso hay un gestor de paquetes (ver firmware-extra).
+    FW_PATRONES="
+        amdgpu/picasso*   amdgpu/raven*     amdgpu/renoir*
+        amdgpu/green_sardine*
+        ath10k/QCA6174/*  ath10k/QCA9377/*
+        qca/*usb*         qca/nvm*          qca/rampatch*
+        amd-ucode/*
+        rtw88/*
+        regulatory.db*
+    "
+    _fw_n=0
+    for _pat in $FW_PATRONES; do
+        for _f in $FW_ORIGEN/$_pat; do
+            [ -e "$_f" ] || continue
+            [ -d "$_f" ] && continue
+            _rel="${_f#$FW_ORIGEN/}"
+            case "$_rel" in
+                *.zst)
+                    mkdir -p "$FW_DESTINO/$(dirname "${_rel%.zst}")"
+                    zstd -dqf "$_f" -o "$FW_DESTINO/${_rel%.zst}" 2>/dev/null || continue
+                    ;;
+                *)
+                    mkdir -p "$FW_DESTINO/$(dirname "$_rel")"
+                    cp -a "$_f" "$FW_DESTINO/$_rel" 2>/dev/null || continue
+                    ;;
+            esac
+            _fw_n=$((_fw_n + 1))
+        done
+    done
+    # iwlwifi (Intel) no va en la imagen base: son 185 archivos y cada serie
+    # tiene varias revisiones -- 239 MB en total para un portátil que lleva
+    # Qualcomm. Va en el paquete firmware-extra, que se instala en un minuto
+    # si hace falta.
+    echo "  -> $_fw_n archivos de firmware ($(du -sh "$FW_DESTINO" 2>/dev/null | cut -f1))."
+else
+    echo "Aviso: el equipo de construcción no tiene /lib/firmware; la imagen"
+    echo "       saldrá sin firmware y no habrá gráficos ni WiFi en hardware real."
+fi
 
 echo "Preparando compatibilidad libudev..."
 # libudev-zero es opcional: un fallo de red no debe dejar el sistema sin
@@ -1092,7 +1189,13 @@ fakeroot -- env ROOTFS_DIR="$ROOTFS_DIR" ISO_DIR="$ISO_DIR" sh -c '
     chmod 4755 "$ROOTFS_DIR/bin/busybox"
     chmod 4755 "$ROOTFS_DIR/usr/bin/m-sudo"
     cd "$ROOTFS_DIR"
-    find . -not -path "./boot/*" -not -path "./var/lib/mpm/repo/*" -not -path "./usr/lib/*" -not -path "./lib64/*" -not -path "./usr/share/X11/*" -not -path "./usr/bin/Hyprland*" -not -path "./usr/bin/quickshell*" -print0 \
+    # /lib/firmware queda fuera del initramfs a propósito. El initramfs se
+    # carga ENTERO en memoria antes de que exista nada, así que cada mega ahí
+    # es un mega de RAM y de tiempo de arranque. Y no hace falta: los drivers
+    # piden su firmware cuando el disco raíz ya está montado, no antes.
+    # Meterlo dentro subía el initramfs de 26 MB a 142 MB, que en una máquina
+    # de 512 MB es la diferencia entre arrancar y no arrancar.
+    find . -not -path "./boot/*" -not -path "./var/lib/mpm/repo/*" -not -path "./usr/lib/*" -not -path "./lib64/*" -not -path "./usr/share/X11/*" -not -path "./usr/bin/Hyprland*" -not -path "./usr/bin/quickshell*" -not -path "./lib/firmware/*" -print0 \
         | LC_ALL=C sort -z \
         | cpio --null -o --format=newc 2>/dev/null \
         | gzip -9n > "$ISO_DIR/initramfs.cpio.gz"

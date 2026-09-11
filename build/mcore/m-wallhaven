@@ -67,10 +67,10 @@ case "${1:-}" in
         mkdir -p "$(dirname "$WALLPAPER")"
         curl -fsSL "$2" -o "$WALLPAPER.tmp"
         mv "$WALLPAPER.tmp" "$WALLPAPER"
-        if command -v hyprctl >/dev/null 2>&1 && [ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]; then
-            pkill -x swaybg 2>/dev/null || true
-            ( swaybg -i "$WALLPAPER" -m fill >/dev/null 2>&1 & )
-        fi
+        # Quien pinta y recuerda el fondo es m-fondo. Antes esto relanzaba
+        # swaybg por su cuenta y no guardaba nada, así que el fondo duraba
+        # hasta cerrar la sesión.
+        m-fondo poner "$WALLPAPER" >/dev/null 2>&1
         echo "[OK] Fondo actualizado."
         ;;
     *)

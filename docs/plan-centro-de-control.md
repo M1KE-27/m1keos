@@ -553,6 +553,115 @@ un gestor de paquetes que se contradecía a sí mismo en la misma pantalla.
 
 ---
 
+## Bloque 12 — Que el sistema exista fuera de QEMU
+
+Al mirar el instalador salió algo que no estaba en ningún sitio: **MIKE OS
+nunca había arrancado solo**. `run-qemu.sh` le pasa el kernel en la mano
+(`-kernel bzImage -initrd ...`), así que no había cadena de arranque en
+absoluto, y `m-install` formateaba el disco entero sin tabla de particiones,
+sin partición EFI y sin nada que arrancara. En un portátil de verdad eso es un
+disco que la UEFI ni mira.
+
+- [x] **12.1 Hardware real en el kernel** — *11 sep 2026*
+  El kernel se construía con `make defconfig` más cuatro cosas de máquina
+  virtual: **sin NVMe** (o sea, sin ver su propio disco), sin gráficos, sin
+  WiFi, sin teclado. Añadidas ~150 claves para Surface Laptop 3/4 con AMD:
+  NVMe, amdgpu con Display Core, Surface Aggregator (de donde cuelgan teclado,
+  batería y ventiladores en una Surface), `PINCTRL_AMD` —sin él no hay
+  interrupciones de touchpad—, audio ACP de Renoir, ath10k, y de propina
+  Intel, MediaTek y Realtek para que la imagen no sirva para un solo modelo.
+  *Verificado clave por clave sobre el `.config` resultante*, no dando por
+  bueno que `merge_config` las aplicara: 19 no llegaban por dependencias que
+  faltaban debajo, y una —`SND_SOC_AMD_RV_RT5682_MACH`— resultó ser de
+  Chromebook (depende de `CROS_EC`), no de Surface.
+
+- [x] **12.2 Firmware** — *11 sep 2026* · `/lib/firmware` no existía. Da igual
+  el driver: la GPU y la WiFi no arrancan sin su binario. Se copia un
+  subconjunto (no los 534 MiB del equipo de construcción) y se descomprime,
+  porque el kernel no lee `.zst` sin `FW_LOADER_COMPRESS`.
+  *De paso:* la pasada de `strip` recorría el rootfs entero y habría
+  destrozado los blobs que son ELF por dentro. Ahora `/lib/firmware` queda
+  fuera.
+
+- [x] **12.3 Instalador que instala algo que arranca** — *11 sep 2026*
+  GPT, partición EFI de 512 MiB en FAT32, raíz en **btrfs con subvolúmenes**
+  (`@`, `@home`, `@instantaneas`) o ext4 a elegir, fstab por UUID y kernel en
+  la partición EFI. **Sin gestor de arranque:** el kernel lleva
+  `CONFIG_EFI_STUB`, así que él mismo es un ejecutable UEFI y se copia como
+  `EFI/BOOT/BOOTX64.EFI`.
+
+- [ ] **12.4 Live USB / ISO arrancable** — un medio que arranque en cualquier
+      equipo y permita probar el sistema antes de instalarlo, con `m-install`
+      a mano. Necesita `xorriso` (ISO híbrida con El Torito + imagen EFI).
+
+- [ ] **12.5 Secure Boot** — las Surface vienen con Secure Boot activado y
+      este kernel no lleva la firma de Microsoft. De momento se desactiva en
+      la UEFI; firmarlo con clave propia (y matricularla) es otro punto.
+
+---
+
+## Bloque 13 — Actualizar todas las máquinas desde una
+
+Que tú toques el código en tu equipo y quien quiera se lo lleve con
+`mpm upgrade`. Buena parte ya estaba: `mpm` tiene `sources.list`,
+`mpm source add`, descarga de `repo.json` y verificación SHA256.
+
+- [ ] **13.1 Instantánea antes de actualizar** — con btrfs, `mpm upgrade` toma
+      una instantánea del sistema antes de tocar nada, y `mpm rollback` vuelve
+      a ella. Sustituye al copiado manual de archivos a
+      `/var/lib/mpm/backups`, que duplica las escrituras de cada instalación y
+      sólo protege lo que mpm conoce.
+- [ ] **13.2 El sistema base, empaquetado** — `mcore`, `mike-desktop` y
+      `mkshell` ya son `.mpk`. Falta `mikeos-base` (busybox, runit, bash) para
+      que no quede nada fuera del alcance de una actualización.
+- [ ] **13.3 El kernel, empaquetado** — un `.mpk` que deje el kernel nuevo en
+      la partición EFI conservando el anterior, para poder volver si no
+      arranca.
+- [ ] **13.4 `scripts/publicar.sh`** — construye, sube al mini PC y regenera
+      el índice. Una orden entre "he cambiado algo" y "ya se lo pueden bajar".
+- [ ] **13.5 Paquetes firmados** — hoy se comprueba el SHA256 contra el
+      índice, pero quien te suplante el servidor sirve su índice y su paquete
+      y ambos cuadran. Una firma evita eso.
+
+---
+
+## Bloque 14 — mikeos.duckdns.org
+
+La cara pública del sistema, en el mini PC de casa.
+
+- [ ] **14.1 Página de inicio** — qué es MIKE OS, en qué se diferencia, y las
+      cifras reales (arranque, memoria, tamaño).
+- [ ] **14.2 Descarga directa** — la ISO más reciente, con su SHA256 al lado.
+- [ ] **14.3 Guía de instalación** — desde grabar el USB hasta el primer
+      arranque, incluido desactivar Secure Boot en una Surface.
+- [ ] **14.4 Documentación** — lo que ya está en `docs/`, publicado y
+      navegable, generado desde el repositorio y no copiado a mano.
+- [ ] **14.5 Wiki** — páginas que se puedan editar sin tocar el repositorio.
+- [ ] **14.6 Repositorio de paquetes** — el mismo dominio sirve
+      `mpm/repo.json`, que es lo que consulta `mpm upgrade` (ver Bloque 13).
+
+### El mini PC como backend del sistema
+
+La idea de m1ke, y encaja: el mini PC de casa no sirve sólo los paquetes, es
+**el servicio en línea de MIKE OS**. Todo lo de abajo es el mismo equipo y el
+mismo dominio, así que no hay infraestructura nueva que mantener.
+
+- [ ] **14.7 Índice de paquetes y descargas** — lo del 14.6, pero servido por
+      Coolify con HTTPS, que es lo que ya hace con las demás aplicaciones.
+- [ ] **14.8 Catálogo de fondos propio** — hoy los fondos vienen de Wallhaven,
+      una API ajena que puede cambiar o cerrar. Un catálogo propio hace que
+      «Fondo de pantalla» siga funcionando pase lo que pase.
+- [ ] **14.9 Registro de equipos** — cada instalación dice su versión al
+      actualizarse, de forma anónima. Sirve para saber si una actualización
+      rompió algo antes de que alguien lo cuente.
+- [ ] **14.10 Informes de fallo** — `m-doctor --enviar` sube el diagnóstico y
+      devuelve un identificador que pegar en la wiki. Sólo cuando se pide.
+- [ ] **14.11 Ajustes que siguen al usuario** — `settings.conf` guardado en el
+      servidor para que un equipo nuevo quede como el anterior. Voluntario y
+      apagado de fábrica: es la configuración de alguien, no telemetría.
+
+---
+
 ## Estado
 
 | Bloque | Puntos | Hechos |
@@ -569,7 +678,10 @@ un gestor de paquetes que se contradecía a sí mismo en la misma pantalla.
 | 9 · Reacción inmediata | 5 | **4** |
 | 10 · Que no parezca de máquina | 6 | **6 ✓** |
 | 11 · Cómo se verifica | 4 | **4 ✓** |
-| **Total** | **94** | **46** |
+| 12 · Fuera de QEMU | 5 | **3** |
+| 13 · Actualizaciones | 5 | 0 |
+| 14 · mikeos.duckdns.org | 11 | 0 |
+| **Total** | **115** | **49** |
 
 ---
 

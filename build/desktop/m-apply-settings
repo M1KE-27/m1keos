@@ -169,6 +169,11 @@ BAR_BUTTONS="$(leer       bar_buttons     lista                          'captur
 # Escritorio
 WORKSPACE_COUNT="$(leer   workspace_count entero:1:10                    4)"
 ACCENT_COLOR="$(leer      accent_color    color                          '#00d4ff')"
+# El fondo es un ajuste como cualquier otro, no una ruta escrita a fuego en
+# hyprland.conf. Antes había dos: la de arranque (siempre la de fábrica) y la
+# que guardaba m-wallhaven, así que el fondo elegido se perdía al salir de la
+# sesión. Lo pinta y lo vigila m-fondo.
+WALLPAPER="$(leer         wallpaper       texto  '/usr/share/backgrounds/wallpaper.png')"
 # El blur de Hyprland es de los efectos más caros que hay y se nota mucho sin
 # aceleración por hardware (QEMU, gráficas integradas antiguas). MIKE OS tiene
 # que ir fluido en cualquier equipo de partida; quien quiera el efecto lo
@@ -223,6 +228,7 @@ if [ ! -f "$SETTINGS" ]; then
         echo '-- === Escritorio ===========================================================';
         _linea workspace_count   "$WORKSPACE_COUNT"       'espacios de trabajo (1-10)'
         _linea accent_color      "\"$ACCENT_COLOR\""      'color de acento, #rrggbb'
+        _linea wallpaper         "\"$WALLPAPER\""         'ruta del fondo de pantalla'
         _linea blur_enabled      "$_blur_txt"             'desenfoque (cuesta rendimiento)'
         _linea animation_speed   "\"$ANIMATION_SPEED\""   'instant | fast | normal'
         _linea terminal_opacity  "$TERMINAL_OPACITY"      'opacidad de la terminal (40-100)'
@@ -264,6 +270,7 @@ BLUR_JSON="false"; [ "$BLUR_ENABLED" = "1" ] && BLUR_JSON="true"
 cat > "$AJUSTES_JSON.tmp" <<JSON
 {
   "accent_color":      "$ACCENT_COLOR",
+  "wallpaper":         "$WALLPAPER",
   "bar_position":      "$BAR_POSITION",
   "bar_vertical":      $BAR_VERTICAL,
   "bar_shape":         "$BAR_SHAPE",

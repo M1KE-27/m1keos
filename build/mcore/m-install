@@ -1,167 +1,291 @@
 #!/bin/sh
 # ==============================================================================
-# m-install - MIKE OS Target Disk Installer
+# m-install - instala MIKE OS en un disco, de forma que arranque solo.
+#
+# Lo que hacía antes:
+#
+#     mkfs.ext4 -F -L MIKEOS_ROOT /dev/sda
+#
+# Es decir, formateaba el disco ENTERO como un sistema de archivos suelto: sin
+# tabla de particiones, sin partición EFI y sin nada que arrancara. En QEMU
+# parecía funcionar porque QEMU recibe el kernel en la mano
+# (-kernel bzImage -initrd ...) y se salta el arranque; en un portátil de
+# verdad el resultado era un disco que la UEFI ni mira.
+#
+# Lo que hace ahora:
+#
+#   1. Tabla GPT.
+#   2. Partición EFI de 512 MiB en FAT32.
+#   3. Raíz en btrfs con subvolúmenes (@ y @home) o en ext4, a elegir.
+#   4. Copia el sistema y deja el kernel en la partición EFI.
+#
+# Sin gestor de arranque: el kernel de MIKE OS se compila con CONFIG_EFI_STUB,
+# o sea que él mismo es un ejecutable UEFI válido. Se copia como
+# EFI/BOOT/BOOTX64.EFI y la firmware lo arranca directamente. Un GRUB menos
+# que mantener, y un sitio menos donde se puede romper el arranque.
+#
+# En equipos con Secure Boot activado (las Surface vienen así de fábrica) hay
+# que desactivarlo en la UEFI: este kernel no lleva la firma de Microsoft.
 # ==============================================================================
 set -eu
 
-echo "=========================================================="
-echo "          INSTALADOR DE MIKE OS EN DISCO"
-echo "=========================================================="
+VERDE='\033[32m'; ROJO='\033[31m'; GRIS='\033[90m'; NEGRITA='\033[1m'; FIN='\033[0m'
+paso()  { printf "${NEGRITA}»${FIN} %s\n" "$*"; }
+ok()    { printf "  ${VERDE}✓${FIN} %s\n" "$*"; }
+error() { printf "${ROJO}ERROR:${FIN} %s\n" "$*" >&2; }
+nota()  { printf "  ${GRIS}%s${FIN}\n" "$*"; }
 
 if [ "$(id -u)" -ne 0 ]; then
-    echo "ERROR: Debes ser root para ejecutar el instalador." >&2
+    error "hay que ser root para instalar."
     exit 1
 fi
 
-TARGET_DEV="${1:-}"
+# --- Herramientas ------------------------------------------------------------
+# Se comprueban antes de tocar nada: enterarse de que falta mkfs.btrfs después
+# de haber borrado el disco no le sirve a nadie.
+faltan=""
+for t in sfdisk mkfs.vfat; do
+    command -v "$t" >/dev/null 2>&1 || faltan="$faltan $t"
+done
+if [ -n "$faltan" ]; then
+    error "faltan herramientas:$faltan"
+    exit 1
+fi
 
-ask() {
-    _prompt="$1"
-    _default="$2"
-    _answer=""
-    if [ -t 0 ] || [ -c /dev/tty ]; then
-        printf "%s [%s]: " "$_prompt" "$_default" >&2
-        IFS= read -r _answer </dev/tty || _answer=""
+echo
+printf "${NEGRITA}  Instalador de MIKE OS${FIN}\n"
+echo "  ────────────────────────────────────────────"
+echo
+
+# --- Elegir disco ------------------------------------------------------------
+DESTINO="${1:-}"
+if [ -z "$DESTINO" ]; then
+    echo "  Discos detectados:"
+    if command -v lsblk >/dev/null 2>&1; then
+        lsblk -d -o NAME,SIZE,MODEL 2>/dev/null | sed 's/^/    /'
+    else
+        ls -1 /dev/sd? /dev/vd? /dev/nvme?n? 2>/dev/null | sed 's/^/    /'
     fi
-    [ -n "$_answer" ] && printf '%s' "$_answer" || printf '%s' "$_default"
+    echo
+    echo "  Uso: m-install <disco>      (por ejemplo: m-install /dev/nvme0n1)"
+    exit 1
+fi
+
+[ -b "$DESTINO" ] || { error "'$DESTINO' no es un disco."; exit 1; }
+
+# Nunca formatear el disco del que estamos arrancando ni uno con particiones
+# montadas: convierte una errata en una pérdida de datos.
+REAL="$(readlink -f "$DESTINO" 2>/dev/null || echo "$DESTINO")"
+if grep -q "^$REAL" /proc/mounts 2>/dev/null || \
+   grep -qE "^${REAL}p?[0-9]+ " /proc/mounts 2>/dev/null; then
+    error "'$DESTINO' o alguna de sus particiones está montada."
+    exit 1
+fi
+
+# --- Preguntas ---------------------------------------------------------------
+preguntar() {
+    _p="$1"; _d="$2"; _r=""
+    if [ -c /dev/tty ]; then
+        printf "  %s [%s]: " "$_p" "$_d" >&2
+        IFS= read -r _r </dev/tty || _r=""
+    fi
+    [ -n "$_r" ] && printf '%s' "$_r" || printf '%s' "$_d"
 }
 
-if [ -z "$TARGET_DEV" ]; then
-    echo "Dispositivos de almacenamiento detectados:"
-    ls -l /dev/sd* /dev/vd* /dev/nvme* 2>/dev/null | grep -E '[a-z]$' || true
-    echo ""
-    echo "Uso: m-install <dispositivo_destino> (ej: /dev/vda o /dev/sda)"
-    exit 1
-fi
-
-if [ ! -b "$TARGET_DEV" ]; then
-    echo "ERROR: '$TARGET_DEV' no es un dispositivo de bloque válido." >&2
-    exit 1
-fi
-
-# Nunca permitir formatear el dispositivo que sostiene la raíz activa ni un
-# disco con particiones montadas. Esto evita convertir un error tipográfico en
-# una pérdida de datos, especialmente dentro de QEMU/VMware.
-TARGET_REAL="$(readlink -f "$TARGET_DEV" 2>/dev/null || echo "$TARGET_DEV")"
-ROOT_SOURCE="$(mount 2>/dev/null | awk '$3 == "/" {print $1; exit}')"
-ROOT_REAL="$(readlink -f "$ROOT_SOURCE" 2>/dev/null || echo "$ROOT_SOURCE")"
-if [ "$TARGET_REAL" = "$ROOT_REAL" ]; then
-    echo "ERROR: '$TARGET_DEV' es el dispositivo raíz actualmente en uso." >&2
-    exit 1
-fi
-MOUNTED_MATCH=""
-for src in $(mount 2>/dev/null | awk '{print $1}'); do
-    real="$(readlink -f "$src" 2>/dev/null || echo "$src")"
-    case "$real" in
-        "${TARGET_REAL}"*) MOUNTED_MATCH="$real" ;;
-    esac
-done
-if [ -n "$MOUNTED_MATCH" ]; then
-    echo "ERROR: '$TARGET_DEV' o una de sus particiones está montada." >&2
-    exit 1
-fi
-
-echo "¡ADVERTENCIA! Se borrarán todos los datos en $TARGET_DEV."
-printf "¿Deseas continuar con la instalación? (s/N): "
-read -r CONFIRM
-if [ "$CONFIRM" != "s" ] && [ "$CONFIRM" != "S" ]; then
-    echo "Instalación cancelada."
-    exit 0
-fi
-
-echo ""
-echo "Configuración inicial (puedes cambiarla después en /etc/mikeos/):"
-echo "  Teclados disponibles: es, us, latam, fr, de, it, pt, br, uk"
-KEYMAP="$(ask "Distribución de teclado" "es")"
-case "$KEYMAP" in es|us|latam|fr|de|it|pt|br|uk) ;; *) echo "Aviso: teclado '$KEYMAP' no listado; se conservará." ;; esac
-LOCALE="$(ask "Locale (ej. es_ES.UTF-8)" "es_ES.UTF-8")"
-TIMEZONE="$(ask "Zona horaria" "UTC")"
-HOSTNAME="$(ask "Nombre del equipo" "mikeos")"
-COMMON_PACKAGES="$(ask "Paquetes comunes (separados por espacios; none para omitir)" "none")"
-
-echo "[1/5] Creando sistema de archivos ext4 en $TARGET_DEV..."
-mkfs.ext4 -F -L "MIKEOS_ROOT" "$TARGET_DEV"
-
-MOUNT_POINT="/tmp/mikeos_target"
-mkdir -p "$MOUNT_POINT"
-
-echo "[2/5] Montando partición destino en $MOUNT_POINT..."
-mount "$TARGET_DEV" "$MOUNT_POINT"
-
-echo "[3/5] Copiando sistema base de MIKE OS..."
-for d in bin sbin usr etc var root home; do
-    if [ -d "/$d" ]; then
-        echo "  Copiando /$d..."
-        cp -a "/$d" "$MOUNT_POINT/"
-    fi
-done
-
-# El instalador es editable desde el live USB: guardar las decisiones evita
-# perderlas aunque algún paquete opcional no esté en el medio de instalación.
-mkdir -p "$MOUNT_POINT/etc/mikeos"
-cat << EOF > "$MOUNT_POINT/etc/mikeos/install.conf"
-# Generado por m-install desde el live USB
-KEYMAP="$KEYMAP"
-LOCALE="$LOCALE"
-TIMEZONE="$TIMEZONE"
-HOSTNAME="$HOSTNAME"
-COMMON_PACKAGES="$COMMON_PACKAGES"
-EOF
-sed -i "s/^KEYMAP=.*/KEYMAP=\"$KEYMAP\"/; s/^LOCALE=.*/LOCALE=\"$LOCALE\"/; s/^TIMEZONE=.*/TIMEZONE=\"$TIMEZONE\"/" "$MOUNT_POINT/etc/mikeos/system.conf"
-echo "$HOSTNAME" > "$MOUNT_POINT/etc/hostname"
-
-# Los paquetes opcionales se dejan anotados para que MPM pueda resolverlos con
-# red en el primer arranque. MTerminal ya forma parte del perfil gráfico.
-cat << EOF > "$MOUNT_POINT/etc/mikeos/first-boot-packages"
-$COMMON_PACKAGES
-EOF
-
-# Resolver de paquetes comunes desde el repositorio que viaja en el live USB.
-# Lo que no exista localmente queda anotado para que el primer arranque pueda
-# resolverlo con red, sin convertir una selección opcional en un fallo fatal.
-if [ "$COMMON_PACKAGES" != "none" ] && command -v chroot >/dev/null 2>&1; then
-    for _pkg in $COMMON_PACKAGES; do
-        case "$_pkg" in
-            ''|*[!A-Za-z0-9+_.-]*) echo "  Paquete omitido por nombre inválido: $_pkg"; continue ;;
-        esac
-        if chroot "$MOUNT_POINT" /usr/bin/mpm info "$_pkg" >/dev/null 2>&1; then
-            echo "  Instalando paquete común offline: $_pkg"
-            if ! chroot "$MOUNT_POINT" /usr/bin/mpm install "$_pkg" >/dev/null 2>&1; then
-                echo "  Aviso: $_pkg se resolverá en el primer arranque."
-            fi
-        else
-            echo "  Aviso: $_pkg no está en el medio; se resolverá en el primer arranque."
+# btrfs por defecto, y por un motivo concreto de este sistema: "mpm rollback"
+# hoy copia a mano cada archivo que va a reemplazar, lo que duplica las
+# escrituras de cada instalación y sólo protege lo que mpm conoce. Con btrfs,
+# una instantánea antes de instalar es inmediata, no ocupa y cubre el sistema
+# entero.
+echo "  Sistema de archivos para la raíz:"
+echo "    btrfs  instantáneas antes de cada instalación, rollback completo,"
+echo "           compresión transparente (recomendado)"
+echo "    ext4   más simple, sin instantáneas"
+FS="$(preguntar "Elige" "btrfs")"
+case "$FS" in
+    btrfs)
+        if ! command -v mkfs.btrfs >/dev/null 2>&1; then
+            error "no hay mkfs.btrfs en este medio; usa ext4."
+            exit 1
         fi
-    done
-fi
-if [ -f "$MOUNT_POINT/etc/skel/.config/mike/hyprland.conf" ]; then
-    sed -i "s/^kb_layout = .*/kb_layout = $KEYMAP,us/" "$MOUNT_POINT/etc/skel/.config/mike/hyprland.conf"
-fi
+        ;;
+    ext4) command -v mkfs.ext4 >/dev/null 2>&1 || { error "no hay mkfs.ext4."; exit 1; } ;;
+    *)    error "sólo btrfs o ext4."; exit 1 ;;
+esac
 
-# Crear puntos de montaje vacíos
-mkdir -p "$MOUNT_POINT"/{dev,proc,sys,run,tmp}
-chmod 1777 "$MOUNT_POINT/tmp"
+TECLADO="$(preguntar "Teclado" "es")"
+ZONA="$(preguntar "Zona horaria" "Europe/Madrid")"
+EQUIPO="$(preguntar "Nombre del equipo" "mikeos")"
 
-echo "[4/5] Configurando fstab y arranque de disco..."
-cat << EOF > "$MOUNT_POINT/etc/fstab"
-# /etc/fstab: MIKE OS Static File System Information
-LABEL=MIKEOS_ROOT   /           ext4    defaults,noatime    0   1
-devpts              /dev/pts    devpts  gid=5,mode=620      0   0
-proc                /proc       proc    defaults            0   0
-sysfs               /sys        sysfs   defaults            0   0
-tmpfs               /run        tmpfs   defaults,nodev,nosuid,size=10% 0 0
-tmpfs               /tmp        tmpfs   defaults,nodev,nosuid 0 0
+echo
+printf "  ${ROJO}Se borrará todo lo que haya en %s.${FIN}\n" "$DESTINO"
+printf "  Escribe ${NEGRITA}BORRAR${FIN} para continuar: "
+IFS= read -r CONFIRMA </dev/tty || CONFIRMA=""
+[ "$CONFIRMA" = "BORRAR" ] || { echo "  Cancelado."; exit 0; }
+echo
+
+# --- 1. Particionar ----------------------------------------------------------
+paso "Creando la tabla de particiones (GPT)"
+# La partición EFI son 512 MiB: caben varios kernels a la vez, que es lo que
+# permite quedarse con el anterior cuando se actualiza y poder volver a él.
+sfdisk --quiet --wipe always --label gpt "$DESTINO" >/dev/null <<EOF
+,512M,U,*
+,,L
 EOF
-
-# Marcar que el sistema está instalado en disco
-echo "installed" > "$MOUNT_POINT/etc/mikeos/installed"
-
-echo "[5/5] Sincronizando y desmontando..."
 sync
-umount "$MOUNT_POINT"
-rmdir "$MOUNT_POINT"
+command -v partx >/dev/null 2>&1 && partx -u "$DESTINO" >/dev/null 2>&1 || true
+sleep 1
 
-echo "=========================================================="
-echo " ¡Instalación de MIKE OS completada con éxito en $TARGET_DEV!"
-echo " Puedes arrancar la máquina seleccionando este disco."
-echo "=========================================================="
+# nvme0n1 -> nvme0n1p1 ; sda -> sda1
+case "$DESTINO" in
+    *[0-9]) P1="${DESTINO}p1"; P2="${DESTINO}p2" ;;
+    *)      P1="${DESTINO}1";  P2="${DESTINO}2"  ;;
+esac
+[ -b "$P1" ] || { error "no aparece la partición $P1."; exit 1; }
+ok "$P1 (EFI, 512 MiB) y $P2 (raíz)"
+
+# --- 2. Formatear ------------------------------------------------------------
+paso "Formateando"
+mkfs.vfat -F 32 -n MIKEOS_EFI "$P1" >/dev/null 2>&1
+ok "$P1 en FAT32"
+
+MONTAJE=/tmp/mikeos_destino
+mkdir -p "$MONTAJE"
+
+if [ "$FS" = "btrfs" ]; then
+    mkfs.btrfs -f -L MIKEOS_ROOT "$P2" >/dev/null 2>&1
+    # Subvolúmenes: @ para el sistema y @home para los datos. Separarlos es lo
+    # que permite revertir una actualización que salió mal sin llevarse por
+    # delante los archivos de quien usa el equipo.
+    mount "$P2" "$MONTAJE"
+    btrfs subvolume create "$MONTAJE/@"          >/dev/null
+    btrfs subvolume create "$MONTAJE/@home"      >/dev/null
+    btrfs subvolume create "$MONTAJE/@instantaneas" >/dev/null
+    umount "$MONTAJE"
+    # zstd:1 es el nivel bajo a propósito: comprime lo justo para que el disco
+    # lea menos, sin gastar procesador en apretar más de lo que compensa.
+    OPCIONES="compress=zstd:1,noatime,ssd"
+    mount -o "$OPCIONES,subvol=@" "$P2" "$MONTAJE"
+    mkdir -p "$MONTAJE/home"
+    mount -o "$OPCIONES,subvol=@home" "$P2" "$MONTAJE/home"
+    ok "$P2 en btrfs con @ , @home e instantáneas"
+else
+    mkfs.ext4 -F -L MIKEOS_ROOT "$P2" >/dev/null 2>&1
+    mount "$P2" "$MONTAJE"
+    ok "$P2 en ext4"
+fi
+
+# --- 3. Copiar el sistema ----------------------------------------------------
+paso "Copiando el sistema"
+for d in bin sbin usr etc var root home lib lib64; do
+    [ -d "/$d" ] || continue
+    [ -L "/$d" ] && continue
+    cp -a "/$d" "$MONTAJE/" 2>/dev/null || true
+done
+mkdir -p "$MONTAJE/proc" "$MONTAJE/sys" "$MONTAJE/dev" "$MONTAJE/run" \
+         "$MONTAJE/tmp" "$MONTAJE/boot"
+chmod 1777 "$MONTAJE/tmp"
+ok "sistema base copiado"
+
+# --- 4. Arranque UEFI --------------------------------------------------------
+paso "Preparando el arranque"
+mkdir -p "$MONTAJE/boot/efi"
+mount "$P1" "$MONTAJE/boot/efi"
+mkdir -p "$MONTAJE/boot/efi/EFI/BOOT" "$MONTAJE/boot/efi/EFI/mikeos"
+
+KERNEL=""
+for k in /boot/vmlinuz /boot/bzImage /boot/vmlinuz-mikeos; do
+    [ -f "$k" ] && { KERNEL="$k"; break; }
+done
+if [ -z "$KERNEL" ]; then
+    error "no encuentro el kernel en /boot. La instalación queda sin arranque."
+    umount "$MONTAJE/boot/efi" || true
+    exit 1
+fi
+
+# El kernel ES el ejecutable UEFI (CONFIG_EFI_STUB). BOOTX64.EFI en EFI/BOOT
+# es la ruta que toda firmware prueba sin necesidad de registrar nada, así que
+# el disco arranca aunque la UEFI haya perdido sus entradas.
+cp "$KERNEL" "$MONTAJE/boot/efi/EFI/BOOT/BOOTX64.EFI"
+cp "$KERNEL" "$MONTAJE/boot/efi/EFI/mikeos/vmlinuz.efi"
+[ -f /boot/initramfs.cpio.gz ] && cp /boot/initramfs.cpio.gz "$MONTAJE/boot/efi/EFI/mikeos/"
+
+# La raíz se identifica por UUID y no por /dev/nvme0n1p2: enchufar un USB
+# puede cambiar los nombres de dispositivo entre un arranque y el siguiente.
+UUID="$(blkid -s UUID -o value "$P2" 2>/dev/null || true)"
+if [ -n "$UUID" ]; then RAIZ="root=UUID=$UUID"; else RAIZ="root=$P2"; fi
+if [ "$FS" = "btrfs" ]; then
+    CMDLINE="$RAIZ rw rootflags=subvol=@ rootfstype=btrfs quiet"
+else
+    CMDLINE="$RAIZ rw rootfstype=ext4 quiet"
+fi
+# La firmware lee la línea de órdenes de este archivo cuando el kernel arranca
+# por sí solo, sin gestor que se la pase.
+printf '%s' "$CMDLINE" > "$MONTAJE/boot/efi/EFI/BOOT/cmdline.txt"
+printf '%s' "$CMDLINE" > "$MONTAJE/boot/efi/EFI/mikeos/cmdline.txt"
+
+# Y además se registra en la UEFI, que es lo que hace que aparezca con su
+# nombre en el menú de arranque en vez de como "disco genérico".
+if command -v efibootmgr >/dev/null 2>&1 && [ -d /sys/firmware/efi ]; then
+    efibootmgr --create --disk "$DESTINO" --part 1 \
+               --loader '\EFI\mikeos\vmlinuz.efi' \
+               --label "MIKE OS" --unicode "$CMDLINE" >/dev/null 2>&1 \
+        && ok "registrado en el menú de arranque de la UEFI" \
+        || nota "no se pudo registrar en la UEFI; arrancará por EFI/BOOT/BOOTX64.EFI"
+else
+    nota "arrancado en modo BIOS: se usará EFI/BOOT/BOOTX64.EFI"
+fi
+ok "kernel instalado en la partición EFI"
+
+# --- 5. Configuración --------------------------------------------------------
+paso "Dejando la configuración"
+mkdir -p "$MONTAJE/etc/mikeos"
+echo "$EQUIPO" > "$MONTAJE/etc/hostname"
+
+# fstab con UUID, por lo mismo que la línea de órdenes.
+UUID_EFI="$(blkid -s UUID -o value "$P1" 2>/dev/null || true)"
+{
+    echo "# Generado por m-install."
+    if [ "$FS" = "btrfs" ]; then
+        echo "UUID=$UUID  /       btrfs  $OPCIONES,subvol=@      0 0"
+        echo "UUID=$UUID  /home   btrfs  $OPCIONES,subvol=@home  0 0"
+    else
+        echo "UUID=$UUID  /       ext4   defaults,noatime        0 1"
+    fi
+    [ -n "$UUID_EFI" ] && echo "UUID=$UUID_EFI  /boot/efi  vfat  defaults,noatime  0 2"
+    echo "proc   /proc  proc   defaults  0 0"
+    echo "sysfs  /sys   sysfs  defaults  0 0"
+    echo "tmpfs  /tmp   tmpfs  defaults,mode=1777  0 0"
+} > "$MONTAJE/etc/fstab"
+
+if [ -f "$MONTAJE/etc/mikeos/system.conf" ]; then
+    sed -i "s/^KEYMAP=.*/KEYMAP=\"$TECLADO\"/; s/^TIMEZONE=.*/TIMEZONE=\"$ZONA\"/" \
+        "$MONTAJE/etc/mikeos/system.conf" 2>/dev/null || true
+fi
+cat > "$MONTAJE/etc/mikeos/install.conf" <<EOF
+# Cómo se instaló este equipo. Lo lee m-actualizar para saber dónde va el
+# kernel nuevo y si puede tomar instantáneas antes de actualizar.
+DISCO="$DESTINO"
+PARTICION_EFI="$P1"
+PARTICION_RAIZ="$P2"
+SISTEMA_ARCHIVOS="$FS"
+TECLADO="$TECLADO"
+ZONA_HORARIA="$ZONA"
+EOF
+ok "fstab, teclado, zona horaria y nombre del equipo"
+
+# --- Fin ---------------------------------------------------------------------
+sync
+umount "$MONTAJE/boot/efi" 2>/dev/null || true
+[ "$FS" = "btrfs" ] && umount "$MONTAJE/home" 2>/dev/null || true
+umount "$MONTAJE" 2>/dev/null || true
+
+echo
+printf "  ${VERDE}${NEGRITA}MIKE OS instalado en %s${FIN}\n" "$DESTINO"
+echo "  Saca el medio de instalación y reinicia."
+if [ "$FS" = "btrfs" ]; then
+    echo
+    nota "Con btrfs, «mpm upgrade» toma una instantánea antes de tocar nada;"
+    nota "si una actualización sale mal, «mpm rollback» deja el sistema como estaba."
+fi
+echo

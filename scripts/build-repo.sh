@@ -124,7 +124,14 @@ MCORE_SPEC="$PKGS_BUILD_DIR/mcore"
 rm -rf "$MCORE_SPEC"
 mkdir -p "$MCORE_SPEC/root/usr/bin"
 
-for u in m-service m-system m-network m-user m-disk m-info m-doctor m-log m-sudo m-install m-desktop m-screenshot m-volume m-fastfetch m-workspace-cycle; do
+# Esta lista se había quedado atrás respecto a la de scripts/build.sh: faltaban
+# m-metrics, m-drivers, m-wifi, m-bluetooth, m-wallhaven, m-audio-setup y
+# m-fondo, o sea que existían en la imagen recién instalada pero NINGUNA
+# actualización podía tocarlas nunca.
+for u in m-service m-system m-network m-user m-disk m-info m-doctor m-log \
+         m-sudo m-install m-desktop m-screenshot m-volume m-fastfetch \
+         m-workspace-cycle m-metrics m-drivers m-wifi m-bluetooth \
+         m-wallhaven m-audio-setup m-fondo; do
     if [ -f "$PROJECT_ROOT/build/mcore/$u" ]; then
         cp "$PROJECT_ROOT/build/mcore/$u" "$MCORE_SPEC/root/usr/bin/"
         chmod 755 "$MCORE_SPEC/root/usr/bin/$u"
@@ -161,6 +168,52 @@ EOF
 (cd "$MCORE_SPEC" && "$PROJECT_ROOT/build/mpm/mpm" build "$MCORE_SPEC" >/dev/null)
 mv "$MCORE_SPEC"/*.mpk "$REPO_DIR/core/"
 echo "  -> Paquete mcore generado."
+
+# ------------------------------------------------------------------------------
+# 2.b mpm.mpk — el gestor de paquetes, empaquetado
+#
+# No lo estaba. Eso significaba que mpm era la única pieza del sistema que no
+# se podía actualizar: para cambiarle una línea había que reinstalar la imagen
+# entera. Justo lo contrario de para lo que sirve un gestor de paquetes.
+#
+# Actualizarse a sí mismo funciona porque mpm despliega moviendo archivos
+# (renombrado atómico) en vez de escribir encima: el proceso en marcha
+# conserva su copia y termina, y el siguiente arranque ya usa la nueva.
+# ------------------------------------------------------------------------------
+echo "=== [2b/6] Creando mpm-$(grep -m1 -oE '[0-9]+\.[0-9]+\.[0-9]+' "$PROJECT_ROOT/build/mpm/mpm" || echo 0.2.0)-mike1-x86_64.mpk ==="
+MPM_SPEC="$PKGS_BUILD_DIR/mpm"
+rm -rf "$MPM_SPEC"
+mkdir -p "$MPM_SPEC/root/usr/bin" "$MPM_SPEC/root/usr/lib/mpm"
+cp "$PROJECT_ROOT/build/mpm/mpm" "$MPM_SPEC/root/usr/bin/mpm"
+chmod 755 "$MPM_SPEC/root/usr/bin/mpm"
+# El resolutor de dependencias y el sincronizador del catálogo son parte de
+# mpm: si se actualiza uno sin el otro, dejan de entenderse.
+[ -f "$PROJECT_ROOT/build/mpm/bin-resolver" ] && \
+    cp "$PROJECT_ROOT/build/mpm/bin-resolver" "$MPM_SPEC/root/usr/lib/mpm/resolver" && \
+    chmod 755 "$MPM_SPEC/root/usr/lib/mpm/resolver"
+[ -f "$PROJECT_ROOT/build/mpm/sync" ] && \
+    cp "$PROJECT_ROOT/build/mpm/sync" "$MPM_SPEC/root/usr/lib/mpm/sync" && \
+    chmod 755 "$MPM_SPEC/root/usr/lib/mpm/sync"
+
+MPM_VER="$(grep -m1 -oE 'v[0-9]+\.[0-9]+\.[0-9]+' "$PROJECT_ROOT/build/mpm/mpm" | tr -d v || true)"
+[ -n "$MPM_VER" ] || MPM_VER="0.2.0"
+cat << EOF > "$MPM_SPEC/meta.json"
+{
+  "name": "mpm",
+  "version": "$MPM_VER",
+  "release": "mike1",
+  "arch": "x86_64",
+  "category": "core",
+  "license": "MIT",
+  "origin": "https://mikeos.local",
+  "description": "MIKE Package Manager: el gestor de paquetes del sistema",
+  "dependencies": [],
+  "size": "1.1MB"
+}
+EOF
+(cd "$MPM_SPEC" && "$PROJECT_ROOT/build/mpm/mpm" build "$MPM_SPEC" >/dev/null)
+mv "$MPM_SPEC"/*.mpk "$REPO_DIR/core/"
+echo "  -> Paquete mpm generado ($MPM_VER)."
 
 # ------------------------------------------------------------------------------
 # 3. mkshell.mpk
@@ -254,6 +307,75 @@ chmod +x "$DESK_SPEC/POST_INSTALL"
 (cd "$DESK_SPEC" && "$PROJECT_ROOT/build/mpm/mpm" build "$DESK_SPEC" >/dev/null)
 mv "$DESK_SPEC"/*.mpk "$REPO_DIR/desktop/"
 echo "  -> Paquete mike-desktop generado."
+
+# ------------------------------------------------------------------------------
+# 4.b mikeos-kernel.mpk
+#
+# El kernel como paquete es lo que permite que "mpm upgrade" actualice también
+# el kernel, y no sólo las herramientas. Hasta ahora un kernel nuevo sólo podía
+# llegar reinstalando el sistema entero.
+#
+# El hook POST_INSTALL es la parte importante: deja el kernel nuevo en la
+# partición EFI CONSERVANDO el anterior. Si el nuevo no arranca, se elige el
+# viejo desde el menú de la UEFI y el equipo vuelve. Un kernel que no arranca
+# sin vuelta atrás es un portátil que no enciende.
+# ------------------------------------------------------------------------------
+KERNEL_BZ="$PROJECT_ROOT/kernel/arch/x86/boot/bzImage"
+if [ -f "$KERNEL_BZ" ]; then
+    KVER="$(cat "$PROJECT_ROOT/kernel/include/config/kernel.release" 2>/dev/null || echo "0.0.0")"
+    echo "=== [4b/6] Creando mikeos-kernel-$KVER-x86_64.mpk ==="
+    K_SPEC="$PKGS_BUILD_DIR/mikeos-kernel"
+    rm -rf "$K_SPEC"
+    mkdir -p "$K_SPEC/root/boot"
+    cp "$KERNEL_BZ" "$K_SPEC/root/boot/vmlinuz"
+    echo "$KVER" > "$K_SPEC/root/boot/vmlinuz.version"
+
+    cat << 'HOOK' > "$K_SPEC/POST_INSTALL"
+#!/bin/sh
+# Deja el kernel recién instalado en la partición EFI, guardando el anterior.
+set -u
+ESP=/boot/efi
+[ -d "$ESP/EFI" ] || mount "$ESP" 2>/dev/null || true
+if [ ! -d "$ESP/EFI" ]; then
+    echo "  Aviso: no hay partición EFI montada en $ESP; el kernel se queda"
+    echo "  en /boot/vmlinuz pero NO se usará al arrancar."
+    exit 0
+fi
+mkdir -p "$ESP/EFI/BOOT" "$ESP/EFI/mikeos"
+# El anterior se guarda antes de pisarlo: es la única vuelta atrás que hay si
+# el nuevo no llega ni a encender la pantalla.
+[ -f "$ESP/EFI/mikeos/vmlinuz.efi" ] && \
+    cp -f "$ESP/EFI/mikeos/vmlinuz.efi" "$ESP/EFI/mikeos/vmlinuz-anterior.efi"
+cp -f /boot/vmlinuz "$ESP/EFI/mikeos/vmlinuz.efi"
+cp -f /boot/vmlinuz "$ESP/EFI/BOOT/BOOTX64.EFI"
+sync
+echo "  Kernel $(cat /boot/vmlinuz.version 2>/dev/null) instalado en la partición EFI."
+echo "  El anterior queda en EFI/mikeos/vmlinuz-anterior.efi por si acaso."
+HOOK
+    chmod +x "$K_SPEC/POST_INSTALL"
+
+    K_SIZE="$(du -h "$KERNEL_BZ" | cut -f1)"
+    cat << EOF > "$K_SPEC/meta.json"
+{
+  "name": "mikeos-kernel",
+  "version": "$KVER",
+  "release": "mike1",
+  "arch": "x86_64",
+  "category": "core",
+  "license": "GPL-2.0",
+  "origin": "https://mikeos.local",
+  "description": "Kernel Linux de MIKE OS, con soporte de hardware real y arranque UEFI",
+  "dependencies": [],
+  "size": "$K_SIZE"
+}
+EOF
+    mkdir -p "$REPO_DIR/core"
+    (cd "$K_SPEC" && "$PROJECT_ROOT/build/mpm/mpm" build "$K_SPEC" >/dev/null)
+    mv "$K_SPEC"/*.mpk "$REPO_DIR/core/"
+    echo "  -> Paquete mikeos-kernel generado ($KVER, $K_SIZE)."
+else
+    echo "=== [4b/6] Sin bzImage; no se empaqueta el kernel ==="
+fi
 
 # ------------------------------------------------------------------------------
 # 5. net-tools y tools

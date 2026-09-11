@@ -680,22 +680,24 @@ int main(int argc, char **argv) {
     int fallos = 0;
     for (int i = n_cola - 1; i >= 0; i--) {
         Paquete *p = &paquetes[cola[i]];
-        char destino[600];
-        snprintf(destino, sizeof(destino), "%s/root", workdir);
-        run("rm -rf '%s' && mkdir -p '%s'", destino, destino);
 
-        if (run("zstd -dc '%s/%s' 2>/dev/null | tar -x -C '%s'",
-                workdir, p->archivo, destino) != 0) {
+        /* Se extrae directamente sobre el sistema, no a una carpeta temporal
+         * para copiarla después: eso escribía cada archivo del paquete dos
+         * veces, una en el temporal y otra en su sitio. Con paquetes de
+         * cientos de megas, y más aún en una máquina virtual sin KVM, la
+         * mitad del tiempo de instalación se iba en esa copia de más.
+         *
+         * Los metadatos de pacman (.PKGINFO, .BUILDINFO, .MTREE, .INSTALL) no
+         * pertenecen al sistema, así que ahora se descartan al vuelo en vez
+         * de escribirlos y borrarlos a continuación. */
+        if (run("zstd -dc '%s/%s' 2>/dev/null | tar -x -C / "
+                "--exclude .PKGINFO --exclude .BUILDINFO "
+                "--exclude .MTREE --exclude .INSTALL",
+                workdir, p->archivo) != 0) {
             fprintf(stderr, "  fallo al extraer %s\n", p->archivo);
             fallos++;
             continue;
         }
-
-        /* Metadatos de pacman (.PKGINFO, .BUILDINFO, .MTREE, .INSTALL) no van
-         * al sistema real -- sólo el contenido del paquete. */
-        run("rm -f '%s'/.PKGINFO '%s'/.BUILDINFO '%s'/.MTREE '%s'/.INSTALL",
-            destino, destino, destino, destino);
-        run("cp -a '%s'/. / 2>/dev/null", destino);
 
         snprintf(ruta, sizeof(ruta), "/var/lib/mpm/installed/%s.json", p->nombre);
         FILE *reg = fopen(ruta, "w");

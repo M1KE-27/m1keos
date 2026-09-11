@@ -181,6 +181,79 @@ download_clean() {
     fi
 }
 
+# ---------------------------------------------------------------------------
+# INSTANTÁNEAS DE BTRFS
+#
+# El rollback de mpm copia a mano, archivo por archivo, todo lo que una
+# instalación va a reemplazar: duplica las escrituras y sólo protege lo que
+# mpm conoce. Si un hook toca algo por su cuenta, ahí no hay vuelta atrás.
+#
+# Con la raíz en btrfs hay algo mejor y gratis: una instantánea del subvolumen
+# entero. Es inmediata, no ocupa (sólo crece con lo que cambie después) y
+# cubre el sistema completo. Con ext4 no existe nada de esto y se sigue
+# copiando como antes; es el motivo por el que el instalador propone btrfs.
+# ---------------------------------------------------------------------------
+INSTANTANEAS_DIR="/.instantaneas"
+
+raiz_es_btrfs() {
+    command -v btrfs >/dev/null 2>&1 || return 1
+    [ "$(stat -f -c %T / 2>/dev/null)" = "btrfs" ] || return 1
+    return 0
+}
+
+tomar_instantanea() {
+    raiz_es_btrfs || return 1
+    _motivo="$(printf '%s' "${1:-cambio}" | tr -c 'a-zA-Z0-9_.-' '_')"
+    _nombre="$(date +%Y%m%d-%H%M%S)-$_motivo"
+    mkdir -p "$INSTANTANEAS_DIR" 2>/dev/null || return 1
+    # De sólo lectura: una instantánea en la que se pueda escribir deja de ser
+    # una foto de cómo estaba el sistema.
+    btrfs subvolume snapshot -r / "$INSTANTANEAS_DIR/$_nombre" >/dev/null 2>&1 || return 1
+    printf '%s' "$INSTANTANEAS_DIR/$_nombre"
+}
+
+# No ocupan al nacer, pero sí según el sistema se separa de ellas. Se guardan
+# las diez últimas: bastante para volver de una tanda de actualizaciones sin
+# comerse el disco en silencio.
+podar_instantaneas() {
+    raiz_es_btrfs || return 0
+    [ -d "$INSTANTANEAS_DIR" ] || return 0
+    ls -1 "$INSTANTANEAS_DIR" 2>/dev/null | sort | head -n -10 | while read -r _v; do
+        [ -n "$_v" ] || continue
+        btrfs subvolume delete "$INSTANTANEAS_DIR/$_v" >/dev/null 2>&1 || true
+    done
+}
+
+# ---------------------------------------------------------------------------
+# MPM ACTUALIZÁNDOSE A SÍ MISMO
+#
+# Un shell no lee el script de golpe: lo va leyendo por posiciones según
+# ejecuta. Si se reescribe /usr/bin/mpm mientras mpm está corriendo, el shell
+# sigue leyendo desde el mismo desplazamiento pero sobre un archivo distinto y
+# a partir de ahí ejecuta basura, a mitad de una instalación.
+#
+# La solución NO es desplegar moviendo archivo por archivo: eso arranca un
+# proceso por archivo, y una instalación de mil archivos se eterniza (más aún
+# en una máquina emulada, sin KVM). Es más simple: cuando lo que se instala es
+# el propio mpm, se relanza desde una copia en el temporal, y entonces se
+# puede escribir encima del original sin ningún cuidado.
+# ---------------------------------------------------------------------------
+if [ "${MPM_DESDE_COPIA:-}" != "1" ] && [ "${1:-}" = "install" ]; then
+    for _arg in "$@"; do
+        if [ "$_arg" = "mpm" ]; then
+            _copia="$(mktemp "${TMPDIR:-/tmp}/mpm-en-marcha-XXXXXX" 2>/dev/null)" || _copia=""
+            if [ -n "$_copia" ] && cp "$0" "$_copia" 2>/dev/null; then
+                chmod +x "$_copia"
+                export MPM_DESDE_COPIA=1
+                "$_copia" "$@"
+                _rc=$?
+                rm -f "$_copia"
+                exit "$_rc"
+            fi
+        fi
+    done
+fi
+
 # Comandos que escriben en /var/lib/mpm o /etc requieren root. Auto-elevar
 # vía m-sudo evita el patrón "falla a mitad tras descargar N MB porque el
 # usuario olvidó sudo" -- m-sudo ya valida pertenencia a wheel sin pedir
@@ -371,6 +444,19 @@ case "$CMD" in
         TMP_DIR="$(mktemp -d "$MPM_TMP/mpm_inst_XXXXXX")"
         tar -xzf "$PKG_FILE" -C "$TMP_DIR"
 
+        # Descomprimir una vez, no cuatro.
+        #
+        # data.tar.gz se abría tres veces más adelante: para apuntar los
+        # archivos que se van a reemplazar, para dejar la lista del paquete
+        # instalado y para desplegarlo. Cada "tar -tzf" y cada "tar -xzf"
+        # vuelve a pasar el gzip entero. En un equipo normal se nota poco; en
+        # una máquina emulada, sin KVM, es la mayor parte de lo que tarda una
+        # instalación.
+        if [ -f "$TMP_DIR/data.tar.gz" ]; then
+            gzip -dc "$TMP_DIR/data.tar.gz" > "$TMP_DIR/data.tar" \
+                && rm -f "$TMP_DIR/data.tar.gz"
+        fi
+
         if [ -f "$TMP_DIR/meta.json" ]; then
             PKG_NAME="$(grep '"name"' "$TMP_DIR/meta.json" | cut -d'"' -f4 || echo "$PKG")"
             PKG_VER="$(grep '"version"' "$TMP_DIR/meta.json" | cut -d'"' -f4 || echo "1.0")"
@@ -392,10 +478,21 @@ case "$CMD" in
 
         echo "$PKG_NAME" > "$CURR_SNAP/action_installed"
 
+        # Con btrfs basta una instantánea del sistema entero: inmediata, sin
+        # ocupar y sin dejarse nada. Entonces el copiado archivo a archivo de
+        # aquí abajo sobra, que es lo que duplicaba las escrituras.
+        SNAP_BTRFS="$(tomar_instantanea "instalar-$PKG_NAME" 2>/dev/null || true)"
+        if [ -n "${SNAP_BTRFS:-}" ]; then
+            echo "$SNAP_BTRFS" > "$CURR_SNAP/instantanea_btrfs"
+            echo "  instantánea tomada antes de instalar"
+        fi
+
         # Registrar archivos que serán reemplazados para que rollback pueda
         # restaurarlos, no solo borrar el paquete recién instalado.
-        if [ -f "$TMP_DIR/data.tar.gz" ]; then
-            tar -tzf "$TMP_DIR/data.tar.gz" | sed 's|^\./||; s|^|/|' > "$CURR_SNAP/paths"
+        if [ -n "${SNAP_BTRFS:-}" ]; then
+            : > "$CURR_SNAP/paths"
+        elif [ -f "$TMP_DIR/data.tar" ]; then
+            tar -tf "$TMP_DIR/data.tar" | sed 's|^\./||; s|^|/|' > "$CURR_SNAP/paths"
         else
             (cd "$TMP_DIR/root" && find . -mindepth 1 \( -type f -o -type l \)) | sed 's|^\./||; s|^|/|' > "$CURR_SNAP/paths"
         fi
@@ -412,9 +509,11 @@ case "$CMD" in
             "$TMP_DIR/PRE_INSTALL" 2>/dev/null || true
         fi
 
-        if [ -f "$TMP_DIR/data.tar.gz" ]; then
-            tar -tzf "$TMP_DIR/data.tar.gz" 2>/dev/null | sed 's|^\.||' | sed 's|^/||' | sed 's|^|/|' > "$INSTALLED_DIR/$PKG_NAME.files"
-            tar -xzf "$TMP_DIR/data.tar.gz" -C / || { echo "ERROR: extracción fallida; restaurando." >&2; cp -a "$CURR_SNAP/data"/. / 2>/dev/null || true; rm -rf "$TMP_DIR"; exit 1; }
+        if [ -f "$TMP_DIR/data.tar" ]; then
+            # Listar un tar ya descomprimido es leer, no descomprimir; y el
+            # despliegue es un solo "tar", no un proceso por archivo.
+            tar -tf "$TMP_DIR/data.tar" 2>/dev/null | sed 's|^\.||' | sed 's|^/||' | sed 's|^|/|' > "$INSTALLED_DIR/$PKG_NAME.files"
+            tar -xf "$TMP_DIR/data.tar" -C / || { echo "ERROR: extracción fallida; restaurando." >&2; cp -a "$CURR_SNAP/data"/. / 2>/dev/null || true; rm -rf "$TMP_DIR"; exit 1; }
         elif [ -d "$TMP_DIR/root" ]; then
             (cd "$TMP_DIR/root" && find . -mindepth 1 \( -type f -o -type l \)) | sed 's|^\.||' | sed 's|^/||' > "$INSTALLED_DIR/$PKG_NAME.files"
             cp -a "$TMP_DIR/root"/. / || { echo "ERROR: despliegue fallido; restaurando." >&2; cp -a "$CURR_SNAP/data"/. / 2>/dev/null || true; rm -rf "$TMP_DIR"; exit 1; }
