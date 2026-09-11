@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Gestor de paquetes · MIKE OS</title><link rel="stylesheet" href="../estilo.css"></head><body>
+<nav><div class="cont">
+  <a class="marca" href="../index.html">
+    <svg viewBox="0 0 24 24" fill="none" stroke="#e8ebf0" stroke-width="2"
+         stroke-linecap="round" stroke-linejoin="round"><path d="M5 6l6 6-6 6"/><path d="M13 18h7"/></svg>
+    MIKE OS</a>
+  <a class="enl" href="../index.html">Inicio</a>
+  <a class="enl" href="../descargas.html">Descargar</a>
+  <a class="enl aqui" href="../docs/index.html">Documentación</a>
+  <a class="enl " href="../wiki/index.html">Wiki</a>
+</div></nav>
+<div class="cont">
+<header><h1>Gestor de paquetes</h1></header>
+<h2>MPM — MIKE Package Manager (v0.2.0 Core)</h2>
+<p><strong>MPM</strong> is the central package management and deployment system for MIKE OS.</p>
+<hr>
+<h3>1. Package Structure (<code>.mpk</code>)</h3>
+<p>An <code>.mpk</code> package is a compressed archive containing:</p>
+<pre><code>
+package-name-version-release-arch.mpk
+├── meta.json         # Metadata (name, version, dependencies, origin, license, sha256)
+├── PRE_INSTALL       # Optional pre-installation hook
+├── POST_INSTALL      # Optional post-installation hook
+└── data.tar.gz       # Payloads to deploy to root filesystem
+</code></pre>
+<h4>Example <code>meta.json</code>:</h4>
+<pre><code>
+{
+  &quot;name&quot;: &quot;mcore&quot;,
+  &quot;version&quot;: &quot;0.1.0&quot;,
+  &quot;release&quot;: &quot;mike1&quot;,
+  &quot;arch&quot;: &quot;x86_64&quot;,
+  &quot;category&quot;: &quot;core&quot;,
+  &quot;license&quot;: &quot;MIT&quot;,
+  &quot;origin&quot;: &quot;https://mikeos.local&quot;,
+  &quot;description&quot;: &quot;Suite de herramientas fundamentales del sistema MIKE OS&quot;,
+  &quot;dependencies&quot;: [],
+  &quot;size&quot;: &quot;45KB&quot;
+}
+</code></pre>
+<hr>
+<h3>2. Command Reference</h3>
+<pre><code>
+# Search packages
+mpm search &lt;query&gt;
+
+# Show detailed package information
+mpm info &lt;package&gt;
+
+# Install with SHA256 validation &amp; automatic rollback snapshot
+mpm install &lt;package&gt;
+
+# Uninstall package and remove associated files
+mpm remove &lt;package&gt;
+
+# List installed packages
+mpm list
+
+# Sync repository indices
+mpm update
+
+# Upgrade installed packages with newer repo versions
+mpm upgrade
+
+# Clean cached packages
+mpm clean
+
+# Verify installed packages integrity
+mpm verify [package]
+
+# Instant rollback of previous change
+mpm rollback
+
+# Kernel management
+mpm kernel list
+mpm kernel install &lt;bzImage&gt;
+mpm kernel rollback
+</code></pre>
+<footer>MIKE OS · <a href="../index.html">Inicio</a></footer>
+</div></body></html>

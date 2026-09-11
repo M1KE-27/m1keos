@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Escritorio · MIKE OS</title><link rel="stylesheet" href="../estilo.css"></head><body>
+<nav><div class="cont">
+  <a class="marca" href="../index.html">
+    <svg viewBox="0 0 24 24" fill="none" stroke="#e8ebf0" stroke-width="2"
+         stroke-linecap="round" stroke-linejoin="round"><path d="M5 6l6 6-6 6"/><path d="M13 18h7"/></svg>
+    MIKE OS</a>
+  <a class="enl" href="../index.html">Inicio</a>
+  <a class="enl" href="../descargas.html">Descargar</a>
+  <a class="enl aqui" href="../docs/index.html">Documentación</a>
+  <a class="enl " href="../wiki/index.html">Wiki</a>
+</div></nav>
+<div class="cont">
+<header><h1>Escritorio</h1></header>
+<h2>MIKE Desktop — Arquitectura, Componentes y Uso</h2>
+<p><strong>MIKE Desktop</strong> es una capa gráfica opcional, ultraligera, modular e independiente diseñada sobre <strong>MIKE OS Core</strong>.</p>
+<hr>
+<h3>1. Filosofía y Principios</h3>
+<p>1. <strong>Modular e Independiente</strong>: Se instala y elimina a través de MPM (<code>mpm install mike-desktop</code> / <code>mpm remove mike-desktop</code>) sin afectar al Core de MIKE OS.</p>
+<p>2. <strong>Minimalismo Visual Estricto</strong>: Cero widgets recargados, cero transparencias pesadas, cero demonios residentes innecesarios.</p>
+<p>3. <strong>Stack Gráfico</strong>:</p>
+<p>   ```text</p>
+<p>   Linux Kernel 7.2 (KMS / DRM VirtIO-GPU / Intel)</p>
+<p>         ↓</p>
+<p>       Mesa</p>
+<p>         ↓</p>
+<p>      Wayland</p>
+<p>         ↓</p>
+<p>     Hyprland (Compositor &amp; Tiling Window Manager)</p>
+<p>         ↓</p>
+<p>    Quickshell (QML Top Panel &amp; Workspaces)</p>
+<p>         ↓</p>
+<p>     MIKE UI (Temas Dark / Nord / Monochrome)</p>
+<p>   ```</p>
+<hr>
+<h3>2. Componentes</h3>
+<ul>
+<li><strong>Compositor</strong>: <code>Hyprland</code> configurado con bordes limpios de 1px, tema oscuro <code>#101014</code> y acento cyan <code>#00d4ff</code>.</li>
+<li><strong>Barra Superior</strong>: Waybar con configuración MIKE propia; Quickshell (<code>shell.qml</code>) queda como fallback para equipos donde Waybar no esté disponible.</li>
+<li><strong>Lanzador de Aplicaciones</strong>: <code>m-launcher</code> (basado en <code>fuzzel</code> o menú rápido de terminal) invocado con la tecla <code>SUPER</code> o <code>SUPER + Espacio</code>.</li>
+<li><strong>Terminal</strong>: <code>MTerminal</code> (GTK/VTE) ejecutando <code>MKShell</code>, con pestañas propias.</li>
+<li><strong>Controlador CLI</strong>: <code>m-desktop</code> (<code>start</code>, <code>status</code>, <code>enable</code>, <code>disable</code>, <code>theme</code>, <code>config</code>).</li>
+</ul>
+<hr>
+<h3>3. Atajos de Teclado (Keybindings)</h3>
+<table>
+<tr><th>Atajo</th><th>Acción</th></tr>
+<tr><td><strong><code>SUPER + Enter</code></strong></td><td>Abre el terminal (<code>m-terminal</code> con <code>mkshell</code>)</td></tr>
+<tr><td><strong><code>CTRL + ALT + T</code></strong></td><td>Abre MTerminal</td></tr>
+<tr><td><strong><code>CTRL + Shift + T</code></strong></td><td>Nueva pestaña conservando el directorio actual</td></tr>
+<tr><td><strong><code>CTRL + PageUp/PageDown</code></strong></td><td>Cambia de pestaña</td></tr>
+<tr><td><strong><code>CTRL + Shift + W</code></strong></td><td>Cierra la pestaña actual</td></tr>
+<tr><td><strong><code>SUPER + Espacio</code></strong></td><td>Abre el lanzador de aplicaciones (<code>m-launcher</code>)</td></tr>
+<tr><td><strong><code>SUPER + Q</code></strong></td><td>Cierra la ventana activa</td></tr>
+<tr><td><strong><code>CTRL + ALT + S</code></strong> / <strong><code>SUPER + ALT + S</code></strong></td><td>Captura una región y la copia automáticamente al clipboard</td></tr>
+<tr><td><strong><code>CTRL + ALT + ↑/↓</code></strong> / <strong><code>SUPER + ALT + ↑/↓</code></strong></td><td>Ajusta el volumen en pasos de 5 (0–100)</td></tr>
+<tr><td><strong><code>SUPER + M</code></strong></td><td>Sale de la sesión gráfica Hyprland</td></tr>
+<tr><td><strong><code>SUPER + F</code></strong></td><td>Modo pantalla completa (fullscreen)</td></tr>
+<tr><td><strong><code>SUPER + V</code></strong></td><td>Alterna modo flotante (toggle floating)</td></tr>
+<tr><td><strong><code>SUPER + [1-4]</code></strong></td><td>Cambia al workspace 1–4</td></tr>
+<tr><td><strong><code>SUPER + Shift + [1-4]</code></strong></td><td>Mueve la ventana activa al workspace 1–4</td></tr>
+<tr><td><strong><code>SUPER + rueda ↑/↓</code></strong></td><td>Cambia circularmente entre los cuatro workspaces</td></tr>
+<tr><td><strong><code>SUPER + Flechas / HJKL</code></strong></td><td>Navegación de foco entre ventanas</td></tr>
+</table>
+<hr>
+<h3>4. Comandos de Administración (<code>m-desktop</code>)</h3>
+<pre><code>
+# Iniciar sesión gráfica
+m-desktop start
+
+# Consultar estado de Wayland, Hyprland y GPU
+m-desktop status
+
+# Configurar arranque gráfico por defecto
+m-desktop enable
+
+# Restaurar arranque en consola TTY por defecto
+m-desktop disable
+
+# Listar o cambiar tema visual
+m-desktop theme [dark|nord|monochrome]
+</code></pre>
+<hr>
+<h3>5. Probar con QEMU en Modo Ventana Gráfica</h3>
+<p>MIKE OS arranca deliberadamente en consola para funcionar en cualquier equipo.</p>
+<p>Desde MKShell usa <code>m-desktop start</code>; para cambiar el comportamiento persistente</p>
+<p>usa <code>m-desktop enable</code> o <code>m-desktop disable</code>.</p>
+<p>Para probar la aceleración VirtIO-GPU y la ventana gráfica de MIKE OS:</p>
+<pre><code>
+./scripts/run-qemu.sh --gui
+</code></pre>
+<footer>MIKE OS · <a href="../index.html">Inicio</a></footer>
+</div></body></html>

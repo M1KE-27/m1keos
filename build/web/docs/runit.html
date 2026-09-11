@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Init con runit · MIKE OS</title><link rel="stylesheet" href="../estilo.css"></head><body>
+<nav><div class="cont">
+  <a class="marca" href="../index.html">
+    <svg viewBox="0 0 24 24" fill="none" stroke="#e8ebf0" stroke-width="2"
+         stroke-linecap="round" stroke-linejoin="round"><path d="M5 6l6 6-6 6"/><path d="M13 18h7"/></svg>
+    MIKE OS</a>
+  <a class="enl" href="../index.html">Inicio</a>
+  <a class="enl" href="../descargas.html">Descargar</a>
+  <a class="enl aqui" href="../docs/index.html">Documentación</a>
+  <a class="enl " href="../wiki/index.html">Wiki</a>
+</div></nav>
+<div class="cont">
+<header><h1>Init con runit</h1></header>
+<h2>MIKE OS — Service Supervision with Runit</h2>
+<p>MIKE OS uses <strong>runit 2.1.2</strong> exclusively as its init and service supervisor.</p>
+<hr>
+<h3>1. Directory Structure</h3>
+<ul>
+<li><code>/etc/sv/&lt;service&gt;/run</code>: Executable service run script.</li>
+<li><code>/etc/sv/&lt;service&gt;/supervise/</code>: Service supervision state directory.</li>
+<li><code>/var/service/&lt;service&gt;</code>: Symlink to <code>/etc/sv/&lt;service&gt;</code> representing active, monitored services.</li>
+</ul>
+<hr>
+<h3>2. Core Services</h3>
+<table>
+<tr><th>Service</th><th>Script</th><th>Purpose</th></tr>
+<tr><td><code>console</code></td><td><code>/etc/sv/console/run</code></td><td>Spawns interactive MKShell on <code>/dev/console</code> with job control.</td></tr>
+<tr><td><code>syslog</code></td><td><code>/etc/sv/syslog/run</code></td><td>Captures system logs into <code>/var/log/messages</code>.</td></tr>
+<tr><td><code>network</code></td><td><code>/etc/sv/network/run</code></td><td>Manages network interfaces and DHCP client (<code>udhcpc</code>).</td></tr>
+<tr><td><code>dropbear</code></td><td><code>/etc/sv/dropbear/run</code></td><td>Runs SSH daemon on port 22 with auto-generated host keys.</td></tr>
+</table>
+<hr>
+<h3>3. Controlling Services with <code>m-service</code></h3>
+<pre><code>
+# List all services and their status
+m-service list
+
+# Enable and start a service
+m-service enable dropbear
+m-service start dropbear
+
+# Stop and disable a service
+m-service stop dropbear
+m-service disable dropbear
+
+# Restart a service
+m-service restart network
+</code></pre>
+<footer>MIKE OS · <a href="../index.html">Inicio</a></footer>
+</div></body></html>

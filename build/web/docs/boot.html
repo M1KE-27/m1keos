@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Arranque · MIKE OS</title><link rel="stylesheet" href="../estilo.css"></head><body>
+<nav><div class="cont">
+  <a class="marca" href="../index.html">
+    <svg viewBox="0 0 24 24" fill="none" stroke="#e8ebf0" stroke-width="2"
+         stroke-linecap="round" stroke-linejoin="round"><path d="M5 6l6 6-6 6"/><path d="M13 18h7"/></svg>
+    MIKE OS</a>
+  <a class="enl" href="../index.html">Inicio</a>
+  <a class="enl" href="../descargas.html">Descargar</a>
+  <a class="enl aqui" href="../docs/index.html">Documentación</a>
+  <a class="enl " href="../wiki/index.html">Wiki</a>
+</div></nav>
+<div class="cont">
+<header><h1>Arranque</h1></header>
+<h2>MIKE OS — Boot Process and Initialization</h2>
+<h3>1. Boot Stages</h3>
+<pre><code>
+BIOS / UEFI
+    │
+    ▼
+Linux Kernel (bzImage)
+    │
+    ▼
+/init (Universal PID 1 Entrypoint)
+    │
+    ├── Mode Recovery (mikeos_recovery=1) -&gt; Emergency Shell
+    │
+    ├── Persistent Disk Mode (root=/dev/vda)
+    │     └── Mount ext4 root -&gt; switch_root -&gt; /sbin/runit
+    │
+    └── In-Memory Mode (initramfs)
+          └── Direct execution -&gt; /sbin/runit
+</code></pre>
+<hr>
+<h3>2. Kernel Parameters Supported</h3>
+<ul>
+<li><code>root=/dev/vda rw</code>: Selects persistent root block device.</li>
+<li><code>console=ttyS0</code> or <code>console=tty0</code>: Configures primary system console.</li>
+<li><code>mikeos_recovery=1</code>: Boots directly into emergency root shell.</li>
+<li><code>mikeos_benchmark=1</code>: Runs telemetry benchmark and halts.</li>
+<li><code>mikeos_test_suite=1</code>: Executes the 21-check automated test suite.</li>
+</ul>
+<hr>
+<h3>3. Runit Stage Flow</h3>
+<p>1. <strong>Stage 1 (<code>/etc/runit/1</code>)</strong>: Mounts virtual filesystems (<code>/proc</code>, <code>/sys</code>, <code>/dev</code>, <code>/dev/pts</code>, <code>/run</code>, <code>/tmp</code>), brings up loopback, sets hostname from <code>/etc/mikeos/system.conf</code>, and displays the welcome banner.</p>
+<p>2. <strong>Stage 2 (<code>/etc/runit/2</code>)</strong>: Starts <code>runsvdir</code> supervising <code>/var/service</code>.</p>
+<p>3. <strong>Stage 3 (<code>/etc/runit/3</code>)</strong>: Gracefully shuts down all services, syncs storage, unmounts filesystems, and halts/reboots.</p>
+<footer>MIKE OS · <a href="../index.html">Inicio</a></footer>
+</div></body></html>

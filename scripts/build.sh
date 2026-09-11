@@ -368,17 +368,13 @@ chmod 755 "$ROOTFS_DIR/usr/bin/jq"
 
 # Fastfetch compilado desde la fuente oficial, con un logo MIKE y una
 # configuración reducida para conservar el perfil base ultraligero.
-FASTFETCH_BIN="$BUILD_DIR/fastfetch-static/fastfetch"
-[ -x "$FASTFETCH_BIN" ] || FASTFETCH_BIN="$BUILD_DIR/fastfetch-build/fastfetch"
-if [ -x "$FASTFETCH_BIN" ]; then
-    cp "$FASTFETCH_BIN" "$ROOTFS_DIR/usr/bin/fastfetch"
-    chmod 755 "$ROOTFS_DIR/usr/bin/fastfetch"
-else
-    echo "Aviso: Fastfetch no fue compilado; m-info conservará su fallback." >&2
-fi
+# fastfetch lo copia el resolutor de bibliotecas junto al resto del escritorio
+# (ver la lista "bins" más abajo), que es quien le lleva sus dependencias. La
+# comprobación de que llegó está después de ese paso, no aquí: preguntar antes
+# de copiarlo daba un aviso falso en cada build.
 
 # Instalar MCore
-for util in m-service m-system m-network m-user m-disk m-info m-doctor m-log m-sudo m-install m-screenshot m-volume m-metrics m-audio-setup m-fastfetch m-workspace-cycle m-drivers m-wifi m-bluetooth m-wallhaven m-fondo; do
+for util in m-service m-system m-network m-user m-disk m-info m-doctor m-log m-sudo m-install m-screenshot m-volume m-metrics m-audio-setup m-fastfetch m-workspace-cycle m-drivers m-wifi m-bluetooth m-wallhaven m-fondo m-internet; do
     cp "$BUILD_DIR/mcore/$util" "$ROOTFS_DIR/usr/bin/"
     chmod 755 "$ROOTFS_DIR/usr/bin/$util"
 done
@@ -462,7 +458,14 @@ bins = ['/usr/bin/Hyprland', '/usr/bin/Xwayland', '/usr/bin/start-hyprland', '/u
     '/usr/bin/mkfs.vfat', '/usr/bin/fatlabel',
     '/usr/bin/sfdisk', '/usr/bin/partx', '/usr/bin/blkid', '/usr/bin/lsblk',
     '/usr/bin/mkfs.ext4', '/usr/bin/e2label', '/usr/bin/findmnt',
-    '/usr/bin/efibootmgr']
+    '/usr/bin/efibootmgr',
+    # fastfetch. Estaba escrito el código para copiarlo desde
+    # build/fastfetch-static/, pero NADA lo compilaba nunca: esa carpeta no
+    # existe, así que el build avisaba «Fastfetch no fue compilado» y seguía.
+    # Resultado: la terminal abría sin la ficha del sistema y m-info caía a su
+    # versión de respaldo. Se copia del equipo de construcción con sus
+    # bibliotecas, igual que el resto del escritorio.
+    '/usr/bin/fastfetch']
 lib_links = {}
 
 os.makedirs(f"{rootfs}/usr/bin", exist_ok=True)
@@ -660,7 +663,14 @@ for qml_mod in ['Quickshell', 'QtQuick', 'QtCore', 'QtQml', 'QtWaylandClient', '
         shutil.copytree(src_mod, f"{rootfs}/usr/lib/qt6/qml/{qml_mod}", dirs_exist_ok=True)
 
 # Selective Qt6 plugins copy
-for plug_dir in ['platforms', 'wayland-shell-integration', 'wayland-graphics-integration-client', 'platforminputcontexts']:
+#
+# 'imageformats' no estaba, y de ahí que el selector de fondos saliera con
+# veinticinco rectángulos vacíos para siempre. Qt trae PNG dentro de QtGui,
+# pero JPEG, WEBP y los demás van en plugins aparte; las miniaturas de
+# Wallhaven son .jpg, así que se descargaban bien (estaban en la caché) y
+# luego no había quien las dibujara. El fallo no dice nada por ninguna parte:
+# el Image se queda en estado Error y ya.
+for plug_dir in ['platforms', 'wayland-shell-integration', 'wayland-graphics-integration-client', 'platforminputcontexts', 'imageformats', 'iconengines']:
     src_plug = f'/usr/lib/qt6/plugins/{plug_dir}'
     if os.path.exists(src_plug):
         os.makedirs(f"{rootfs}/usr/lib/qt6/plugins/{plug_dir}", exist_ok=True)
@@ -805,6 +815,11 @@ for r_root, r_dirs, r_files in os.walk(rootfs):
             except Exception:
                 pass
 PYEOF
+
+if [ ! -x "$ROOTFS_DIR/usr/bin/fastfetch" ]; then
+    echo "Aviso: no hay fastfetch en la imagen; la terminal abrirá sin la ficha" >&2
+    echo "       del sistema y m-info usará su versión de respaldo." >&2
+fi
 
 echo "Copiando firmware de hardware real..."
 # ---------------------------------------------------------------------------

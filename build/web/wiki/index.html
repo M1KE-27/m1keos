@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Wiki · MIKE OS</title><link rel="stylesheet" href="../estilo.css"></head><body>
+<nav><div class="cont">
+  <a class="marca" href="../index.html">
+    <svg viewBox="0 0 24 24" fill="none" stroke="#e8ebf0" stroke-width="2"
+         stroke-linecap="round" stroke-linejoin="round"><path d="M5 6l6 6-6 6"/><path d="M13 18h7"/></svg>
+    MIKE OS</a>
+  <a class="enl " href="../index.html">Inicio</a>
+  <a class="enl " href="../descargas.html">Descargar</a>
+  <a class="enl " href="../docs/index.html">Documentación</a>
+  <a class="enl aqui" href="../wiki/index.html">Wiki</a>
+</div></nav>
+<div class="cont">
+<header><h1>Wiki</h1>
+<p class="lema">Lo que se aprende usando el sistema: problemas concretos y cómo
+se resuelven.</p></header>
+
+<h2>Arranque</h2>
+<h3>El USB no arranca</h3>
+<p>Casi siempre es Secure Boot. Desactívalo en la UEFI
+(<a href="../docs/instalacion.html">cómo</a>). Si sigue sin arrancar, comprueba
+que el orden de arranque pone el USB por delante del disco interno.</p>
+
+<h3>Arranca pero la pantalla se queda en negro</h3>
+<p>Suele ser firmware de la gráfica que falta. Entra por SSH o con
+<code>SUPER + F1</code> y mira <code>dmesg | grep -i firmware</code>. La imagen
+base sólo trae el firmware de AMD y Qualcomm; el de Intel y otros se instala
+aparte con <code>mpm</code>.</p>
+
+<h2>Hardware</h2>
+<h3>No hay sonido</h3>
+<p>Comprueba en este orden:</p>
+<pre><span class="c"># ¿el kernel ve una tarjeta?</span>
+cat /proc/asound/cards
+
+<span class="c"># ¿hay una salida montada?</span>
+wpctl status
+
+<span class="c"># ¿qué dice el sistema?</span>
+m-volume get</pre>
+<p>Si <code>/proc/asound/cards</code> dice «no soundcards», es cosa del kernel,
+no del escritorio.</p>
+
+<h3>No hay WiFi</h3>
+<p><code>m-wifi list</code> para ver las redes y <code>m-drivers</code> para
+saber si falta firmware de tu tarjeta.</p>
+
+<h3>El touchpad no responde en una Surface</h3>
+<p>En las Surface, el teclado y el touchpad cuelgan de un microcontrolador de
+Microsoft (el Surface Aggregator), no del bus donde uno los buscaría. Si no
+responden, mira <code>dmesg | grep -i surface</code>.</p>
+
+<h2>El escritorio</h2>
+<h3>La barra ha desaparecido</h3>
+<p>Se levanta sola en menos de un segundo. Si no vuelve, desde una terminal:</p>
+<pre>pkill quickshell    <span class="c"># m-panel la relanza</span></pre>
+
+<h3>El fondo de pantalla no se guarda</h3>
+<p>Debería. <code>m-fondo actual</code> dice cuál está en uso y
+<code>m-fondo poner &lt;ruta&gt;</code> lo cambia y lo recuerda.</p>
+
+<h3>Cambiar la barra de sitio, los colores, el reloj</h3>
+<p>Todo está en el Centro de Control, en el icono de la derecha de la barra.
+Y si prefieres el archivo: <code>~/.config/mike/settings.conf</code>, que lleva
+los valores válidos comentados al lado.</p>
+
+<h2>Paquetes</h2>
+<h3>Instalar algo que no está</h3>
+<pre>mpm search &lt;nombre&gt;
+mpm install &lt;nombre&gt;</pre>
+<p>Busca en el repositorio de MIKE OS y en core/extra de Arch, que son unos
+15.000 paquetes.</p>
+
+<h3>Una instalación va lentísima</h3>
+<p>Si estás en una máquina virtual, comprueba que la virtualización por hardware
+está activada en la BIOS del anfitrión (<code>SVM Mode</code> en AMD,
+<code>VT-x</code> en Intel). Sin ella todo va entre diez y cincuenta veces más
+lento.</p>
+
+<h2>Diagnóstico</h2>
+<pre>m-doctor            <span class="c"># revisión general</span>
+m-info              <span class="c"># qué es este equipo</span>
+m-service           <span class="c"># servicios en marcha</span>
+m-log               <span class="c"># registro del sistema</span></pre>
+<footer>MIKE OS · servido desde un mini PC en casa · actualizado el 11 de September de 2026</footer>
+</div></body></html>

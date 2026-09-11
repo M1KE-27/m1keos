@@ -1,0 +1,58 @@
+#!/bin/sh
+# m-internet - ¿hay salida a internet, y si no, por qué?
+#
+# Existe porque "no hay internet" no es un solo problema, y decirle a alguien
+# "error de red" no le sirve de nada. Puede ser que no haya cable ni WiFi, que
+# la haya pero sin dirección IP, que haya IP pero no resuelva nombres, o que
+# todo esté bien y sea el sitio remoto el que no responde. Cada uno se arregla
+# de una forma distinta.
+#
+# Lo usan las partes del escritorio que dependen de la red (el selector de
+# fondos, por ejemplo) para decir qué pasa en vez de quedarse en blanco.
+#
+#   m-internet              imprime el estado y sale 0 si hay internet
+#   m-internet --motivo     sólo la frase, para enseñarla tal cual
+#
+# Estados: ok | sin-interfaz | sin-ip | sin-dns | sin-salida
+set -u
+
+PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
+export PATH
+
+SOLO_MOTIVO=0
+[ "${1:-}" = "--motivo" ] && SOLO_MOTIVO=1
+
+responder() {
+    if [ "$SOLO_MOTIVO" -eq 1 ]; then
+        printf '%s\n' "$2"
+    else
+        printf '%s\t%s\n' "$1" "$2"
+    fi
+    [ "$1" = "ok" ] && exit 0
+    exit 1
+}
+
+# 1. ¿Hay alguna interfaz levantada que no sea el loopback?
+if ! ip -o link show up 2>/dev/null | grep -vq ' lo:'; then
+    responder "sin-interfaz" "No hay ninguna red conectada. Enchufa el cable o conéctate a una WiFi."
+fi
+
+# 2. ¿Tiene dirección IP? Una interfaz levantada sin IP es lo que pasa cuando
+#    el DHCP no ha contestado todavía o no hay servidor.
+if ! ip -4 addr show 2>/dev/null | grep -v ' lo' | grep -q 'inet '; then
+    responder "sin-ip" "La red está conectada pero sin dirección IP. Puede tardar unos segundos."
+fi
+
+# 3. ¿Sale el tráfico? Se prueba contra una IP, no un nombre, para separar el
+#    problema de salida del problema de nombres.
+if ! ping -c 1 -W 3 1.1.1.1 >/dev/null 2>&1; then
+    responder "sin-salida" "Hay red local pero no llega a internet. Revisa el router."
+fi
+
+# 4. ¿Resuelve nombres? Con salida pero sin DNS, todo falla de formas raras.
+if ! ping -c 1 -W 3 one.one.one.one >/dev/null 2>&1 \
+   && ! nslookup wallhaven.cc >/dev/null 2>&1; then
+    responder "sin-dns" "Hay internet pero no resuelve nombres. Falla el DNS."
+fi
+
+responder "ok" "Conectado."

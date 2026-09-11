@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MIKE OS</title><link rel="stylesheet" href="estilo.css"></head><body>
+<nav><div class="cont">
+  <a class="marca" href="index.html">
+    <svg viewBox="0 0 24 24" fill="none" stroke="#e8ebf0" stroke-width="2"
+         stroke-linecap="round" stroke-linejoin="round"><path d="M5 6l6 6-6 6"/><path d="M13 18h7"/></svg>
+    MIKE OS</a>
+  <a class="enl aqui" href="index.html">Inicio</a>
+  <a class="enl " href="descargas.html">Descargar</a>
+  <a class="enl " href="docs/index.html">Documentación</a>
+  <a class="enl " href="wiki/index.html">Wiki</a>
+</div></nav>
+<div class="cont">
+<header>
+  <div class="estado"><span class="punto"></span>En desarrollo · arranca en hardware UEFI</div>
+  <h1>Un sistema operativo hecho desde cero.</h1>
+  <p class="lema">Kernel Linux propio, init con runit, gestor de paquetes propio
+    y escritorio propio. Cero systemd.</p>
+</header>
+
+<div class="cifras">
+  <div class="cifra"><b>0,59 s</b><span>en arrancar</span></div>
+  <div class="cifra"><b>50 MB</b><span>de RAM en reposo</span></div>
+  <div class="cifra"><b>0 %</b><span>systemd</span></div>
+  <div class="cifra"><b>172M</b><span>la imagen entera</span></div>
+</div>
+
+<figure>
+  <img src="capturas/escritorio.png" alt="El escritorio de MIKE OS">
+  <figcaption>El escritorio: Hyprland con la barra de MIKE OS.</figcaption>
+</figure>
+
+<h2>Sin gestor de arranque</h2>
+<p>El kernel se compila con <code>CONFIG_EFI_STUB</code>, así que es él mismo un
+  ejecutable UEFI: se copia en la partición EFI como
+  <code>EFI/BOOT/BOOTX64.EFI</code> y la firmware lo arranca directamente. No hay
+  GRUB que mantener ni que se pueda romper.</p>
+
+<h2>Qué lleva dentro</h2>
+<div class="rejilla">
+  <div class="tarj"><h3>Kernel 7.2.0-12252-g388b607d107c</h3>
+    <p>Compilado para este sistema. Soporte de hardware real, arranque UEFI y
+      la configuración afinada para portátil.</p></div>
+  <div class="tarj"><h3>mpm</h3>
+    <p>Gestor de paquetes propio: verificación SHA256, resolución de
+      dependencias e instantáneas de btrfs antes de instalar.</p></div>
+  <div class="tarj"><h3>Escritorio</h3>
+    <p>Barra y Centro de Control escritos para MIKE OS. Se configura todo sin
+      tocar un archivo.</p></div>
+  <div class="tarj"><h3>MKShell</h3>
+    <p>Shell propia en C, con tuberías, redirecciones y variables.</p></div>
+</div>
+
+<h2>Actualizaciones</h2>
+<p>Las actualizaciones se piden, no se empujan. El repositorio ya viene
+  configurado, así que basta con:</p>
+<pre><span class="c"># cuando quieras la última versión</span>
+mpm update &amp;&amp; mpm upgrade</pre>
+<p class="tenue">El kernel también viaja por ahí, y al instalarse conserva el
+  anterior para poder volver si no arranca.
+  <a href="docs/actualizaciones.html">Cómo funciona →</a></p>
+
+<p style="margin-top:36px">
+  <a class="boton" href="descargas.html">Descargar</a>
+  <a class="boton sec" href="docs/index.html" style="margin-left:8px">Documentación</a>
+</p>
+<footer>MIKE OS · servido desde un mini PC en casa · actualizado el 11 de September de 2026</footer>
+</div></body></html>

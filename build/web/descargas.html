@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Descargar · MIKE OS</title><link rel="stylesheet" href="estilo.css"></head><body>
+<nav><div class="cont">
+  <a class="marca" href="index.html">
+    <svg viewBox="0 0 24 24" fill="none" stroke="#e8ebf0" stroke-width="2"
+         stroke-linecap="round" stroke-linejoin="round"><path d="M5 6l6 6-6 6"/><path d="M13 18h7"/></svg>
+    MIKE OS</a>
+  <a class="enl " href="index.html">Inicio</a>
+  <a class="enl aqui" href="descargas.html">Descargar</a>
+  <a class="enl " href="docs/index.html">Documentación</a>
+  <a class="enl " href="wiki/index.html">Wiki</a>
+</div></nav>
+<div class="cont">
+<header><h1>Descargar</h1>
+<p class="lema">Una imagen que arranca en cualquier equipo con UEFI. Puedes
+  probar el sistema sin instalar nada.</p></header>
+
+<table>
+  <tr><th>Archivo</th><th>Tamaño</th><th>Kernel</th></tr>
+  <tr><td><a href="descargas/mikeos.iso">mikeos.iso</a></td><td>172M</td><td>7.2.0-12252-g388b607d107c</td></tr>
+</table>
+<p class="tenue">SHA256:<br><code style="font-size:11px;word-break:break-all">7c1833e9acfc05b0dcbe47100ce63197dbe6677233834aa1b40e695c0cb1b82b</code></p>
+<p><a class="boton" href="descargas/mikeos.iso">Descargar la imagen</a></p>
+
+<h2>Grabarla en un USB</h2>
+<pre><span class="c"># comprueba antes que lo descargado es lo que se publicó</span>
+sha256sum mikeos.iso
+
+<span class="c"># /dev/sdX es tu USB. Se borrará entero.</span>
+sudo dd if=mikeos.iso of=/dev/sdX bs=4M status=progress oflag=sync</pre>
+
+<div class="aviso"><p><strong>Secure Boot.</strong> Hay que desactivarlo en la
+  UEFI antes de arrancar el USB. Este kernel no lleva la firma de Microsoft, así
+  que con Secure Boot activado la firmware se niega a ejecutarlo. En una Surface
+  se desactiva entrando en la UEFI (mantén subir volumen mientras enciendes).</p></div>
+
+<h2>Probar sin instalar</h2>
+<p>La imagen arranca en memoria: puedes mirarla, tocarlo todo y apagar sin que
+  el disco se entere. Cuando quieras instalarla, abre una terminal con
+  <code>SUPER/ALT + Return</code> y escribe <code>m-install</code>.</p>
+<p><a href="docs/instalacion.html">Guía de instalación completa →</a></p>
+<footer>MIKE OS · servido desde un mini PC en casa · actualizado el 11 de September de 2026</footer>
+</div></body></html>

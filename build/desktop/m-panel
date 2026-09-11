@@ -19,12 +19,20 @@ FAILS=0
 MAX_FAILS=5
 
 run_panel() {
-    if command -v waybar >/dev/null 2>&1; then
-        waybar -c "$CONFIG/config.jsonc" -s "$CONFIG/style.css"
-        return $?
-    fi
+    # La barra de MIKE OS es la de Quickshell: la que se configura desde el
+    # Centro de Control, con sus módulos, sus zonas y su paleta.
+    #
+    # Antes waybar iba primero "si está disponible". O sea que instalar waybar
+    # por cualquier motivo hacía desaparecer la barra del sistema y la
+    # sustituía en silencio por otra con una configuración de hace versiones.
+    # Nadie relacionaría una cosa con la otra.
     if command -v quickshell >/dev/null 2>&1 && [ -f "$SHELL_QML" ]; then
         quickshell -p "$SHELL_QML"
+        return $?
+    fi
+    # waybar queda de red de seguridad, por si algún día no hubiera Quickshell.
+    if command -v waybar >/dev/null 2>&1; then
+        waybar -c "$CONFIG/config.jsonc" -s "$CONFIG/style.css"
         return $?
     fi
     return 127

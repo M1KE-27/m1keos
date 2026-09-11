@@ -13,5 +13,6 @@ singleton Paleta 1.0 Paleta.qml
 Pendiente 1.0 Pendiente.qml
 Pulsable 1.0 Pulsable.qml
 Separador 1.0 Separador.qml
+SinConexion 1.0 SinConexion.qml
 Titulo 1.0 Titulo.qml
 ZonaEditor 1.0 ZonaEditor.qml

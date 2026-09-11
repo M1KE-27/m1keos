@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Instalación · MIKE OS</title><link rel="stylesheet" href="../estilo.css"></head><body>
+<nav><div class="cont">
+  <a class="marca" href="../index.html">
+    <svg viewBox="0 0 24 24" fill="none" stroke="#e8ebf0" stroke-width="2"
+         stroke-linecap="round" stroke-linejoin="round"><path d="M5 6l6 6-6 6"/><path d="M13 18h7"/></svg>
+    MIKE OS</a>
+  <a class="enl " href="../index.html">Inicio</a>
+  <a class="enl " href="../descargas.html">Descargar</a>
+  <a class="enl aqui" href="../docs/index.html">Documentación</a>
+  <a class="enl " href="../wiki/index.html">Wiki</a>
+</div></nav>
+<div class="cont">
+<header><h1>Instalación</h1>
+<p class="lema">Del USB al primer arranque.</p></header>
+
+<h2>1. Grabar el USB</h2>
+<pre><span class="c"># /dev/sdX es tu USB. Se borra entero: comprueba cuál es.</span>
+lsblk
+sudo dd if=mikeos.iso of=/dev/sdX bs=4M status=progress oflag=sync</pre>
+
+<h2>2. Desactivar Secure Boot</h2>
+<div class="aviso"><p>Sin esto el USB no arranca. La firmware se niega a
+ejecutar un kernel que no lleve la firma de Microsoft, y este no la lleva.</p></div>
+<p><strong>En una Surface:</strong> apágala del todo. Mantén pulsado
+<strong>subir volumen</strong> y pulsa el botón de encendido; suelta el volumen
+cuando aparezca el logo. En <em>Security</em> pon Secure Boot en
+<em>Disabled</em>. En <em>Boot configuration</em>, sube <em>USB Storage</em> por
+encima del disco interno.</p>
+<p><strong>En otros equipos:</strong> la tecla suele ser Supr, F2 o F12 nada más
+encender.</p>
+
+<h2>3. Probar sin instalar</h2>
+<p>MIKE OS arranca en memoria. Puedes mirarlo todo, abrir la terminal, tocar los
+ajustes y apagar: el disco no se entera de nada.</p>
+
+<h2>4. Instalar</h2>
+<p>Abre una terminal con <code>SUPER/ALT + Return</code> y escribe:</p>
+<pre>m-install</pre>
+<p>Sin argumentos lista los discos que ve. Después:</p>
+<pre>m-install /dev/nvme0n1</pre>
+<p>Te preguntará el sistema de archivos, el teclado, la zona horaria y el nombre
+del equipo. Y pedirá que escribas <code>BORRAR</code> antes de tocar nada.</p>
+
+<h3>¿btrfs o ext4?</h3>
+<table>
+  <tr><th></th><th>btrfs</th><th>ext4</th></tr>
+  <tr><td>Instantáneas antes de instalar</td><td>sí, y son inmediatas</td><td>no</td></tr>
+  <tr><td>Volver atrás de una actualización</td><td>completo</td><td>sólo lo que mpm conoce</td></tr>
+  <tr><td>Compresión</td><td>sí</td><td>no</td></tr>
+  <tr><td>Sencillez</td><td>más piezas</td><td>máxima</td></tr>
+</table>
+<p class="tenue">Con btrfs, <code>mpm</code> toma una foto del sistema antes de
+tocar nada y <code>mpm rollback</code> vuelve a ella. Por eso es lo que propone
+el instalador.</p>
+
+<h2>Qué hace el instalador</h2>
+<ul>
+  <li>Tabla de particiones GPT.</li>
+  <li>Partición EFI de 512 MiB en FAT32.</li>
+  <li>Raíz en btrfs con subvolúmenes <code>@</code>, <code>@home</code> y
+      <code>@instantaneas</code>, o en ext4.</li>
+  <li><code>fstab</code> por UUID, no por <code>/dev/sdX</code>: enchufar un USB
+      puede cambiar los nombres entre arranques.</li>
+  <li>El kernel en la partición EFI, y registrado en el menú de la UEFI.</li>
+</ul>
+<footer>MIKE OS · servido desde un mini PC en casa · actualizado el 11 de September de 2026</footer>
+</div></body></html>

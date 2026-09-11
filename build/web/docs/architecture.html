@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Arquitectura · MIKE OS</title><link rel="stylesheet" href="../estilo.css"></head><body>
+<nav><div class="cont">
+  <a class="marca" href="../index.html">
+    <svg viewBox="0 0 24 24" fill="none" stroke="#e8ebf0" stroke-width="2"
+         stroke-linecap="round" stroke-linejoin="round"><path d="M5 6l6 6-6 6"/><path d="M13 18h7"/></svg>
+    MIKE OS</a>
+  <a class="enl" href="../index.html">Inicio</a>
+  <a class="enl" href="../descargas.html">Descargar</a>
+  <a class="enl aqui" href="../docs/index.html">Documentación</a>
+  <a class="enl " href="../wiki/index.html">Wiki</a>
+</div></nav>
+<div class="cont">
+<header><h1>Arquitectura</h1></header>
+<h2>MIKE OS — System Architecture (v0.2.0 Core)</h2>
+<p><strong>MIKE OS</strong> is an independent, ultra-lightweight, customizable, and high-performance Linux/Unix distribution built from scratch without systemd.</p>
+<hr>
+<h3>1. System Layering</h3>
+<p>MIKE OS follows a strict, decoupled two-layer design:</p>
+<pre><code>
+┌─────────────────────────────────────────────────────────────┐
+│                      MIKE DESKTOP (Optional)                │
+│       Hyprland · Wayland · Quickshell · MIKE UI Theme       │
+├─────────────────────────────────────────────────────────────┤
+│                      MIKE OS CORE (Base System)             │
+│   Linux Kernel 7.2 (x86_64) · Runit 2.1.2 · Unix Userspace  │
+│   Networking · Storage · Users &amp; Security · Dropbear SSH    │
+│   MPM (Package Manager) · MCore Suite · MKShell · Recovery  │
+└─────────────────────────────────────────────────────────────┘
+</code></pre>
+<p>The Core is completely autonomous and operates at maximum performance without any graphical dependencies.</p>
+<hr>
+<h3>2. Fundamental Design Principles</h3>
+<p>1. <strong>Strictly Customizable</strong>: Every system configuration resides in plain text under <code>/etc/mikeos/</code>.</p>
+<p>2. <strong>Ultra-Fast &amp; Lightweight</strong>: Sub-second boot times (<strong>~0.60s</strong>), low RAM consumption (<strong>45–80 MB</strong>).</p>
+<p>3. <strong>Zero Systemd</strong>: Utilizes <strong>runit 2.1.2</strong> as true PID 1 and service supervisor.</p>
+<p>4. <strong>POSIX/Unix Standard</strong>: Standard commands powered by static BusyBox, native tools, and full shell piping.</p>
+<p>5. <strong>Atomic &amp; Verifiable</strong>: Every package and kernel operation managed through MPM with SHA256 validation and instant rollback.</p>
+<hr>
+<h3>3. Filesystem Hierarchy</h3>
+<pre><code>
+/
+├── boot/                   # Kernel images (vmlinuz, vmlinuz.old)
+├── bin/ &amp; sbin/            # Essential binaries (runit, busybox, mkshell)
+├── usr/
+│   ├── bin/ &amp; sbin/        # MCore utilities, MPM, Dropbear SSH, compiler tools
+│   ├── lib/ &amp; include/     # Static libraries and C header toolchains
+│   └── share/              # System scripts (e.g. udhcpc hooks)
+├── etc/
+│   ├── mikeos/             # Declarative system settings (system, network, boot)
+│   ├── runit/              # Stages 1 (init), 2 (supervise), 3 (shutdown)
+│   ├── sv/                 # Available supervised service definitions
+│   └── dropbear/           # SSH server host keys
+├── var/
+│   ├── service/            # Active services monitored by runsvdir
+│   ├── log/                # System log files (/var/log/messages)
+│   └── lib/mpm/            # MPM database, packages repository, and backups
+├── dev/, proc/, sys/       # Virtual kernel interfaces
+└── root/, home/mike/       # User home directories with .mkshellrc
+</code></pre>
+<footer>MIKE OS · <a href="../index.html">Inicio</a></footer>
+</div></body></html>

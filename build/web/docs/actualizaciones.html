@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Actualizaciones · MIKE OS</title><link rel="stylesheet" href="../estilo.css"></head><body>
+<nav><div class="cont">
+  <a class="marca" href="../index.html">
+    <svg viewBox="0 0 24 24" fill="none" stroke="#e8ebf0" stroke-width="2"
+         stroke-linecap="round" stroke-linejoin="round"><path d="M5 6l6 6-6 6"/><path d="M13 18h7"/></svg>
+    MIKE OS</a>
+  <a class="enl " href="../index.html">Inicio</a>
+  <a class="enl " href="../descargas.html">Descargar</a>
+  <a class="enl aqui" href="../docs/index.html">Documentación</a>
+  <a class="enl " href="../wiki/index.html">Wiki</a>
+</div></nav>
+<div class="cont">
+<header><h1>Actualizaciones</h1>
+<p class="lema">Se piden, no se empujan.</p></header>
+
+<h2>Ponerte al día</h2>
+<pre>mpm update &amp;&amp; mpm upgrade</pre>
+<p>El repositorio oficial ya viene configurado en el sistema. Si quieres
+comprobarlo o añadir otro:</p>
+<pre>mpm source list
+mpm source add https://m1keos.duckdns.org/mpm/</pre>
+
+<h2>Qué se actualiza así</h2>
+<table>
+  <tr><th>Paquete</th><th>Qué lleva</th></tr>
+  <tr><td>mpm</td><td>El propio gestor de paquetes</td></tr>
+  <tr><td>mcore</td><td>Las herramientas <code>m-*</code> del sistema</td></tr>
+  <tr><td>mike-desktop</td><td>La barra, el Centro de Control, Hyprland</td></tr>
+  <tr><td>mkshell</td><td>La shell</td></tr>
+  <tr><td>mikeos-kernel</td><td>El kernel</td></tr>
+</table>
+
+<h2>Si algo sale mal</h2>
+<pre>mpm rollback</pre>
+<p>En btrfs vuelve a la instantánea que se tomó justo antes de instalar: el
+sistema entero, no una lista de archivos.</p>
+
+<h3>Si el kernel nuevo no arranca</h3>
+<p>Al instalarse, el kernel anterior se guarda en la partición EFI como
+<code>EFI/mikeos/vmlinuz-anterior.efi</code>. Se elige desde el menú de arranque
+de la UEFI y el equipo vuelve a encender. Un kernel sin vuelta atrás es un
+portátil que no enciende.</p>
+
+<h2>Cosas que conviene saber</h2>
+<ul>
+  <li><strong>Nada se instala solo.</strong> Actualizar es una decisión tuya.</li>
+  <li><strong>Un programa abierto no cambia de versión.</strong> La barra se
+      recarga al reiniciar la sesión; el kernel, al reiniciar el equipo. Pasa en
+      todos los sistemas.</li>
+  <li><strong>Cada paquete se verifica</strong> por SHA256 contra el índice
+      antes de instalarse.</li>
+</ul>
+<footer>MIKE OS · servido desde un mini PC en casa · actualizado el 11 de September de 2026</footer>
+</div></body></html>

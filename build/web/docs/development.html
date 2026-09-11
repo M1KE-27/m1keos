@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Desarrollo · MIKE OS</title><link rel="stylesheet" href="../estilo.css"></head><body>
+<nav><div class="cont">
+  <a class="marca" href="../index.html">
+    <svg viewBox="0 0 24 24" fill="none" stroke="#e8ebf0" stroke-width="2"
+         stroke-linecap="round" stroke-linejoin="round"><path d="M5 6l6 6-6 6"/><path d="M13 18h7"/></svg>
+    MIKE OS</a>
+  <a class="enl" href="../index.html">Inicio</a>
+  <a class="enl" href="../descargas.html">Descargar</a>
+  <a class="enl aqui" href="../docs/index.html">Documentación</a>
+  <a class="enl " href="../wiki/index.html">Wiki</a>
+</div></nav>
+<div class="cont">
+<header><h1>Desarrollo</h1></header>
+<h2>MIKE OS — Development Toolchain and C Compilation</h2>
+<h3>1. Package: <code>development.mpk</code></h3>
+<p>MIKE OS includes a self-contained native C toolchain packaged in <code>development.mpk</code>.</p>
+<hr>
+<h3>2. Components</h3>
+<ul>
+<li><strong>TinyCC (<code>/usr/bin/tcc</code>)</strong>: Ultra-fast, lightweight C compiler.</li>
+<li><strong>GCC Wrapper (<code>/usr/bin/gcc</code> and <code>/usr/bin/cc</code>)</strong>: Automates compilation with embedded header directories.</li>
+<li><strong>System Headers (<code>/usr/include/</code>)</strong>: Self-contained C headers (<code>stdio.h</code>, <code>stdlib.h</code>, <code>unistd.h</code>) with direct Linux x86_64 syscall implementations.</li>
+</ul>
+<hr>
+<h3>3. Usage Example</h3>
+<pre><code>
+// hello.c
+#include &lt;stdio.h&gt;
+
+int main() {
+    printf(&quot;Hello from native C compiled directly inside MIKE OS!\n&quot;);
+    return 0;
+}
+</code></pre>
+<pre><code>
+# Compiling and executing
+gcc hello.c
+</code></pre>
+<footer>MIKE OS · <a href="../index.html">Inicio</a></footer>
+</div></body></html>

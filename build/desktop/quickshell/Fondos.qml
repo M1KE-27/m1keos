@@ -40,6 +40,9 @@ PanelWindow {
 
     function abrir() {
         abierto = true
+        // Se comprueba la red al abrir: si no hay, se dice, en vez de dejar
+        // la rejilla en blanco y que cada uno adivine si carga o está rota.
+        avisoRed.comprobar()
         if (resultados.length === 0) cargar("", 1, false)
     }
 
@@ -129,6 +132,13 @@ PanelWindow {
                 }
             }
 
+            // ---------- Aviso de red ----------
+            SinConexion {
+                id: avisoRed
+                queHace: "Los fondos se descargan de Wallhaven, que necesita internet. El de MIKE OS sí se puede poner sin red."
+                onReintentado: ventanaFondos.cargar("", 1, false)
+            }
+
             // ---------- Cuadrícula ----------
             Flickable {
                 Layout.fillWidth: true
@@ -142,6 +152,56 @@ PanelWindow {
                     width: parent.width
                     columns: Math.max(1, Math.floor(width / 216))
                     spacing: 12
+
+                    // El fondo de MIKE OS, siempre el primero.
+                    //
+                    // Faltaba: en cuanto aplicabas uno de Wallhaven no había
+                    // forma de volver al de fábrica desde aquí. Y además es el
+                    // único que se ve al instante, porque está en el disco y no
+                    // depende de que la red traiga nada.
+                    Rectangle {
+                        width: 204
+                        height: 128
+                        radius: 10
+                        color: Paleta.fondo
+                        border.color: ratonPropio.hovered ? ventanaFondos.acento
+                                                          : ventanaFondos.bordePanel
+                        border.width: ratonPropio.hovered ? 2 : 1
+                        clip: true
+
+                        Image {
+                            anchors.fill: parent
+                            anchors.margins: 1
+                            source: "file:///usr/share/backgrounds/wallpaper.png"
+                            fillMode: Image.PreserveAspectCrop
+                            asynchronous: true
+                        }
+                        Rectangle {
+                            anchors.fill: parent
+                            anchors.margins: 1
+                            gradient: Gradient {
+                                GradientStop { position: 0.55; color: "transparent" }
+                                GradientStop { position: 1.0;  color: "#cc000000" }
+                            }
+                        }
+                        Text {
+                            anchors.left: parent.left
+                            anchors.bottom: parent.bottom
+                            anchors.margins: 10
+                            text: "El de MIKE OS"
+                            color: Paleta.texto
+                            font.pixelSize: 12
+                            font.bold: true
+                        }
+
+                        HoverHandler { id: ratonPropio }
+                        TapHandler {
+                            onTapped: {
+                                ventanaFondos.estado = "Aplicando fondo..."
+                                volverAlPropio.running = true
+                            }
+                        }
+                    }
 
                     Repeater {
                         model: ventanaFondos.resultados
@@ -166,30 +226,48 @@ PanelWindow {
                                 source: "file://" + ventanaFondos.cache + "/" + modelData.id + ".jpg"
                                 fillMode: Image.PreserveAspectCrop
                                 asynchronous: true
-                                cache: false
+                                // cache: true. Con la caché desactivada, cada
+                                // reintento volvía a decodificar el JPEG desde
+                                // el disco aunque ya estuviera pintado.
+                                cache: true
                                 // Las miniaturas se descargan a un archivo
-                                // temporal y sólo se renombran al terminar,
-                                // así que un archivo con el nombre bueno
-                                // está siempre completo. Mientras no exista,
-                                // se reintenta.
-                                onStatusChanged: if (status === Image.Error) reintento.start()
+                                // temporal y sólo se renombran al terminar, así
+                                // que un archivo con el nombre bueno está
+                                // siempre completo. Mientras no exista, se
+                                // reintenta; en cuanto aparece, se para.
+                                onStatusChanged: {
+                                    if (status === Image.Error) reintento.start()
+                                    else if (status === Image.Ready) reintento.stop()
+                                }
                             }
 
                             Timer {
                                 id: reintento
-                                interval: 400
+                                // 1,2 s en vez de 0,4: las miniaturas tardan lo
+                                // que tarda la red, y mirar el disco tres veces
+                                // por segundo no las trae antes.
+                                interval: 1200
                                 repeat: true
                                 property int vueltas: 0
                                 onTriggered: {
                                     vueltas++
-                                    // Un minuto largo de margen. Pasado eso
-                                    // la miniatura no va a llegar y seguir
-                                    // mirando el disco sólo gasta batería.
-                                    if (vueltas > 150) { stop(); return }
+                                    // Medio minuto. Pasado eso la miniatura no
+                                    // va a llegar y seguir mirando el disco
+                                    // sólo gasta batería.
+                                    if (vueltas > 25) { stop(); return }
+                                    // Si ya está pintada no se toca. Antes se
+                                    // recargaba igualmente: la condición de
+                                    // parada miraba el estado justo después de
+                                    // asignar la ruta, y con carga asíncrona
+                                    // en ese instante siempre es "Loading",
+                                    // nunca "Ready". O sea que NUNCA paraba, y
+                                    // seguía vaciando y recargando cada
+                                    // miniatura durante un minuto: eso era el
+                                    // parpadeo de toda la rejilla.
+                                    if (miniatura.status === Image.Ready) { stop(); return }
                                     var s = miniatura.source
                                     miniatura.source = ""
                                     miniatura.source = s
-                                    if (miniatura.status === Image.Ready) stop()
                                 }
                             }
 
@@ -270,6 +348,16 @@ PanelWindow {
     // Descarga las miniaturas que falten, en segundo plano. La cuadrícula ya
     // está pintada para cuando esto arranca.
     Process { id: descargador }
+
+    // m-fondo es quien pinta y recuerda el fondo (ver build/mcore/m-fondo):
+    // así el de fábrica se guarda en los ajustes igual que cualquier otro y
+    // sobrevive a cerrar la sesión.
+    Process {
+        id: volverAlPropio
+        command: ["m-fondo", "poner", "/usr/share/backgrounds/wallpaper.png"]
+        onExited: ventanaFondos.estado = exitCode === 0 ? "Fondo aplicado."
+                                                        : "No se pudo aplicar."
+    }
 
     Process {
         id: aplicar

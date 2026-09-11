@@ -131,7 +131,7 @@ mkdir -p "$MCORE_SPEC/root/usr/bin"
 for u in m-service m-system m-network m-user m-disk m-info m-doctor m-log \
          m-sudo m-install m-desktop m-screenshot m-volume m-fastfetch \
          m-workspace-cycle m-metrics m-drivers m-wifi m-bluetooth \
-         m-wallhaven m-audio-setup m-fondo; do
+         m-wallhaven m-audio-setup m-fondo m-internet; do
     if [ -f "$PROJECT_ROOT/build/mcore/$u" ]; then
         cp "$PROJECT_ROOT/build/mcore/$u" "$MCORE_SPEC/root/usr/bin/"
         chmod 755 "$MCORE_SPEC/root/usr/bin/$u"

@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Modo rescate · MIKE OS</title><link rel="stylesheet" href="../estilo.css"></head><body>
+<nav><div class="cont">
+  <a class="marca" href="../index.html">
+    <svg viewBox="0 0 24 24" fill="none" stroke="#e8ebf0" stroke-width="2"
+         stroke-linecap="round" stroke-linejoin="round"><path d="M5 6l6 6-6 6"/><path d="M13 18h7"/></svg>
+    MIKE OS</a>
+  <a class="enl" href="../index.html">Inicio</a>
+  <a class="enl" href="../descargas.html">Descargar</a>
+  <a class="enl aqui" href="../docs/index.html">Documentación</a>
+  <a class="enl " href="../wiki/index.html">Wiki</a>
+</div></nav>
+<div class="cont">
+<header><h1>Modo rescate</h1></header>
+<h2>MIKE OS — Recovery Mode and Troubleshooting</h2>
+<h3>1. Entering Recovery Mode</h3>
+<p>To enter Recovery Mode, add the following parameter to the kernel command line during boot:</p>
+<pre><code>
+mikeos_recovery=1
+</code></pre>
+<p>Or run via the runner script:</p>
+<pre><code>
+./scripts/run-qemu.sh --recovery
+</code></pre>
+<hr>
+<h3>2. Recovery Environment</h3>
+<ul>
+<li>The <code>/init</code> entrypoint immediately halts the normal boot process and launches <code>/bin/mkshell</code> as <code>root</code> directly on <code>/dev/console</code>.</li>
+<li>Virtual filesystems (<code>/proc</code>, <code>/sys</code>, <code>/dev</code>, <code>/run</code>, <code>/tmp</code>) are mounted.</li>
+<li>Services are <strong>not</strong> started, allowing safe recovery of broken network configs, corrupt user accounts, or broken storage mounts.</li>
+</ul>
+<hr>
+<h3>3. Emergency Repairs</h3>
+<ul>
+<li><strong>Repair Filesystem</strong>: <code>fsck.ext4 -y /dev/vda</code></li>
+<li><strong>Reset User Passwords</strong>: Edit <code>/etc/passwd</code> or <code>/etc/shadow</code></li>
+<li><strong>Revert Package</strong>: <code>mpm rollback</code></li>
+<li><strong>Revert Kernel</strong>: <code>mpm kernel rollback</code></li>
+<li><strong>Reboot System</strong>: <code>reboot -f</code></li>
+</ul>
+<footer>MIKE OS · <a href="../index.html">Inicio</a></footer>
+</div></body></html>

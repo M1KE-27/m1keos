@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Rendimiento · MIKE OS</title><link rel="stylesheet" href="../estilo.css"></head><body>
+<nav><div class="cont">
+  <a class="marca" href="../index.html">
+    <svg viewBox="0 0 24 24" fill="none" stroke="#e8ebf0" stroke-width="2"
+         stroke-linecap="round" stroke-linejoin="round"><path d="M5 6l6 6-6 6"/><path d="M13 18h7"/></svg>
+    MIKE OS</a>
+  <a class="enl" href="../index.html">Inicio</a>
+  <a class="enl" href="../descargas.html">Descargar</a>
+  <a class="enl aqui" href="../docs/index.html">Documentación</a>
+  <a class="enl " href="../wiki/index.html">Wiki</a>
+</div></nav>
+<div class="cont">
+<header><h1>Rendimiento</h1></header>
+<h2>MIKE OS — Benchmarking and Telemetry History</h2>
+<h3>1. Evolution Summary</h3>
+<table>
+<tr><th>Metric</th><th>Initial Baseline</th><th>Consolidated Core (v0.2.0)</th><th>Target</th></tr>
+<tr><td><strong>Boot Time</strong></td><td>0.56 s</td><td><strong>0.60 s</strong></td><td>&lt; 1.0 s</td></tr>
+<tr><td><strong>RAM Consumption</strong></td><td>39 MB</td><td><strong>45 – 80 MB</strong></td><td>&lt; 128 MB</td></tr>
+<tr><td><strong>RootFS Image Size</strong></td><td>11 MB</td><td><strong>37 MB</strong> (ext4 disk)</td><td>&lt; 100 MB</td></tr>
+<tr><td><strong>Systemd Presence</strong></td><td>0%</td><td><strong>0%</strong></td><td>0%</td></tr>
+<tr><td><strong>Test Suite Pass Rate</strong></td><td>N/A</td><td><strong>100% (15/15 PASS)</strong></td><td>100%</td></tr>
+</table>
+<hr>
+<h3>2. Telemetry Details</h3>
+<ul>
+<li><strong>Kernel + Init + Runit Boot Time</strong>: ~0.60 seconds.</li>
+<li><strong>Idle Process Count</strong>: ~57 processes (primarily Linux kernel worker threads and runit supervisors).</li>
+<li><strong>Supervised Services Active</strong>: <code>console</code>, <code>syslog</code>, <code>network</code>, <code>dropbear</code>.</li>
+<li><strong>Automated Runner</strong>: <code>./scripts/benchmark.sh</code>.</li>
+</ul>
+<footer>MIKE OS · <a href="../index.html">Inicio</a></footer>
+</div></body></html>
