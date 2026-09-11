@@ -1,24 +1,30 @@
 #!/bin/sh
 # Volumen en pasos de 5%, limitado siempre a 0..100.
 set -u
-# "get" devuelve el nivel actual (0-100) y, si está silenciado, "mute".
+# "get" devuelve siempre el nivel actual (0-100) y, si está silenciado,
+# añade " mute" detrás: "0", "75", "75 mute".
 # Sin destino de audio no imprime nada y sale con error: quien pregunta debe
 # poder distinguir "está a cero" de "no hay tarjeta", y no inventarse un valor.
+# Antes, estando silenciado imprimía sólo "mute" y se perdía el nivel, así que
+# la barra no podía distinguir "silenciado" de "no hay tarjeta" y mostraba
+# "sin audio" en un sistema con sonido perfectamente montado.
 if [ "${1:-}" = "get" ]; then
     if command -v wpctl >/dev/null 2>&1; then
         out="$(wpctl get-volume @DEFAULT_AUDIO_SINK@ 2>/dev/null)" || exit 1
         [ -n "$out" ] || exit 1
         vol="$(printf '%s' "$out" | awk '{print $2}')"
         [ -n "$vol" ] || exit 1
-        printf '%s' "$out" | grep -q MUTED && { echo "mute"; exit 0; }
         awk -v v="$vol" 'BEGIN { printf "%d", v * 100 + 0.5 }'
+        printf '%s' "$out" | grep -q MUTED && printf ' mute'
+        echo
         exit 0
     fi
     if command -v pactl >/dev/null 2>&1; then
         vol="$(pactl get-sink-volume @DEFAULT_SINK@ 2>/dev/null | sed -n 's/.* \([0-9][0-9]*\)%.*/\1/p' | head -1)"
         [ -n "$vol" ] || exit 1
-        pactl get-sink-mute @DEFAULT_SINK@ 2>/dev/null | grep -q yes && { echo "mute"; exit 0; }
         printf '%s' "$vol"
+        pactl get-sink-mute @DEFAULT_SINK@ 2>/dev/null | grep -q yes && printf ' mute'
+        echo
         exit 0
     fi
     exit 1

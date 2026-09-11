@@ -23,7 +23,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 BUILD_DIR="$PROJECT_ROOT/build"
 
-DEV_KEY="${MIKEOS_DEV_KEY:-/tmp/mikeos_diag_ssh/diagkey}"
+DEV_KEY="${MIKEOS_DEV_KEY:-$HOME/.ssh/mikeos_dev}"
 DEV_USER="${MIKEOS_DEV_USER:-mike}"
 # Puertos que usan run-qemu.sh y los lanzadores de pruebas.
 PORT_CANDIDATES="${MIKEOS_DEV_PORT:-} 2222 2223 2224 2225 2226 2227 2228 2229"

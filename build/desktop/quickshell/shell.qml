@@ -917,7 +917,20 @@ ShellRoot {
             anchors.fill: parent
             color: "#000000"
             opacity: 0.5
-            TapHandler { onTapped: root.panelOpen = false }
+            TapHandler {
+                // Sólo cierra si el clic cae FUERA de la ventana. El fondo
+                // ocupa la pantalla entera, también por debajo del Centro de
+                // Control, así que antes recibía igualmente cada clic de
+                // dentro: elegir un apartado cambiaba de sección y acto
+                // seguido cerraba el panel.
+                onTapped: (punto) => {
+                    var x = punto.scenePosition.x
+                    var y = punto.scenePosition.y
+                    if (x < ventana.x || x > ventana.x + ventana.width
+                        || y < ventana.y || y > ventana.y + ventana.height)
+                        root.panelOpen = false
+                }
+            }
         }
 
         Rectangle {
@@ -1536,13 +1549,15 @@ ShellRoot {
         command: ["m-volume", "get"]
         stdout: StdioCollector {
             onStreamFinished: {
+                // "75", "75 mute", o nada si no hay destino de audio.
                 var t = this.text.trim()
-                if (t === "mute") { root.volMute = true }
-                else if (t.length > 0 && !isNaN(parseInt(t))) {
-                    root.volMute = false
-                    root.volNivel = parseInt(t)
+                var n = parseInt(t)
+                if (t.length > 0 && !isNaN(n)) {
+                    root.volNivel = n
+                    root.volMute = t.indexOf("mute") >= 0
                 } else {
                     root.volNivel = -1
+                    root.volMute = false
                 }
             }
         }

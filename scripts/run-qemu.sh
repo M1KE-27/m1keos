@@ -206,7 +206,14 @@ fi
 # que exista el dispositivo, no oírlo desde el anfitrión.
 AUDIO_FLAGS=(-audiodev none,id=snd0 -device intel-hda -device hda-duplex,audiodev=snd0)
 
-COMMON_FLAGS=("${ACCEL_FLAGS[@]}" "${AUDIO_FLAGS[@]}" -kernel "$KERNEL" -initrd "$INITRAMFS" -append "$CMDLINE" "${NET_FLAGS[@]}" "${DISPLAY_FLAGS[@]}" -serial mon:stdio -smp "$CPU_COUNT" -m "$MEM_SIZE" -no-reboot)
+# Socket QMP: es lo que permite mover el ratón y teclear dentro de la máquina
+# desde fuera, y por tanto comprobar que un botón hace lo que dice sin que
+# haya una persona delante pulsándolo. Los scripts de prueba lo buscan aquí.
+QMP_SOCKET="${MIKEOS_QMP_SOCKET:-/tmp/mikeos-qmp.sock}"
+rm -f "$QMP_SOCKET"
+QMP_FLAGS=(-qmp "unix:$QMP_SOCKET,server,nowait")
+
+COMMON_FLAGS=("${ACCEL_FLAGS[@]}" "${AUDIO_FLAGS[@]}" "${QMP_FLAGS[@]}" -kernel "$KERNEL" -initrd "$INITRAMFS" -append "$CMDLINE" "${NET_FLAGS[@]}" "${DISPLAY_FLAGS[@]}" -serial mon:stdio -smp "$CPU_COUNT" -m "$MEM_SIZE" -no-reboot)
 
 echo "MIKE OS | disco=$DISK_BUS red=$NET_MODEL video=$VGA_MODEL cpu=$CPU_COUNT ram=$MEM_SIZE"
 if [ "$BOOT_MODE" = disk ]; then

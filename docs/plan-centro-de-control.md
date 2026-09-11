@@ -219,11 +219,24 @@ verdadera y responde al clic.
       *Verificado los cuatro modos:* `04:05`, `04:05 am`, `04:05 AM` y
       `04:05:35`. Sin segundos despierta al cambiar de minuto; con segundos,
       cada segundo.
-- [ ] **1.11 Volumen** — nivel real, rueda para subir y bajar, clic silencia.
-      *En curso.* El módulo ya existe y lee el estado de verdad con
-      `m-volume get`; cuando no hay destino de audio muestra "sin audio" en
-      lugar de un número inventado. **No se marca** porque el criterio pide
-      nivel real y todavía no se puede demostrar: ver *Incidencias*.
+- [x] **1.11 Volumen** — *11 sep 2026* · nivel real, rueda para subir y
+      bajar, clic silencia. Sin destino de audio sigue diciendo "sin audio"
+      en vez de inventarse un número.
+      *Verificado con ratón de verdad (eventos por QMP):* la barra marca
+      95 %, tres golpes de rueda hacia abajo la dejan en 80 % y el clic
+      alterna el silencio.
+      *La incidencia que lo bloqueaba no era libudev-zero.* El kernel traía
+      el controlador HDA pero **ningún driver de códec**
+      (`CONFIG_SND_HDA_GENERIC` y los demás estaban desactivados), así que
+      moría en `Cannot probe codecs, giving up` y arrancaba con cero
+      tarjetas. Estaba en `dmesg` desde el principio. Añadidos al fragmento
+      `.config` del proyecto el códec genérico —el que expone QEMU— más
+      Realtek, HDMI, Analog, Conexant y USB Audio para hardware real.
+      *Fallo corregido de paso:* estando silenciado, `m-volume get` imprimía
+      sólo `mute` y se perdía el nivel, así que la barra no distinguía
+      "silenciado" de "no hay tarjeta" y ponía **"sin audio" en un sistema
+      con sonido perfectamente montado**. Ahora devuelve siempre el número,
+      con " mute" detrás si procede.
 - [x] **1.12 Red** — *31 ago 2026* · muestra la conexión real: nombre de la
       red WiFi si la hay, o la interfaz de cable, o "sin red". Al pulsarlo
       abre el apartado de red del Centro de Control.
@@ -452,7 +465,7 @@ verificación por resumen.
 | Bloque | Puntos | Hechos |
 |---|---|---|
 | 0 · Cimientos | 5 | **5 ✓** |
-| 1 · Barra | 22 | **17** |
+| 1 · Barra | 22 | **18** |
 | 2 · Sistema | 6 | 0 |
 | 3 · Escritorio | 10 | 0 |
 | 4 · Interfaz | 10 | 0 |
@@ -461,7 +474,7 @@ verificación por resumen.
 | 7 · Acerca de | 4 | 0 |
 | 8 · Gestor de paquetes | 11 | **9** |
 | 9 · Reacción inmediata | 5 | **4** |
-| **Total** | **84** | **35** |
+| **Total** | **84** | **36** |
 
 ---
 
@@ -470,17 +483,7 @@ verificación por resumen.
 Lo que falló al verificar y sigue abierto. Se borra la línea cuando se
 resuelve.
 
-- **Audio sin destino de salida (bloquea 1.11).** Montado el sistema de sonido
-  entero y funcionando por partes: el kernel detecta la tarjeta
-  (`HDA-Intel`, tras activar los códecs HDA, Realtek, HDMI y USB), los nodos
-  de `/dev/snd` ya son accesibles por el grupo `audio`, PipeWire y WirePlumber
-  arrancan con la sesión, hay bus de sesión de D-Bus y está `/usr/share/alsa`.
-  Aun así WirePlumber no expone ningún destino de audio.
-  Lo que queda apunta a **libudev-zero**, el sustituto mínimo de libudev que
-  usa MIKE OS: el monitor de ALSA de WirePlumber enumera las tarjetas por
-  udev, y ese sustituto no da lo que necesita. La salida sería llevar un udev
-  real (eudev), que es una decisión de sistema y corresponde al punto **2.1
-  Sonido**, no a un módulo de la barra.
+*(Ninguna abierta.)*
 
 ---
 
@@ -503,7 +506,8 @@ resuelve.
 | 31 ago 2026 | 1.8 Identidad | Verificado con clic real — abre Acerca de |
 | 31 ago 2026 | 1.9 Espacios | Verificado con clic real — cambia de espacio |
 | 31 ago 2026 | 1.10 Reloj | Verificado los cuatro formatos |
-| 31 ago 2026 | 1.11 Volumen | **Abierto** — sin destino de audio (ver Incidencias) |
+| 31 ago 2026 | 1.11 Volumen | Abierto — sin destino de audio |
+| 11 sep 2026 | 1.11 Volumen | Verificado con rueda y clic reales — 95 % → 80 % |
 | 31 ago 2026 | 1.12 Red | Verificado — eth0 real y clic al panel |
 | 31 ago 2026 | 1.15 Medidores | Verificado con carga real — 0 % a 92 % |
 | 31 ago 2026 | 1.17 Botones rápidos | Verificado — captura y teclado con clics |
