@@ -16,7 +16,18 @@ set -uo pipefail
 
 RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WEB="$RAIZ/build/web"
-SERVIDOR="${MIKEOS_SERVIDOR:-m1ke@192.168.3.200}"
+# El servidor no va escrito aquí: esto es un repositorio público y la dirección
+# del equipo de casa de cada uno no pinta nada en él. Se pone en
+# .publicar.conf (que no se versiona) o en la variable MIKEOS_SERVIDOR.
+[ -f "$RAIZ/.publicar.conf" ] && . "$RAIZ/.publicar.conf"
+SERVIDOR="${MIKEOS_SERVIDOR:-}"
+if [ -z "$SERVIDOR" ]; then
+    err "no sé a qué servidor subir."
+    gris "  Crea $RAIZ/.publicar.conf con:"
+    gris "      MIKEOS_SERVIDOR=usuario@tu-servidor"
+    gris "  o exporta MIKEOS_SERVIDOR antes de ejecutar esto."
+    exit 1
+fi
 DESTINO="${MIKEOS_WEB_DIR:-/home/m1ke/mikeos-backend/web}"
 
 verde() { printf '\033[32m%s\033[0m\n' "$*"; }

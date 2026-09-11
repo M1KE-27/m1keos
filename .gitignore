@@ -61,3 +61,6 @@ servidor/deps/
 
 # La web es salida generada: se reconstruye con scripts/generar-web.sh.
 build/web/
+
+# Dónde publica cada uno: es asunto suyo, no del repositorio.
+.publicar.conf

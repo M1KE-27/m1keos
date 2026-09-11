@@ -19,7 +19,18 @@
 set -uo pipefail
 
 RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SERVIDOR="${MIKEOS_SERVIDOR:-m1ke@192.168.3.200}"
+# El servidor no va escrito aquí: esto es un repositorio público y la dirección
+# del equipo de casa de cada uno no pinta nada en él. Se pone en
+# .publicar.conf (que no se versiona) o en la variable MIKEOS_SERVIDOR.
+[ -f "$RAIZ/.publicar.conf" ] && . "$RAIZ/.publicar.conf"
+SERVIDOR="${MIKEOS_SERVIDOR:-}"
+if [ -z "$SERVIDOR" ]; then
+    err "no sé a qué servidor subir."
+    gris "  Crea $RAIZ/.publicar.conf con:"
+    gris "      MIKEOS_SERVIDOR=usuario@tu-servidor"
+    gris "  o exporta MIKEOS_SERVIDOR antes de ejecutar esto."
+    exit 1
+fi
 # Es la carpeta que sirve nginx en m1keos.duckdns.org, bajo /mpm/.
 # /home/m1ke es escribible sin sudo; /var/www y /srv no lo son en ese equipo.
 DESTINO="${MIKEOS_SERVIDOR_DIR:-/home/m1ke/mikeos-backend/web/mpm}"
