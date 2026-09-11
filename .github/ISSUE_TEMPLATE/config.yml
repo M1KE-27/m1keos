@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Documentación
+    url: https://m1keos.duckdns.org/docs/
+    about: Cómo está hecho el sistema por dentro
+  - name: Wiki
+    url: https://m1keos.duckdns.org/wiki/
+    about: Problemas concretos y cómo se resuelven

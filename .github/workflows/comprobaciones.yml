@@ -1,0 +1,106 @@
+# Lo que se comprueba en cada cambio.
+#
+# No construye la imagen entera: eso compila un kernel de Linux y son decenas
+# de minutos. Lo que sí se puede hacer en segundos es comprobar que nada está
+# roto de forma evidente, que es donde se cuelan la mayoría de los errores:
+# una comilla mal puesta en un script, un archivo C que no compila, el servidor
+# que no arranca, la web que no se genera.
+#
+# La imagen completa y las 21 comprobaciones de tests/humo.sh siguen
+# ejecutándose a mano antes de publicar (necesitan QEMU con KVM y un
+# escritorio).
+name: Comprobaciones
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  scripts:
+    name: Scripts de shell
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Sintaxis de todos los scripts
+        run: |
+          fallos=0
+          for f in scripts/*.sh tests/*.sh build/mcore/m-* build/mpm/mpm \
+                   build/mpm/sync build/desktop/m-*; do
+            [ -f "$f" ] || continue
+            case "$f" in *.c|*.qml|*.png) continue ;; esac
+            # bash para los .sh, sh para las herramientas del sistema (que
+            # corren bajo el shell de BusyBox, no bajo bash).
+            if head -1 "$f" | grep -q bash; then
+              bash -n "$f" || { echo "::error file=$f::sintaxis"; fallos=1; }
+            else
+              sh -n "$f"   || { echo "::error file=$f::sintaxis"; fallos=1; }
+            fi
+          done
+          exit $fallos
+
+      - name: ShellCheck
+        uses: ludeeus/action-shellcheck@master
+        with:
+          severity: error
+          # Estos scripts corren bajo el shell de BusyBox, no bajo bash.
+          additional_files: 'build/mcore build/desktop'
+
+  c:
+    name: Programas en C
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Dependencias
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libvte-2.91-dev
+
+      - name: Compilar
+        run: |
+          gcc -fsyntax-only -Wall build/mkshell/mkshell.c
+          gcc -fsyntax-only -Wall build/mcore/m-sudo-src.c
+          gcc -fsyntax-only -Wall build/mpm/resolver.c
+          for f in build/desktop/settings/*.c build/mterminal/*.c; do
+            gcc -fsyntax-only -Wall $(pkg-config --cflags gtk+-3.0 vte-2.91) "$f"
+          done
+
+  servidor:
+    name: Servidor (Elixir)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: servidor
+    steps:
+      - uses: actions/checkout@v4
+      - uses: erlef/setup-beam@v1
+        with:
+          elixir-version: '1.20'
+          otp-version: '29'
+      - run: mix deps.get
+      # --warnings-as-errors: un aviso del compilador de Elixir suele ser un
+      # fallo de verdad esperando a que alguien lo ejecute.
+      - run: mix compile --warnings-as-errors
+
+  web:
+    name: La web se genera
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install markdown
+      - name: Generar
+        run: ./scripts/generar-web.sh --local
+      - name: Comprobar que salió algo
+        run: |
+          for f in build/web/index.html build/web/docs/index.html \
+                   build/web/wiki/index.html; do
+            [ -s "$f" ] || { echo "::error::falta $f"; exit 1; }
+          done
+          # Una página sin contenido se genera igual de bien que una con él:
+          # si el conversor de Markdown se rompe, los archivos existen y están
+          # vacíos. Por eso se mira el tamaño, no la existencia.
+          for f in build/web/docs/*.html; do
+            [ "$(wc -c < "$f")" -gt 500 ] || { echo "::error::$f sospechosamente vacío"; exit 1; }
+          done

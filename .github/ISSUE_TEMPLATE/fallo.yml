@@ -1,0 +1,57 @@
+name: Reportar un fallo
+description: Algo no hace lo que dice que hace
+labels: ["fallo"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        No hace falta que sepas dónde está el problema. Describir bien el
+        síntoma ayuda más que adivinar la causa.
+
+  - type: textarea
+    id: que-pasa
+    attributes:
+      label: Qué esperabas y qué pasó
+      placeholder: |
+        Esperaba que al pulsar "Sistema" en el Centro de Control cambiara de
+        apartado. En vez de eso el panel se cierra entero.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repetir
+    attributes:
+      label: Cómo repetirlo
+      placeholder: |
+        1. Pulsar el icono de ajustes de la barra
+        2. Pulsar "Sistema"
+        3. El panel desaparece
+    validations:
+      required: true
+
+  - type: textarea
+    id: equipo
+    attributes:
+      label: En qué equipo
+      description: |
+        Pega la salida de `m-info`. Si algo va mal del todo, mejor `m-doctor`.
+      render: text
+    validations:
+      required: true
+
+  - type: dropdown
+    id: donde
+    attributes:
+      label: Dónde estás ejecutando MIKE OS
+      options:
+        - En un portátil o PC de verdad
+        - En una máquina virtual
+        - Arrancado desde el USB, sin instalar
+    validations:
+      required: true
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Cualquier otra cosa
+      description: Capturas (SUPER + S las hace), registros, lo que sea.

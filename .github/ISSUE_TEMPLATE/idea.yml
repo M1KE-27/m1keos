@@ -1,0 +1,26 @@
+name: Proponer algo
+description: Una idea o una mejora
+labels: ["idea"]
+body:
+  - type: textarea
+    id: problema
+    attributes:
+      label: Qué problema resuelve
+      description: |
+        Empieza por aquí y no por la solución. Un problema bien contado suele
+        tener mejores soluciones que la primera que se le ocurre a uno.
+      placeholder: |
+        Cuando se me va la red, el selector de fondos se queda en blanco y no
+        sé si está cargando o está roto.
+    validations:
+      required: true
+
+  - type: textarea
+    id: idea
+    attributes:
+      label: Qué se te ocurre
+  - type: markdown
+    attributes:
+      value: |
+        Un criterio del proyecto: **nada de interruptores que no hagan nada.**
+        Un ajuste entra cuando existe la función que controla.
