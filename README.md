@@ -16,16 +16,20 @@ Kernel Linux propio · init con runit · gestor de paquetes propio · shell prop
 
 ---
 
-> **En desarrollo.** Arranca en hardware UEFI real, se instala y se actualiza,
-> pero no hay versión estable ni promesa de que no se rompa nada entre una y
-> otra. Si lo instalas, que sea en un equipo que puedas formatear.
+> **Versión alpha.** Arranca, se instala y se actualiza, y todo eso está
+> probado de punta a punta. Pero está probado en máquinas virtuales con
+> firmware UEFI real, **no en hardware físico**. Si lo instalas, que sea en un
+> equipo que puedas formatear.
 
 | | |
 |---|---|
-| Arranque | **0,59 s** hasta el prompt |
-| Memoria en reposo | **45-55 MB** |
-| systemd | **0 %** |
-| Imagen completa | ~172 MB |
+| Arranque | **0,59 s** del kernel a la consola |
+| Memoria | **324 MB** con el escritorio en pie |
+| Compilar el sistema entero | **25 s** |
+| systemd | **0 líneas** |
+| Imagen | **307 MB** |
+
+![El escritorio de MIKE OS](build/web/capturas/escritorio.png)
 
 ## Qué es esto
 
@@ -34,10 +38,13 @@ compila con una configuración propia, el init es runit con servicios escritos
 para este sistema, y el gestor de paquetes, la shell, las herramientas y el
 escritorio están escritos desde cero para MIKE OS.
 
-**No lleva gestor de arranque.** El kernel se compila con `CONFIG_EFI_STUB`, así
-que es él mismo un ejecutable UEFI: se copia en la partición EFI como
-`EFI/BOOT/BOOTX64.EFI` y la firmware lo arranca directamente. Un GRUB menos que
-mantener y un sitio menos donde el arranque se puede romper.
+**Arranca por dos caminos a la vez, y es a propósito.** GRUB va en
+`EFI/BOOT/BOOTX64.EFI`, que es la ruta que prueba toda firmware sin necesidad
+de registrar nada, y da menú: arrancar normal, ver los mensajes, entrar sólo a
+consola si el escritorio no levanta. Además el kernel se compila con
+`CONFIG_EFI_STUB`, así que él solo ya es un ejecutable UEFI válido y queda
+registrado aparte como respaldo. Si GRUB desaparece, el equipo enciende igual.
+No encender es el peor fallo que puede tener un sistema operativo.
 
 ### Las piezas
 
@@ -47,7 +54,9 @@ mantener y un sitio menos donde el arranque se puede romper.
 | **runit** | Init y supervisión, PID 1 |
 | **mpm** | Gestor de paquetes: SHA256, dependencias, instantáneas de btrfs antes de instalar, y rollback |
 | **mkshell** | Shell en C: tuberías, redirecciones, variables |
-| **mcore** | Las herramientas del sistema: `m-install`, `m-doctor`, `m-volume`, `m-fondo`, `m-internet`… |
+| **mcore** | Las herramientas del sistema: `m-install`, `m-doctor`, `m-particiones`, `m-clave`, `m-colores`… |
+| **instalador** | Gráfico, en QML. Detecta el disco, instala al lado de otro sistema y avisa de lo que va a borrar |
+| **bloqueo** | Pantalla de bloqueo con `ext-session-lock-v1`, aviso de Bloq Mayús y salida si la cuenta no tiene contraseña |
 | **escritorio** | Hyprland, con barra y Centro de Control escritos para MIKE OS en QML |
 | **servidor** | Phoenix + PostgreSQL: índice de versiones y parque de equipos |
 
@@ -60,11 +69,36 @@ sudo dd if=mikeos.iso of=/dev/sdX bs=4M status=progress oflag=sync
 ```
 
 Arranca en memoria: puedes mirarlo todo, abrir la terminal y apagar sin que el
-disco se entere. Para instalarlo, `SUPER/ALT + Return` y `m-install`.
+disco se entere. Para instalarlo, el botón **Instalar MIKE OS** está en la
+ventana de bienvenida.
+
+![El instalador enseñando el disco y lo que va a borrar](build/web/capturas/instalador-disco.png)
+
+El instalador detecta el disco solo (y nunca ofrece el USB del que has
+arrancado), enseña qué hay en cada partición y avisa en ámbar de lo que se va a
+perder. Si algo impediría que el equipo arrancara después, no deja continuar y
+explica por qué.
+
+**Instalar al lado de Windows** usa el espacio libre y no toca nada más. La
+partición EFI que encuentre se conserva con el arranque de Windows dentro, que
+es lo que hace que Windows siga apareciendo en el menú de GRUB en vez de
+«desaparecer».
 
 > **Secure Boot hay que desactivarlo.** Este kernel no lleva la firma de
 > Microsoft, así que con Secure Boot activado la firmware se niega a
 > ejecutarlo. En una Surface: mantén **subir volumen** mientras enciendes.
+
+## Lo que todavía no funciona
+
+Esto es parte de la documentación, no una nota al pie.
+
+| | |
+|---|---|
+| **Secure Boot** | Hay que desactivarlo. El kernel no está firmado por Microsoft y no lo va a estar pronto |
+| **Sólo UEFI** | No arranca por BIOS ni con CSM |
+| **Particionado manual** | El instalador sabe borrar, instalar al lado y reemplazar. Para crear o redimensionar a mano, `mpm install gparted` |
+| **Privilegios** | `m-sudo` da root a la cuenta sin pedir contraseña. El bloqueo protege de miradas, no de alguien con tiempo y teclado |
+| **Hardware real** | Sin probar. Esta versión existe para eso |
 
 ## Construirlo
 
@@ -86,12 +120,18 @@ Necesitas `gcc`, `make`, `git`, `qemu-system-x86_64`, `xorriso` y `mtools`.
 ./tests/probar-arranque-uefi.sh    # arranca con firmware UEFI, sin trampas
 ./tests/actualizacion.sh           # editar código -> paquete -> mpm upgrade
 ./tests/medir-arranque.sh          # cronometra el arranque
+./tests/barra-posiciones.sh        # la barra sobrevive a moverla de sitio
 ```
 
 `humo.sh` no comprueba que el código compile: comprueba que el sistema arranque,
 que haya sonido, que la barra siga viva y que el Centro de Control responda a un
 clic **de verdad**, inyectado por QMP. Cada comprobación corresponde a un fallo
 que ya ocurrió alguna vez.
+
+`barra-posiciones.sh` no mira si la barra "se ve bien" en cada posición: mira
+si, después de recorrer los cuatro bordes y volver, ocupa EXACTAMENTE lo mismo
+que al principio. Eso es lo que se rompía, y una captura suelta no lo habría
+pillado.
 
 `probar-arranque-uefi.sh` es el que importa para el arranque: las demás pruebas
 usan QEMU pasándole el kernel en la mano, lo que no demuestra nada sobre un
