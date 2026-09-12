@@ -23,29 +23,43 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Sintaxis de todos los scripts
-        run: |
-          fallos=0
-          for f in scripts/*.sh tests/*.sh build/mcore/m-* build/mpm/mpm \
-                   build/mpm/sync build/desktop/m-*; do
-            [ -f "$f" ] || continue
-            case "$f" in *.c|*.qml|*.png) continue ;; esac
-            # bash para los .sh, sh para las herramientas del sistema (que
-            # corren bajo el shell de BusyBox, no bajo bash).
-            if head -1 "$f" | grep -q bash; then
-              bash -n "$f" || { echo "::error file=$f::sintaxis"; fallos=1; }
-            else
-              sh -n "$f"   || { echo "::error file=$f::sintaxis"; fallos=1; }
-            fi
-          done
-          exit $fallos
+      - name: Instalar shellcheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
 
-      - name: ShellCheck
-        uses: ludeeus/action-shellcheck@master
-        with:
-          severity: error
-          # Estos scripts corren bajo el shell de BusyBox, no bajo bash.
-          additional_files: 'build/mcore build/desktop'
+      - name: Sintaxis y análisis
+        run: |
+          # Dos decisiones, y las dos por el mismo motivo: mirar sólo lo nuestro
+          # y tratar cada cosa como lo que es.
+          #
+          # 1. La lista sale de "git ls-files", no de recorrer carpetas. En
+          #    build/ se descargan y compilan los árboles de bash, BusyBox y
+          #    Dropbear: miles de archivos que no son de este proyecto y que
+          #    además no están versionados. Analizarlos daba cientos de errores
+          #    ajenos, incluido shellcheck intentando leer un .tar.gz.
+          #
+          # 2. Se elige qué hacer con cada archivo por su línea "#!", no por su
+          #    extensión: aquí conviven scripts de bash, herramientas que corren
+          #    bajo el shell de BusyBox, programas en C y utilidades en Python.
+          #    La acción de terceros que había antes le pasaba shellcheck a los
+          #    .py, que obviamente no entiende (SC1071).
+          fallos=0
+          while IFS= read -r f; do
+            linea="$(head -1 "$f")"
+            case "$linea" in
+              *bash*)
+                bash -n "$f"           || { echo "::error file=$f::sintaxis"; fallos=1; }
+                shellcheck -S error -s bash "$f" || fallos=1
+                ;;
+              *'/sh'*|*'env sh'*)
+                sh -n "$f"             || { echo "::error file=$f::sintaxis"; fallos=1; }
+                # -s sh porque estas herramientas corren bajo BusyBox, no bajo
+                # bash: avisar de cosas de bash aquí sería ruido.
+                shellcheck -S error -s sh "$f"   || fallos=1
+                ;;
+              *) ;;  # Python, C, lo que sea: no es asunto de shellcheck
+            esac
+          done < <(git ls-files)
+          exit $fallos
 
   c:
     name: Programas en C
