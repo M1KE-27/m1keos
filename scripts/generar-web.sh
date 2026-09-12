@@ -326,15 +326,6 @@ HTML
     [ "$suelto" = "suelto" ] || echo '<div class="cont"><main>'
 }
 
-# La cabecera y el pie, volcados a un archivo para que los generadores escritos
-# en Python (documentación y wiki) usen EXACTAMENTE los mismos. Antes cada uno
-# llevaba su propia copia del HTML de la navegación, y al tocar una el resto se
-# quedaba atrás: el índice de documentación seguía enseñando un menú de hace dos
-# versiones. Un solo sitio, y se acabó.
-for _sec in inicio capturas docs wiki descargas; do
-    cabecera "@TITULO@" "$_sec" "@PRE@" > "$WEB/.cabecera-$_sec.html"
-done
-pie > "$WEB/.pie.html"
 pie() {  # pie [suelto]
     [ "${1:-}" = "suelto" ] || echo '</main></div>'
     cat <<HTML
@@ -346,6 +337,16 @@ Actualizado el $FECHA.
 </body></html>
 HTML
 }
+
+# La cabecera y el pie, volcados a un archivo para que los generadores escritos
+# en Python (documentación y wiki) usen EXACTAMENTE los mismos. Antes cada uno
+# llevaba su propia copia del HTML de la navegación, y al tocar una el resto se
+# quedaba atrás: el índice de documentación seguía enseñando un menú de hace dos
+# versiones. Un solo sitio, y se acabó.
+for _sec in inicio capturas docs wiki descargas; do
+    cabecera "@TITULO@" "$_sec" "@PRE@" > "$WEB/.cabecera-$_sec.html"
+done
+pie > "$WEB/.pie.html"
 
 # El icono, como SVG: son 200 bytes y la marca del sistema es exactamente esto.
 cat > "$WEB/favicon.svg" <<'SVG'
