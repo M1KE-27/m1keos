@@ -69,6 +69,55 @@ if [ -z "$DRM_CARD" ] || [ ! -e "$DRM_CARD" ]; then
     exit 1
 fi
 
+# ¿Es una tarjeta de verdad o sólo el framebuffer que dejó la firmware?
+#
+# simpledrm crea un /dev/dri/card0 igual que una gráfica real, así que la
+# comprobación de arriba pasa tan contenta. Pero no es una GPU: es un trozo de
+# memoria donde la UEFI dejó una imagen, sin aceleración y sin poder cambiar de
+# modo. Hyprland intenta usarlo como si fuera una tarjeta y TUMBA EL KERNEL:
+#
+#     #PF: error_code(0x0002) - not-present page
+#     Comm: Hyprland   drm_fb_memcpy+0x10f/0x1c0
+#     note: Hyprland[419] exited with irqs disabled
+#
+# O sea que el equipo se cuelga del todo, y desde fuera parece que el sistema
+# no arranca. Reproducido en QEMU con "-vga none -device ramfb".
+#
+# Pasa cuando el driver de la gráfica de verdad (amdgpu, i915) no ha cargado:
+# falta su firmware, o el hardware es más nuevo que el kernel, o alguien
+# arrancó con nomodeset. Entonces simpledrm queda de único DRM.
+#
+# Mejor una consola que funciona y explica lo que pasa, que un cuelgue.
+CARD_BASE="$(basename "$DRM_CARD")"
+DRM_DEV_NOMBRE="$(basename "$(readlink -f "/sys/class/drm/$CARD_BASE/device" 2>/dev/null)" 2>/dev/null || echo "")"
+case "$DRM_DEV_NOMBRE" in
+    simple-framebuffer*|vesa-framebuffer*|efi-framebuffer*|platform-*framebuffer*)
+        echo
+        echo "=============================================================="
+        echo "  NO HAY DRIVER DE TARJETA GRÁFICA"
+        echo "=============================================================="
+        echo
+        echo "  Lo único que hay es el framebuffer que dejó la firmware"
+        echo "  ($DRM_DEV_NOMBRE). Sirve para ver texto, pero no para mover un"
+        echo "  escritorio: intentarlo cuelga el equipo entero."
+        echo
+        echo "  El driver de tu gráfica no ha cargado. Casi siempre es una de"
+        echo "  estas tres:"
+        echo
+        echo "    - Falta su firmware. Mira qué pide:   dmesg | grep -i firmware"
+        echo "    - Has arrancado con «nomodeset» o en modo seguro."
+        echo "    - La gráfica es más nueva que este kernel."
+        echo
+        echo "  El sistema SÍ funciona: esto es una consola de verdad, con todas"
+        echo "  las herramientas. Puedes instalarlo desde aquí con  m-install"
+        echo
+        echo "  Para contarlo:  https://github.com/M1KE-27/m1keos/issues"
+        echo "=============================================================="
+        echo
+        exit 1
+        ;;
+esac
+
 CONNECTED_COUNT=0
 for status_file in /sys/class/drm/card*-*/status; do
     if [ -f "$status_file" ]; then
