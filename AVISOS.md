@@ -1,7 +1,8 @@
 # De quién es cada cosa
 
-El código de MIKE OS —lo que hay en este repositorio— está bajo licencia MIT:
-haz con él lo que quieras.
+El código de MIKE OS —lo que hay en este repositorio— está bajo licencia MIT
+([LICENSE](LICENSE), traducida en [LICENCIA.md](LICENCIA.md)): haz con él lo que
+quieras.
 
 Pero la **imagen** que se descarga no es sólo este código. Dentro viaja
 software escrito por otra gente, y cada pieza conserva su propia licencia.

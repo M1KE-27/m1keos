@@ -144,7 +144,8 @@ código era correcto y el comportamiento no.
 
 ## Licencia
 
-[MIT](LICENSE). Haz con esto lo que quieras.
+[MIT](LICENSE) — traducida al español en [LICENCIA.md](LICENCIA.md).
+Haz con esto lo que quieras.
 
 La imagen que se descarga lleva dentro software de otra gente, cada uno con su
 licencia: ver [AVISOS.md](AVISOS.md). El kernel es GPL-2.0 y el firmware de los
