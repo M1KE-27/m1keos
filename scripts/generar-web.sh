@@ -60,6 +60,11 @@ else
     HAY_ISO=0; ISO_TAM="—"; ISO_SHA="—"
 fi
 N_PKG="$(find "$RAIZ/build/repo" -name '*.mpk' 2>/dev/null | wc -l | tr -d ' ')"
+# La ISO se sirve desde las releases de GitHub, no desde aquí. La etiqueta sale
+# de la última publicada, así que la web no puede quedarse enlazando una vieja.
+ETIQUETA_ISO="$(gh release list --repo "${MIKEOS_REPO_GITHUB:-M1KE-27/m1keos}" --limit 1 --json tagName -q '.[0].tagName' 2>/dev/null || true)"
+[ -n "$ETIQUETA_ISO" ] || ETIQUETA_ISO="v0.2.0"
+URL_ISO="https://github.com/${MIKEOS_REPO_GITHUB:-M1KE-27/m1keos}/releases/download/$ETIQUETA_ISO/mikeos.iso"
 FECHA="$(date +'%-d de %B de %Y')"
 gris "  kernel $KVER · ISO $ISO_TAM · $N_PKG paquetes"
 
@@ -253,10 +258,14 @@ cat <<HTML
 
 <table>
   <tr><th>Archivo</th><th>Tamaño</th><th>Kernel</th></tr>
-  <tr><td><a href="descargas/mikeos.iso">mikeos.iso</a></td><td>$ISO_TAM</td><td>$KVER</td></tr>
+  <tr><td>mikeos.iso</td><td>$ISO_TAM</td><td>$KVER</td></tr>
 </table>
 <p class="tenue">SHA256:<br><code style="font-size:11px;word-break:break-all">$ISO_SHA</code></p>
-<p><a class="boton" href="descargas/mikeos.iso">Descargar la imagen</a></p>
+<p><a class="boton" href="$URL_ISO">Descargar la imagen</a></p>
+<p class="tenue">La descarga la sirve GitHub y empieza al pulsar, sin página
+intermedia. Se hace así porque esta web vive en un mini PC de casa: su línea da
+unos 780 KB/s de subida, o sea casi cuatro minutos por descarga y de una en
+una. Los paquetes, que son pequeños, sí salen de aquí.</p>
 
 <h2>Grabarla en un USB</h2>
 <pre><span class="c"># comprueba antes que lo descargado es lo que se publicó</span>
@@ -603,12 +612,14 @@ pie
 verde "  galería"
 
 # --- La ISO -------------------------------------------------------------------
-if [ "$HAY_ISO" -eq 1 ]; then
-    paso "Copiando la imagen"
-    cp "$ISO" "$WEB/descargas/mikeos.iso"
-    [ -f "$ISO.sha256" ] && cp "$ISO.sha256" "$WEB/descargas/mikeos.iso.sha256"
-    verde "  mikeos.iso ($ISO_TAM)"
+# La ISO ya no se copia al servidor: son 175 MB que tardarían casi cuatro
+# minutos en subir por la línea de casa en cada publicación, para servir algo
+# que GitHub sirve mejor. Sólo se deja el SHA256, que pesa nada y es lo que
+# permite comprobar la descarga.
+if [ "$HAY_ISO" -eq 1 ] && [ -f "$ISO.sha256" ]; then
+    cp "$ISO.sha256" "$WEB/descargas/mikeos.iso.sha256"
 fi
+rm -f "$WEB/descargas/mikeos.iso"
 
 echo
 verde "Web generada en $WEB"
