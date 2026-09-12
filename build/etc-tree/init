@@ -29,6 +29,27 @@ wait_for_block() {
     [ -b "$_dev" ]
 }
 
+# ¿Hemos arrancado desde un medio extraíble (el USB en vivo)?
+#
+# Se mira si existe algún bloque EXTRAÍBLE que lleve la etiqueta del medio de
+# instalación. Es lo que distingue "estoy en el USB" de "estoy en un equipo
+# instalado", y sin esa distinción el USB en vivo se pondría a arrancar el
+# sistema del disco duro.
+en_medio_extraible() {
+    for _b in /sys/block/*; do
+        [ -f "$_b/removable" ] || continue
+        [ "$(cat "$_b/removable" 2>/dev/null)" = "1" ] || continue
+        _nombre="$(basename "$_b")"
+        for _p in "/dev/$_nombre" "/dev/$_nombre"[0-9]*; do
+            [ -b "$_p" ] || continue
+            case "$(blkid -o value -s LABEL "$_p" 2>/dev/null)" in
+                MIKEOS|MIKEOS_EFI) return 0 ;;
+            esac
+        done
+    done
+    return 1
+}
+
 resolve_root() {
     _spec="$1"
     case "$_spec" in
@@ -36,6 +57,8 @@ resolve_root() {
             findfs "$_spec" 2>/dev/null || true
             ;;
         /dev/*) echo "$_spec" ;;
+        # "vivo" no es un dispositivo: lo resuelve montar_en_vivo buscando el
+        # medio que lleva el sistema.
         *) echo "" ;;
     esac
 }
@@ -93,9 +116,115 @@ for arg in $(cat /proc/cmdline); do
     esac
 done
 
+# --- Arranque en vivo ---------------------------------------------------
+#
+# El sistema completo viaja comprimido en el medio (mikeos/sistema.squashfs).
+# Se monta de sólo lectura y se le pone encima un tmpfs con overlayfs, así que:
+#
+#   · se puede escribir en todas partes, pero los cambios van a memoria y el
+#     USB no se toca (ni se desgasta, ni importa que esté protegido);
+#   · NO se cargan 627 MB en RAM: squashfs lee del medio sólo lo que se usa;
+#   · y hay escritorio de verdad, no una consola pelada.
+#
+# Antes de esto, el "modo en vivo" era quedarse dentro del initramfs, que
+# excluye /usr/lib, Hyprland y quickshell. O sea que el USB prometía "prueba el
+# sistema entero" y arrancaba en una terminal sin escritorio posible.
+montar_en_vivo() {
+    _medio=""
+    mkdir -p /mnt/medio /mnt/sistema /mnt/cambios /mnt/root
+
+    # Buscar el medio que lleva el sistema. Se recorren los bloques en vez de
+    # confiar en un nombre fijo: el USB puede ser sda, sdb o nvme según el
+    # equipo, y en una Surface no es el mismo que en un portátil cualquiera.
+    for _i in 1 2 3 4 5 6 7 8 9 10; do
+        for _d in /dev/sr* /dev/sd* /dev/nvme*n* /dev/vd* /dev/mmcblk*; do
+            [ -b "$_d" ] || continue
+            mount -o ro "$_d" /mnt/medio 2>/dev/null || continue
+            if [ -f /mnt/medio/mikeos/sistema.squashfs ]; then
+                _medio="$_d"
+                break
+            fi
+            umount /mnt/medio 2>/dev/null || true
+        done
+        [ -n "$_medio" ] && break
+        # El USB puede tardar en aparecer: se le dan unos segundos en vez de
+        # decidir a la primera que no está.
+        sleep 1
+    done
+
+    [ -n "$_medio" ] || { log "No encuentro el medio con el sistema"; return 1; }
+    log "Sistema encontrado en $_medio"
+
+    mount -t squashfs -o ro,loop /mnt/medio/mikeos/sistema.squashfs /mnt/sistema 2>/dev/null \
+        || { log "No se pudo montar el sistema comprimido"; return 1; }
+
+    # Los cambios en memoria. El 50 % es un tope, no una reserva: tmpfs sólo
+    # ocupa lo que se escriba de verdad.
+    mount -t tmpfs -o size=50%,mode=0755 tmpfs /mnt/cambios 2>/dev/null || return 1
+    mkdir -p /mnt/cambios/arriba /mnt/cambios/trabajo
+
+    mount -t overlay overlay \
+        -o lowerdir=/mnt/sistema,upperdir=/mnt/cambios/arriba,workdir=/mnt/cambios/trabajo \
+        /mnt/root 2>/dev/null \
+        || { log "No se pudo montar la capa de escritura"; return 1; }
+
+    # El medio se queda montado dentro del sistema: el instalador lo necesita
+    # para copiar, y así "m-install" funciona desde el propio USB.
+    mkdir -p /mnt/root/run/medio
+    mount --move /mnt/medio /mnt/root/run/medio 2>/dev/null || true
+    return 0
+}
+
 ROOT_DEV="$(resolve_root "$ROOT_SPEC")"
+
+# Último recurso: buscar la raíz por su etiqueta.
+#
+# Hace falta por un caso concreto y grave. El kernel lleva su línea de órdenes
+# compilada dentro (CONFIG_CMDLINE) porque, cuando la firmware UEFI arranca el
+# kernel directamente, no le pasa NINGÚN argumento. Esa línea dice
+# root=/dev/ram0, que es lo correcto para el USB.
+#
+# Pero un sistema ya instalado también tiene una copia del kernel en
+# EFI/BOOT/BOOTX64.EFI, que es la ruta que prueba cualquier firmware sin
+# necesidad de registrar nada. Si se arranca por ahí --porque la entrada de la
+# UEFI no se creó, o se perdió al actualizar la firmware, o alguien reinició la
+# NVRAM-- el kernel usa su línea compilada, busca la raíz en /dev/ram0, no la
+# encuentra y el equipo no enciende. Sin pistas.
+#
+# Así que si no hay raíz utilizable, se busca una partición con la etiqueta que
+# pone el instalador. Se excluyen los discos extraíbles: si no, el USB en vivo
+# arrancaría el sistema instalado del equipo en vez de sí mismo, que es
+# justo lo contrario de para lo que sirve un USB en vivo.
+if [ -z "$ROOT_DEV" ] || [ "$ROOT_DEV" = "/dev/ram0" ]; then
+    if ! en_medio_extraible; then
+        _por_etiqueta="$(findfs LABEL=MIKEOS_ROOT 2>/dev/null || true)"
+        if [ -n "$_por_etiqueta" ]; then
+            log "Sin raíz en la línea de órdenes; encontrada por etiqueta: $_por_etiqueta"
+            ROOT_DEV="$_por_etiqueta"
+        fi
+    fi
+fi
 ROOT_TIMEOUT=15
 [ -f /etc/mikeos/boot.conf ] && . /etc/mikeos/boot.conf
+
+# root=vivo lo pone el menú de GRUB del USB. También se intenta cuando no hay
+# raíz utilizable: así el medio arranca aunque nadie le haya pasado nada.
+if [ "$ROOT_SPEC" = "vivo" ] || { [ -z "$ROOT_DEV" ] || [ "$ROOT_DEV" = "/dev/ram0" ]; }; then
+    if montar_en_vivo; then
+        log "Arrancando en vivo desde el medio"
+        for _m in dev proc sys run tmp; do
+            mkdir -p "/mnt/root/$_m"
+        done
+        mount --move /dev /mnt/root/dev 2>/dev/null || mount -t devtmpfs devtmpfs /mnt/root/dev
+        mount --move /proc /mnt/root/proc 2>/dev/null || mount -t proc proc /mnt/root/proc
+        mount --move /sys /mnt/root/sys 2>/dev/null || mount -t sysfs sysfs /mnt/root/sys
+        mkdir -p /mnt/root/dev/pts /mnt/root/dev/shm
+        mount -t devpts devpts /mnt/root/dev/pts -o mode=0620,gid=5 2>/dev/null || true
+        mount -t tmpfs -o mode=1777,nosuid,nodev tmpfs /mnt/root/dev/shm 2>/dev/null || true
+        exec switch_root /mnt/root /sbin/runit
+    fi
+    log "No se pudo arrancar en vivo; se sigue con lo que haya"
+fi
 
 if [ -n "$ROOT_DEV" ] && [ "$ROOT_DEV" != "/dev/ram0" ] && wait_for_block "$ROOT_DEV" "${ROOT_TIMEOUT:-15}"; then
     log "Montando disco raíz persistente: $ROOT_DEV"

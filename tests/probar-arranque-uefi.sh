@@ -22,6 +22,17 @@ INITRAMFS="$RAIZ/iso/initramfs.cpio.gz"
 ISO="$RAIZ/iso/mikeos.iso"
 CODE=/usr/share/edk2/x64/OVMF_CODE.4m.fd
 VARS_ORIG=/usr/share/edk2/x64/OVMF_VARS.4m.fd
+CLAVE="${MIKEOS_DEV_KEY:-$HOME/.ssh/mikeos_dev}"
+# Un puerto distinto del de las demás pruebas: así se puede tener una máquina
+# de desarrollo arrancada mientras esta corre, sin que se pisen.
+PUERTO="${MIKEOS_UEFI_PORT:-2244}"
+
+vm() {
+    ssh -p "$PUERTO" -i "$CLAVE" -o StrictHostKeyChecking=no \
+        -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR \
+        -o ConnectTimeout=3 -o BatchMode=yes mike@localhost \
+        "export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin; $*" 2>/dev/null
+}
 
 verde() { printf '\033[32m%s\033[0m\n' "$*"; }
 rojo()  { printf '\033[31m%s\033[0m\n' "$*"; }
@@ -30,6 +41,14 @@ paso()  { printf '\033[1m»\033[0m %s\n' "$*"; }
 
 MODO=disco
 [ "${1:-}" = "--iso" ] && MODO=iso
+
+# KVM si lo hay; si no, emulación pura. Sin esto la prueba no corre en un
+# equipo con la virtualización desactivada en la BIOS.
+if [ -r /dev/kvm ] && [ -w /dev/kvm ]; then
+    ACCEL=(-enable-kvm -cpu host)
+else
+    ACCEL=(-accel tcg,thread=multi -cpu max)
+fi
 
 [ -f "$CODE" ] || { rojo "Falta OVMF ($CODE). Instala edk2-ovmf."; exit 1; }
 mkdir -p "$TRABAJO"
@@ -66,11 +85,11 @@ fi
 
 paso "Arrancando con firmware UEFI real, sin pasarle el kernel"
 qemu-system-x86_64 \
-    -accel tcg,thread=multi -cpu max -m 2048 -smp 4 \
+    ${ACCEL[@]} -m 4096 -smp 4 \
     -drive "if=pflash,format=raw,unit=0,readonly=on,file=$CODE" \
     -drive "if=pflash,format=raw,unit=1,file=$TRABAJO/OVMF_VARS.fd" \
     "${MEDIO[@]}" \
-    -netdev user,id=n0 -device virtio-net-pci,netdev=n0 \
+    -netdev user,id=n0,hostfwd=tcp::"$PUERTO"-:22 -device virtio-net-pci,netdev=n0 \
     -device virtio-vga -display none \
     -serial "file:$SERIE" -no-reboot \
     > "$TRABAJO/qemu.log" 2>&1 &
@@ -102,6 +121,27 @@ if [ "$ARRANCO" -eq 1 ]; then
     if [ "$LLEGO" -eq 1 ]; then
         verde "Y el sistema llega a runit: arranca de verdad."
         RC=0
+        # Llegar a runit no basta para un USB en vivo: lo que promete es que
+        # puedes PROBAR el sistema, y eso significa escritorio. Durante semanas
+        # el initramfs excluía Hyprland y quickshell, así que arrancaba a una
+        # consola pelada y nadie lo notaba porque la prueba paraba aquí.
+        printf "Esperando al escritorio"
+        ESCRITORIO=0
+        for _ in $(seq 1 40); do
+            if vm 'pgrep -x Hyprland >/dev/null && pgrep -x quickshell >/dev/null'; then
+                ESCRITORIO=1; break
+            fi
+            printf "."
+            sleep 3
+        done
+        echo
+        if [ "$ESCRITORIO" -eq 1 ]; then
+            verde "El escritorio está en pie: Hyprland y la barra."
+        else
+            rojo "Arranca, pero no llega al escritorio."
+            gris "  (en un USB en vivo eso es no cumplir lo que promete)"
+            RC=1
+        fi
     else
         rojo "El kernel arranca pero no llega a runit."
         tr -d '\0' < "$SERIE" | tail -12 | sed 's/^/    /'

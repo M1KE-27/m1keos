@@ -1,0 +1,88 @@
+# Tema de MIKE OS para GRUB.
+#
+# Los mismos cinco colores que el escritorio y la web (ver quickshell/Paleta.qml):
+# el arranque es lo primero que se ve del sistema y no tiene por qué parecer de
+# otro sitio.
+#
+#   fondo      #0b0d11        texto        #e8ebf0
+#   superficie #161a21        texto tenue  #79818f
+#   borde      #262c36        acento       #00d4ff
+
+title-text: ""
+desktop-image: "fondo.png"
+desktop-color: "#0b0d11"
+terminal-font: "Unifont Regular 16"
+terminal-box: "caja_*.png"
+terminal-left: "10%"
+terminal-top: "72%"
+terminal-width: "80%"
+terminal-height: "24%"
+
+# --- Cabecera ----------------------------------------------------------------
++ label {
+    left = 10%
+    top = 16%
+    width = 80%
+    align = "left"
+    color = "#e8ebf0"
+    font = "Unifont Regular 16"
+    text = "MIKE OS"
+}
+
++ label {
+    left = 10%
+    top = 21%
+    width = 80%
+    align = "left"
+    color = "#79818f"
+    font = "Unifont Regular 16"
+    text = "Elige con las flechas y pulsa Enter"
+}
+
+# --- El menú -----------------------------------------------------------------
++ boot_menu {
+    left = 10%
+    top = 30%
+    width = 55%
+    height = 38%
+
+    item_font = "Unifont Regular 16"
+    item_color = "#79818f"
+    selected_item_color = "#05070c"
+    item_height = 28
+    item_spacing = 4
+    item_padding = 12
+
+    # La caja envuelve el menú; el resalte marca dónde estás. Es la misma idea
+    # que las islas de la barra del escritorio: el acento sólo para lo activo.
+    menu_pixmap_style = "caja_*.png"
+    selected_item_pixmap_style = "seleccion_*.png"
+
+    scrollbar = true
+    scrollbar_width = 4
+    scrollbar_thumb = "seleccion_*.png"
+}
+
+# --- Cuenta atrás ------------------------------------------------------------
++ progress_bar {
+    id = "__timeout__"
+    left = 10%
+    top = 69%
+    width = 55%
+    height = 4
+    show_text = false
+    fg_color = "#00d4ff"
+    bg_color = "#262c36"
+    border_color = "#262c36"
+}
+
+# --- Pie ---------------------------------------------------------------------
++ label {
+    left = 10%
+    top = 92%
+    width = 80%
+    align = "left"
+    color = "#79818f"
+    font = "Unifont Regular 16"
+    text = "e: editar     c: consola     m1keos.duckdns.org"
+}

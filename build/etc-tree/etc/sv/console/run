@@ -13,6 +13,19 @@ echo "[console] GUI mode: $IS_GUI"
 echo "[console] tty1: $(ls -l /dev/tty1 2>/dev/null || echo 'missing')"
 echo "[console] /dev/console: $(ls -l /dev/console 2>/dev/null || echo 'missing')"
 
+# Diagnóstico de permisos. Está aquí y no en un script aparte porque, cuando el
+# escritorio no arranca, este servicio es lo único que consigue escribir algo:
+# ni hay sesión gráfica que mirar ni SSH por donde entrar.
+echo "[console] usuario: $(id 2>/dev/null)"
+echo "[console] raiz:    $(mount 2>/dev/null | grep ' / ' | head -1)"
+echo "[console] /dev:    $(mount 2>/dev/null | grep ' /dev ' | head -1)"
+if : > /dev/.prueba-escritura 2>/dev/null; then
+    rm -f /dev/.prueba-escritura
+    echo "[console] /dev es escribible"
+else
+    echo "[console] /dev NO es escribible"
+fi
+
 if [ "$IS_GUI" = "yes" ]; then
     echo ">> [console] Iniciando compositor gráfico directo en /dev/tty1..."
     chvt 1 2>/dev/null || true
