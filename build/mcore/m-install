@@ -707,7 +707,12 @@ if [ -f "$GRUB_ORIGEN/grubx64.efi" ]; then
         # Se buscan por UUID de partición y no por ruta de dispositivo: un
         # /dev/sda de hoy puede ser /dev/sdb mañana con un USB enchufado.
         _n_otros=0
-        for _p in $(ls /dev/sd?[0-9]* /dev/nvme?n?p[0-9]* /dev/vd?[0-9]* /dev/mmcblk?p[0-9]* 2>/dev/null); do
+        # Los globs directamente y no "$(ls ...)": pasar por ls parte los
+        # nombres por espacios y, si un patrón no casa con nada, el shell
+        # entrega el patrón literal. Por eso se comprueba que sea un
+        # dispositivo de bloque antes de tocarlo.
+        for _p in /dev/sd?[0-9]* /dev/nvme?n?p[0-9]* /dev/vd?[0-9]* /dev/mmcblk?p[0-9]*; do
+            [ -b "$_p" ] || continue
             # La partición EFI se salta SÓLO si la hemos creado nosotros: en
             # ese caso no hay nada más dentro. Cuando se reutiliza la que ya
             # existía -- instalando al lado de Windows, que es el caso que

@@ -85,7 +85,7 @@ fi
 
 paso "Arrancando con firmware UEFI real, sin pasarle el kernel"
 qemu-system-x86_64 \
-    ${ACCEL[@]} -m 4096 -smp 4 \
+    "${ACCEL[@]}" -m 4096 -smp 4 \
     -drive "if=pflash,format=raw,unit=0,readonly=on,file=$CODE" \
     -drive "if=pflash,format=raw,unit=1,file=$TRABAJO/OVMF_VARS.fd" \
     "${MEDIO[@]}" \
