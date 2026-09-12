@@ -21,18 +21,27 @@ WEB="$RAIZ/build/web"
 # .publicar.conf (que no se versiona) o en la variable MIKEOS_SERVIDOR.
 [ -f "$RAIZ/.publicar.conf" ] && . "$RAIZ/.publicar.conf"
 SERVIDOR="${MIKEOS_SERVIDOR:-}"
-if [ -z "$SERVIDOR" ]; then
-    err "no sé a qué servidor subir."
-    gris "  Crea $RAIZ/.publicar.conf con:"
-    gris "      MIKEOS_SERVIDOR=usuario@tu-servidor"
-    gris "  o exporta MIKEOS_SERVIDOR antes de ejecutar esto."
-    exit 1
-fi
 DESTINO="${MIKEOS_WEB_DIR:-/home/m1ke/mikeos-backend/web}"
 
 verde() { printf '\033[32m%s\033[0m\n' "$*"; }
 gris()  { printf '\033[90m%s\033[0m\n' "$*"; }
 paso()  { printf '\033[1m»\033[0m %s\n' "$*"; }
+err()   { printf '\033[31mERROR:\033[0m %s\n' "$*" >&2; }
+
+# Sólo hace falta un servidor si de verdad se va a subir algo. Construir en
+# local no necesita ninguno, y exigirlo hacía que este script fallara en
+# cualquier clon recién bajado (lo cazó la integración continua en su primera
+# ejecución). Además la comprobación estaba ANTES de definir err(), así que ni
+# siquiera sabía explicarse.
+exigir_servidor() {
+    [ -n "$SERVIDOR" ] && return 0
+    err "no sé a qué servidor subir."
+    gris "  Crea $RAIZ/.publicar.conf con:"
+    gris "      MIKEOS_SERVIDOR=usuario@tu-servidor"
+    gris "  o exporta MIKEOS_SERVIDOR antes de ejecutar esto."
+    exit 1
+}
+
 
 SUBIR=0
 [ "${1:-}" = "--subir" ] && SUBIR=1
@@ -607,7 +616,8 @@ verde "Web generada en $WEB"
 # --- Subir --------------------------------------------------------------------
 if [ "$SUBIR" -eq 1 ]; then
     echo
-    paso "Subiendo a $SERVIDOR"
+    exigir_servidor
+paso "Subiendo a $SERVIDOR"
     # --exclude mpm/: el repositorio de paquetes lo gestiona publicar.sh y vive
     # en la misma carpeta; sincronizar con --delete se lo llevaría por delante.
     if command -v rsync >/dev/null 2>&1; then

@@ -74,7 +74,10 @@ fi
 lua_get() {
     _key="$1"
     [ -f "$SETTINGS" ] || return 1
-    sed -n "s/^[[:space:]]*$_key[[:space:]]*=[[:space:]]*//p" "$SETTINGS" \
+    # Las llaves no son adorno: "$_key[" se lee como el principio de un
+    # índice de array, y una herramienta de análisis no puede distinguirlo de
+    # una errata. Con ${_key} queda claro dónde acaba el nombre.
+    sed -n "s/^[[:space:]]*${_key}[[:space:]]*=[[:space:]]*//p" "$SETTINGS" \
         | head -1 \
         | sed -e 's/--.*$//' \
               -e 's/[[:space:]]*$//' \

@@ -24,13 +24,6 @@ RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # .publicar.conf (que no se versiona) o en la variable MIKEOS_SERVIDOR.
 [ -f "$RAIZ/.publicar.conf" ] && . "$RAIZ/.publicar.conf"
 SERVIDOR="${MIKEOS_SERVIDOR:-}"
-if [ -z "$SERVIDOR" ]; then
-    err "no sé a qué servidor subir."
-    gris "  Crea $RAIZ/.publicar.conf con:"
-    gris "      MIKEOS_SERVIDOR=usuario@tu-servidor"
-    gris "  o exporta MIKEOS_SERVIDOR antes de ejecutar esto."
-    exit 1
-fi
 # Es la carpeta que sirve nginx en m1keos.duckdns.org, bajo /mpm/.
 # /home/m1ke es escribible sin sudo; /var/www y /srv no lo son en ese equipo.
 DESTINO="${MIKEOS_SERVIDOR_DIR:-/home/m1ke/mikeos-backend/web/mpm}"
@@ -40,6 +33,21 @@ verde() { printf '\033[32m%s\033[0m\n' "$*"; }
 gris()  { printf '\033[90m%s\033[0m\n' "$*"; }
 paso()  { printf '\033[1m»\033[0m %s\n' "$*"; }
 err()   { printf '\033[31mERROR:\033[0m %s\n' "$*" >&2; }
+
+# Sólo hace falta un servidor si de verdad se va a subir algo. Construir en
+# local no necesita ninguno, y exigirlo hacía que este script fallara en
+# cualquier clon recién bajado (lo cazó la integración continua en su primera
+# ejecución). Además la comprobación estaba ANTES de definir err(), así que ni
+# siquiera sabía explicarse.
+exigir_servidor() {
+    [ -n "$SERVIDOR" ] && return 0
+    err "no sé a qué servidor subir."
+    gris "  Crea $RAIZ/.publicar.conf con:"
+    gris "      MIKEOS_SERVIDOR=usuario@tu-servidor"
+    gris "  o exporta MIKEOS_SERVIDOR antes de ejecutar esto."
+    exit 1
+}
+
 
 SOLO_LOCAL=0
 SOLO_VER=0
@@ -84,6 +92,7 @@ if [ "$SOLO_LOCAL" -eq 1 ]; then
 fi
 
 # --- 3. Subir ----------------------------------------------------------------
+exigir_servidor
 paso "Subiendo a $SERVIDOR:$DESTINO"
 if ! ssh -o ConnectTimeout=8 -o BatchMode=yes "$SERVIDOR" true 2>/dev/null; then
     err "no se puede entrar en $SERVIDOR sin contraseña."
