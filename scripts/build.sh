@@ -185,6 +185,19 @@ gcc -O2 -static -Wall "$BUILD_DIR/mkshell/mkshell.c" -o "$BUILD_DIR/mkshell/mksh
 # exige contraseña -- inservible con las cuentas bloqueadas por diseño).
 gcc -O2 -static -Wall "$PROJECT_ROOT/build/mcore/m-sudo-src.c" -o "$BUILD_DIR/mcore/m-sudo"
 
+# m-autenticar: comprueba una contraseña contra /etc/shadow, que sólo root
+# puede leer. Lo necesita la pantalla de bloqueo, que corre como el usuario.
+# También setuid-root, y por el mismo motivo estático que m-sudo.
+gcc -O2 -static -Wall "$PROJECT_ROOT/build/mcore/m-autenticar-src.c" -o "$BUILD_DIR/mcore/m-autenticar"
+
+# m-colores: saca la paleta del sistema de una imagen. Se enlaza con GdkPixbuf
+# -- no estático, porque GdkPixbuf carga sus lectores de imagen con dlopen y
+# un binario estático no puede -- y esa biblioteca ya viaja dentro del sistema
+# para la ventana de bienvenida y el selector de fondos.
+gcc -O2 -Wall "$PROJECT_ROOT/build/mcore/m-colores-src.c" -o "$BUILD_DIR/mcore/m-colores" \
+    $(pkg-config --cflags --libs gdk-pixbuf-2.0) -lm
+
+
 # Resolutor de dependencias de MPM: calcula el árbol completo de cualquiera
 # de los ~15.200 paquetes de core+extra de Arch contra el catálogo local, sin
 # una petición de red por dependencia. Es una pieza interna -- se instala en
@@ -374,10 +387,38 @@ chmod 755 "$ROOTFS_DIR/usr/bin/jq"
 # de copiarlo daba un aviso falso en cada build.
 
 # Instalar MCore
-for util in m-service m-system m-network m-user m-disk m-info m-doctor m-log m-sudo m-install m-screenshot m-volume m-metrics m-audio-setup m-fastfetch m-workspace-cycle m-drivers m-wifi m-bluetooth m-wallhaven m-fondo m-internet; do
+for util in m-service m-system m-network m-user m-disk m-info m-doctor m-log m-sudo m-autenticar m-clave m-acceso-remoto m-colores m-particiones m-install m-screenshot m-volume m-metrics m-audio-setup m-fastfetch m-workspace-cycle m-drivers m-wifi m-bluetooth m-wallhaven m-fondo m-internet; do
     cp "$BUILD_DIR/mcore/$util" "$ROOTFS_DIR/usr/bin/"
     chmod 755 "$ROOTFS_DIR/usr/bin/$util"
 done
+# GRUB para los discos instalados.
+#
+# Se construye AQUÍ, en el equipo que compila, y viaja dentro del sistema como
+# un archivo más. m-install no lo genera: sólo lo copia a la partición EFI.
+# Es a propósito -- grub-mkstandalone forma parte del paquete grub, que no está
+# ni tiene por qué estar dentro de MIKE OS, así que generarlo en el momento de
+# instalar significaría que la instalación falla en cualquier equipo donde no
+# esté. Un archivo ya hecho no puede faltar.
+#
+# La configuración empotrada no es el menú: es el trampolín que busca el menú
+# de verdad en la partición EFI (ver build/grub/grub.cfg.arranque). El menú lo
+# escribe m-install cuando ya conoce el UUID del disco.
+if command -v grub-mkstandalone >/dev/null 2>&1; then
+    mkdir -p "$ROOTFS_DIR/usr/share/mikeos/grub"
+    grub-mkstandalone \
+        --format=x86_64-efi \
+        --output="$ROOTFS_DIR/usr/share/mikeos/grub/grubx64.efi" \
+        --modules="part_gpt part_msdos fat ext2 btrfs normal linux echo all_video search search_label search_fs_uuid search_fs_file configfile gfxterm gfxmenu serial terminal test sleep halt reboot png video video_fb font loadenv" \
+        "boot/grub/grub.cfg=$PROJECT_ROOT/build/grub/grub.cfg.arranque" \
+        $(cd "$PROJECT_ROOT/build/grub/tema" 2>/dev/null && for _t in *; do printf '%s ' "boot/grub/tema/$_t=$PROJECT_ROOT/build/grub/tema/$_t"; done) 2>/dev/null \
+        && echo "  -> GRUB de disco: $(du -h "$ROOTFS_DIR/usr/share/mikeos/grub/grubx64.efi" | cut -f1)"
+    # El tema también suelto, porque el menú que escribe m-install vive en la
+    # partición EFI y lee sus imágenes de allí, no del disco en memoria.
+    cp -r "$PROJECT_ROOT/build/grub/tema" "$ROOTFS_DIR/usr/share/mikeos/grub/tema"
+else
+    echo "  AVISO: sin grub-mkstandalone; los discos instalados arrancarán sólo por EFI stub."
+fi
+
 # Base de identificadores PCI: sin ella m-drivers enseña "10de:2583" en vez
 # de "NVIDIA GeForce RTX 3050", que es justo lo que se le pide.
 if [ -f /usr/share/hwdata/pci.ids ]; then
@@ -459,6 +500,32 @@ bins = ['/usr/bin/Hyprland', '/usr/bin/Xwayland', '/usr/bin/start-hyprland', '/u
     '/usr/bin/sfdisk', '/usr/bin/partx', '/usr/bin/blkid', '/usr/bin/lsblk',
     '/usr/bin/mkfs.ext4', '/usr/bin/e2label', '/usr/bin/findmnt',
     '/usr/bin/efibootmgr',
+    # Herramientas de particionado de verdad. Hasta ahora el USB sólo llevaba
+    # sfdisk y los mkfs, lo justo para "borrar el disco entero y empezar de
+    # cero". Con esto se puede además mirar qué hay ya en un disco, encogerlo
+    # para hacer sitio, y comprobar que no vamos a romper nada antes de tocar.
+    #
+    #   parted      lee y modifica tablas de particiones de cualquier tipo.
+    #               Durante un tiempo NO se pudo incluir: necesitaba símbolos
+    #               de la libudev de systemd que libudev-zero no trae, y se
+    #               caía con "undefined symbol: udev_queue_unref". Se arregló
+    #               añadiendo esa familia de funciones (build/libudev/).
+    #   resize2fs   encoge y agranda ext4 (hace falta para instalar al lado)
+    #   e2fsck      obligatorio ANTES de encoger ext4; resize2fs se niega si no
+    #   dumpe2fs    cuánto ocupa de verdad un ext4, para saber hasta dónde cabe
+    #   ntfs-3g     monta NTFS, que es como se reconoce un Windows instalado
+    #
+    #   ntfsresize  encoge NTFS: es lo que permite quitarle sitio a Windows
+    #               para instalar al lado. Va en el paquete ntfsprogs del
+    #               equipo que compila; si no está, el build sigue y lo único
+    #               que se pierde es poder encoger Windows (instalar en
+    #               espacio libre sigue funcionando).
+    #   ntfsfix     repara un NTFS que Windows dejó a medias. Sin esto,
+    #               ntfsresize se niega a tocarlo -- y con razón.
+    '/usr/bin/parted', '/usr/bin/resize2fs', '/usr/bin/e2fsck',
+    '/usr/bin/dumpe2fs', '/usr/bin/ntfs-3g', '/usr/bin/ntfs-3g.probe',
+    '/usr/bin/lowntfs-3g', '/usr/bin/ntfsresize', '/usr/bin/ntfsinfo',
+    '/usr/bin/ntfsfix', '/usr/bin/ntfsclone', '/usr/bin/mkntfs',
     # fastfetch. Estaba escrito el código para copiarlo desde
     # build/fastfetch-static/, pero NADA lo compilaba nunca: esa carpeta no
     # existe, así que el build avisaba «Fastfetch no fue compilado» y seguía.
@@ -896,6 +963,35 @@ if [ ! -d "$LIBUDEV_ZERO_DIR" ]; then
     ( git clone https://github.com/illiliti/libudev-zero.git "$LIBUDEV_ZERO_DIR" >/dev/null 2>&1 && \
       cd "$LIBUDEV_ZERO_DIR" && git checkout -q "$LIBUDEV_ZERO_COMMIT" ) || true
 fi
+# libudev-zero no trae la familia udev_queue_* -- describe la cola de un
+# demonio udev que aquí no existe -- y sin ella libdevmapper no enlaza, así que
+# parted se cae nada más arrancar y con él GParted y todo lo que lo use por
+# debajo. build/libudev/udev_queue.c la añade; ver su cabecera para el porqué
+# de cada respuesta. Se copia dentro del árbol clonado y se añade al Makefile.
+if [ -d "$LIBUDEV_ZERO_DIR" ] && [ -f "$PROJECT_ROOT/build/libudev/udev_queue.c" ]; then
+    cp "$PROJECT_ROOT/build/libudev/udev_queue.c" "$LIBUDEV_ZERO_DIR/"
+    if ! grep -q "udev_queue.o" "$LIBUDEV_ZERO_DIR/Makefile"; then
+        sed -i 's|^OBJ = \\|OBJ = \\\n\t  udev_queue.o \\|' "$LIBUDEV_ZERO_DIR/Makefile"
+    fi
+
+    # Las funciones nuevas, al mapa de símbolos.
+    if ! grep -q "udev_queue_new" "$LIBUDEV_ZERO_DIR/libudev.sym"; then
+        sed -i 's|^global:|global:\n\tudev_queue_new;\n\tudev_queue_ref;\n\tudev_queue_unref;\n\tudev_queue_get_udev;\n\tudev_queue_get_udev_is_active;\n\tudev_queue_get_queue_is_empty;\n\tudev_queue_get_kernel_seqnum;\n\tudev_queue_get_udev_seqnum;\n\tudev_queue_get_seqnum_is_finished;\n\tudev_queue_get_seqnum_sequence_is_finished;\n\tudev_queue_get_queued_list_entry;\n\tudev_queue_get_fd;\n\tudev_queue_flush;|' \
+            "$LIBUDEV_ZERO_DIR/libudev.sym"
+    fi
+
+    # Y que el enlazador lo use. El Makefile de libudev-zero trae el mapa pero
+    # no lo aplica, así que la biblioteca salía con los símbolos SIN versión.
+    # Funcionaba -- glibc los acepta -- pero soltaba un
+    #   "libudev.so.1: no version information available"
+    # en cada arranque de parted, que asusta sin motivo. Con el mapa aplicado,
+    # los símbolos salen como LIBUDEV_183, que es lo que piden los binarios.
+    if ! grep -q "version-script" "$LIBUDEV_ZERO_DIR/Makefile"; then
+        sed -i 's|-Wl,-soname,libudev.so.1|-Wl,-soname,libudev.so.1 -Wl,--version-script=libudev.sym|' \
+            "$LIBUDEV_ZERO_DIR/Makefile"
+    fi
+fi
+
 if [ -d "$LIBUDEV_ZERO_DIR" ] && (cd "$LIBUDEV_ZERO_DIR" && make clean >/dev/null 2>&1 && make >/dev/null 2>&1); then
     rm -f "$ROOTFS_DIR/usr/lib/libudev.so"*
     cp "$LIBUDEV_ZERO_DIR/libudev.so.1" "$ROOTFS_DIR/usr/lib/"
@@ -995,7 +1091,7 @@ install_etc etc/fstab 644
 install_etc etc/os-release 644
 
 # Configurar skeleton /etc/skel y ~/.config/mike
-mkdir -p "$ROOTFS_DIR/etc/skel/.config/mike/quickshell" "$ROOTFS_DIR/etc/skel/.config/mike/theme" "$ROOTFS_DIR/etc/skel/.config/mike/waybar"
+mkdir -p "$ROOTFS_DIR/etc/skel/.config/mike/quickshell" "$ROOTFS_DIR/etc/skel/.config/mike/theme"
 mkdir -p "$ROOTFS_DIR/etc/mikeos/desktop"
 mkdir -p "$ROOTFS_DIR/etc/mikeos/fastfetch"
 cp "$BUILD_DIR/desktop/fastfetch/config.jsonc" "$ROOTFS_DIR/etc/mikeos/fastfetch/config.jsonc"
@@ -1022,10 +1118,10 @@ done
 "$PROJECT_ROOT/scripts/qmldir.sh"
 cp "$BUILD_DIR/desktop/quickshell/qmldir" "$ROOTFS_DIR/etc/mikeos/desktop/qmldir"
 cp "$BUILD_DIR/desktop/theme/colors.conf" "$ROOTFS_DIR/etc/skel/.config/mike/theme/"
-cp "$BUILD_DIR/desktop/waybar/config.jsonc" "$ROOTFS_DIR/etc/skel/.config/mike/waybar/"
-cp "$BUILD_DIR/desktop/waybar/style.css" "$ROOTFS_DIR/etc/skel/.config/mike/waybar/"
 cp "$BUILD_DIR/desktop/start-mike-desktop" "$ROOTFS_DIR/usr/bin/"
 cp "$BUILD_DIR/desktop/m-panel" "$ROOTFS_DIR/usr/bin/"
+cp "$BUILD_DIR/desktop/m-bloquear" "$ROOTFS_DIR/usr/bin/"
+cp "$BUILD_DIR/desktop/m-instalador" "$ROOTFS_DIR/usr/bin/"
 cp "$BUILD_DIR/desktop/m-hw-profile" "$ROOTFS_DIR/usr/bin/"
 cp "$BUILD_DIR/desktop/m-apply-settings" "$ROOTFS_DIR/usr/bin/"
 cp "$BUILD_DIR/settings/m-settings" "$ROOTFS_DIR/usr/bin/"
@@ -1203,6 +1299,9 @@ fakeroot -- env ROOTFS_DIR="$ROOTFS_DIR" ISO_DIR="$ISO_DIR" sh -c '
     [ -d "$ROOTFS_DIR/home/mike" ] && chown -R 1000:1000 "$ROOTFS_DIR/home/mike"
     chmod 4755 "$ROOTFS_DIR/bin/busybox"
     chmod 4755 "$ROOTFS_DIR/usr/bin/m-sudo"
+    # m-autenticar lee /etc/shadow para la pantalla de bloqueo. Sin el bit
+    # setuid no puede, y el bloqueo rechazaría hasta la contraseña correcta.
+    chmod 4755 "$ROOTFS_DIR/usr/bin/m-autenticar"
     cd "$ROOTFS_DIR"
     # /lib/firmware queda fuera del initramfs a propósito. El initramfs se
     # carga ENTERO en memoria antes de que exista nada, así que cada mega ahí

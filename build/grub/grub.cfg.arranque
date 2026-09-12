@@ -1,0 +1,45 @@
+# Configuración de arranque del GRUB de disco de MIKE OS.
+#
+# Esto NO es el menú. Es lo mínimo que va empotrado dentro del grubx64.efi y
+# cuya única tarea es encontrar el menú de verdad y saltar a él.
+#
+# Hace falta porque grub-mkstandalone mete la configuración DENTRO del propio
+# ejecutable, y el ejecutable se construye al compilar el sistema, cuando
+# todavía no existe el disco donde se va a instalar ni, por tanto, su UUID.
+# Un menú empotrado tendría que llevar el UUID escrito, que es justo lo que no
+# se sabe. Así que el ejecutable no lleva menú: lleva estas cuatro líneas, y
+# m-install escribe el menú en la partición EFI con el UUID ya conocido.
+#
+# El mismo truco permite que "mpm upgrade" reescriba el menú cuando cambia el
+# kernel sin tener que reconstruir GRUB.
+
+# Localiza la partición EFI por un archivo que sólo está ahí. Se busca por
+# archivo y no por etiqueta porque una etiqueta se puede repetir si hay dos
+# discos con MIKE OS, y entonces arrancaría el equivocado.
+search --no-floppy --file /EFI/mikeos/grub-disco.cfg --set=root
+
+# Si aparece, manda él.
+if [ -f /EFI/mikeos/grub-disco.cfg ]; then
+    configfile /EFI/mikeos/grub-disco.cfg
+fi
+
+# Y si no aparece -- partición EFI a medias, actualización interrumpida, el
+# archivo borrado a mano -- no se deja al equipo en la consola de GRUB, que es
+# donde la mayoría de la gente se queda atascada. Se intenta arrancar el kernel
+# directamente con lo mínimo imprescindible.
+#
+# "root=LABEL=" en vez de un UUID: aquí ya no hay nada escrito de la
+# instalación, y la etiqueta es lo único que m-install deja puesto siempre.
+search --no-floppy --file /EFI/mikeos/vmlinuz.efi --set=root
+if [ -f /EFI/mikeos/vmlinuz.efi ]; then
+    menuentry "MIKE OS (arranque de emergencia)" {
+        linux /EFI/mikeos/vmlinuz.efi root=LABEL=MIKEOS_ROOT rw
+        if [ -f /EFI/mikeos/initramfs.cpio.gz ]; then
+            initrd /EFI/mikeos/initramfs.cpio.gz
+        fi
+    }
+fi
+
+menuentry "Configuración de la UEFI" {
+    fwsetup
+}

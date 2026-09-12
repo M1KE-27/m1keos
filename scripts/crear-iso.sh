@@ -92,6 +92,9 @@ fakeroot -- env RAIZ="$RAIZ" DESTINO="$TRABAJO/sistema.squashfs" sh -c '
     [ -d "$RAIZ/rootfs/home/mike" ] && chown -R 1000:1000 "$RAIZ/rootfs/home/mike"
     chmod 4755 "$RAIZ/rootfs/bin/busybox"
     chmod 4755 "$RAIZ/rootfs/usr/bin/m-sudo"
+    # Igual que en build.sh: sin esto la pantalla de bloqueo del USB en vivo
+    # no puede leer /etc/shadow y no acepta ninguna contraseña.
+    chmod 4755 "$RAIZ/rootfs/usr/bin/m-autenticar"
     mksquashfs "$RAIZ/rootfs" "$DESTINO" \
         -comp gzip -b 1M -noappend -quiet \
         -e boot var/lib/mpm/repo

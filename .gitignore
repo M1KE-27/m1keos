@@ -43,6 +43,10 @@ build/*.log
 # Binarios compilados que conviven con su fuente en el mismo directorio.
 build/mcore/m-arch-install
 build/mcore/m-sudo
+# Binarios que compila el build a partir del .c de al lado. No van al
+# repositorio por lo mismo que m-sudo: se generan, no se editan.
+build/mcore/m-autenticar
+build/mcore/m-colores
 build/mkshell/mkshell
 build/mterminal/m-terminal
 

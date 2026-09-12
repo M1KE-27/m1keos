@@ -18,11 +18,22 @@
 #   2. Partición EFI de 512 MiB en FAT32.
 #   3. Raíz en btrfs con subvolúmenes (@ y @home) o en ext4, a elegir.
 #   4. Copia el sistema y deja el kernel en la partición EFI.
+#   5. Contraseña de la cuenta, si se quiere.
+#   6. GRUB, con el arranque directo del kernel de respaldo.
 #
-# Sin gestor de arranque: el kernel de MIKE OS se compila con CONFIG_EFI_STUB,
-# o sea que él mismo es un ejecutable UEFI válido. Se copia como
-# EFI/BOOT/BOOTX64.EFI y la firmware lo arranca directamente. Un GRUB menos
-# que mantener, y un sitio menos donde se puede romper el arranque.
+# Sobre el arranque, que tiene dos caminos a propósito:
+#
+#   - GRUB en EFI/BOOT/BOOTX64.EFI, que es la ruta que toda firmware prueba
+#     sin tener que registrar nada. Da menú: arrancar normal, ver los mensajes,
+#     entrar sólo a consola si el escritorio no levanta, y la UEFI.
+#
+#   - El kernel en EFI/mikeos/vmlinuz.efi, con su entrada propia en la UEFI.
+#     Se compila con CONFIG_EFI_STUB, así que él solo ya es un ejecutable UEFI
+#     válido y arranca sin nadie que lo cargue.
+#
+# Los dos, y no uno: un gestor de arranque es una pieza más que se puede
+# romper, y no encender es el peor fallo que puede tener un sistema. Si GRUB
+# desaparece, el equipo sigue arrancando por la entrada del kernel.
 #
 # En equipos con Secure Boot activado (las Surface vienen así de fábrica) hay
 # que desactivarlo en la UEFI: este kernel no lleva la firma de Microsoft.
@@ -35,7 +46,68 @@ ok()    { printf "  ${VERDE}✓${FIN} %s\n" "$*"; }
 error() { printf "${ROJO}ERROR:${FIN} %s\n" "$*" >&2; }
 nota()  { printf "  ${GRIS}%s${FIN}\n" "$*"; }
 
-if [ "$(id -u)" -ne 0 ]; then
+# --- Argumentos --------------------------------------------------------------
+# Además del modo conversado, m-install acepta que se lo den todo hecho. Es lo
+# que usa el instalador gráfico: en vez de reimplementar el particionado y la
+# copia -- la parte que borra discos y que más vale tener escrita UNA sola vez
+# y bien probada -- recoge las respuestas y llama aquí.
+#
+#   m-install --disco /dev/nvme0n1 --fs btrfs --equipo mikeos \
+#             --teclado es --zona Europe/Madrid --clave-por-entrada --si
+#
+# --clave-por-entrada lee la contraseña de la entrada estándar. Nunca por
+# argumento: lo que va en la línea de órdenes lo ve cualquiera con un "ps".
+AUTOMATICO=0
+CLAVE_ENTRADA=0
+SOLO_LISTAR=0
+# borrar | al-lado | reemplazar
+MODO_DISCO="borrar"
+PARTICION_OBJETIVO=""
+ARG_DISCO=""; ARG_FS=""; ARG_EQUIPO=""; ARG_TECLADO=""; ARG_ZONA=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --disco)   ARG_DISCO="${2:-}"; shift 2 ;;
+        --fs)      ARG_FS="${2:-}"; shift 2 ;;
+        --equipo)  ARG_EQUIPO="${2:-}"; shift 2 ;;
+        --teclado) ARG_TECLADO="${2:-}"; shift 2 ;;
+        --zona)    ARG_ZONA="${2:-}"; shift 2 ;;
+        --clave-por-entrada) CLAVE_ENTRADA=1; shift ;;
+        --si|--sin-preguntar) AUTOMATICO=1; shift ;;
+        --listar-discos) SOLO_LISTAR=1; shift ;;
+        --modo)      MODO_DISCO="${2:-borrar}"; shift 2 ;;
+        --particion) PARTICION_OBJETIVO="${2:-}"; shift 2 ;;
+        --ayuda|-h)
+            echo "Uso: m-install [disco]"
+            echo "     m-install --disco DISCO [--fs btrfs|ext4] [--equipo NOMBRE]"
+            echo "               [--teclado ES] [--zona ZONA] [--clave-por-entrada] --si"
+            echo "     m-install --listar-discos     una línea por disco utilizable"
+            echo
+            echo "  --modo borrar       rehace el disco entero (por defecto)"
+            echo "  --modo al-lado      usa el espacio libre, sin tocar lo demás"
+            echo "  --modo reemplazar --particion /dev/X   usa esa partición"
+            exit 0 ;;
+        -*) error "opción desconocida: $1"; exit 1 ;;
+        *)  ARG_DISCO="$1"; shift ;;
+    esac
+done
+
+# En modo automático la contraseña se lee ANTES de tocar nada: si la entrada
+# se cierra a medias, mejor enterarse ahora que con el disco ya formateado.
+CLAVE_AUTO=""
+if [ "$CLAVE_ENTRADA" = "1" ]; then
+    # Sin "|| CLAVE_AUTO=''". Cuando quien llama no manda salto de línea final
+    # -- printf '%s' "$clave", que es justo lo que hay que hacer para no meter
+    # un \n en la contraseña -- read devuelve 1 AUNQUE haya leído el texto
+    # entero. Ese "||" borraba la contraseña recién leída y el sistema se
+    # instalaba sin ninguna, en silencio.
+    IFS= read -r CLAVE_AUTO || true
+fi
+
+# Listar discos no toca nada: lee /sys y /proc/mounts, que están abiertos a
+# cualquiera. Pedir root para eso obligaría al instalador gráfico a arrancar
+# con privilegios sólo para pintar una lista, y no hay razón para que una
+# interfaz corra como root.
+if [ "$SOLO_LISTAR" != "1" ] && [ "$(id -u)" -ne 0 ]; then
     error "hay que ser root para instalar."
     exit 1
 fi
@@ -52,23 +124,124 @@ if [ -n "$faltan" ]; then
     exit 1
 fi
 
-echo
-printf "${NEGRITA}  Instalador de MIKE OS${FIN}\n"
-echo "  ────────────────────────────────────────────"
-echo
+# En modo lista la cabecera sobra: quien llama espera datos, no un cartel.
+if [ "$SOLO_LISTAR" != "1" ]; then
+    echo
+    printf "${NEGRITA}  Instalador de MIKE OS${FIN}\n"
+    echo "  ────────────────────────────────────────────"
+    echo
+fi
 
 # --- Elegir disco ------------------------------------------------------------
-DESTINO="${1:-}"
+#
+# Antes había que escribir el disco a mano ("m-install /dev/nvme0n1") y, si no,
+# el instalador imprimía una lista y se rendía. O sea que para instalar el
+# sistema había que saber ya cómo se llama tu disco. Ahora se detectan y se
+# propone el que toca; sólo hay que elegir si hay más de uno.
+
+# ¿Tiene este disco, o alguna de sus particiones, algo montado? Si lo tiene, es
+# el medio del que hemos arrancado (o un disco en uso) y no se ofrece: es la
+# diferencia entre instalar el sistema y borrar el USB desde el que corre.
+disco_ocupado() {
+    _r="$(readlink -f "$1" 2>/dev/null || echo "$1")"
+    grep -qE "^${_r}p?[0-9]* " /proc/mounts 2>/dev/null
+}
+
+# Discos de verdad: se dejan fuera los loop (squashfs del USB en vivo), los
+# discos en RAM, los lectores ópticos y los dispositivos de sólo lectura.
+listar_discos() {
+    for _d in /sys/block/*; do
+        _n="$(basename "$_d")"
+        case "$_n" in
+            loop*|ram*|sr*|fd*|dm-*|zram*) continue ;;
+        esac
+        [ -e "/dev/$_n" ] || continue
+        # 1 en "ro" es sólo lectura: no se puede instalar ahí.
+        [ "$(cat "$_d/ro" 2>/dev/null || echo 0)" = "1" ] && continue
+        # Menos de 8 GiB no da para el sistema; casi siempre es una tarjeta o
+        # el propio USB de instalación.
+        _sect="$(cat "$_d/size" 2>/dev/null || echo 0)"
+        [ "$_sect" -lt 16777216 ] && continue
+        printf '%s\n' "/dev/$_n"
+    done
+}
+
+descripcion_disco() {
+    _n="$(basename "$1")"
+    _tam="$(awk '{printf "%.0f GB", $1*512/1000000000}' "/sys/block/$_n/size" 2>/dev/null)"
+    _mod="$(cat "/sys/block/$_n/device/model" 2>/dev/null | tr -s ' ' | sed 's/ *$//')"
+    [ -n "$_mod" ] || _mod="disco"
+    printf '%s  %s  %s' "$1" "$_tam" "$_mod"
+}
+
+# --listar-discos: una línea por disco, con tabuladores, para que el
+# instalador gráfico la lea sin adivinar. Se pone aquí y no antes porque
+# necesita las funciones de detección de arriba.
+if [ "$SOLO_LISTAR" = "1" ]; then
+    for _d in $(listar_discos); do
+        disco_ocupado "$_d" && continue
+        _n="$(basename "$_d")"
+        _bytes="$(awk '{print $1*512}' "/sys/block/$_n/size" 2>/dev/null || echo 0)"
+        _mod="$(cat "/sys/block/$_n/device/model" 2>/dev/null | tr -s ' ' | sed 's/ *$//')"
+        [ -n "$_mod" ] || _mod="disco"
+        # ¿Extraíble? Para poder avisar de que se va a instalar en un USB.
+        _rm="$(cat "/sys/block/$_n/removable" 2>/dev/null || echo 0)"
+        printf '%s\t%s\t%s\t%s\n' "$_d" "$_bytes" "$_mod" "$_rm"
+    done
+    exit 0
+fi
+
+DESTINO="$ARG_DISCO"
 if [ -z "$DESTINO" ]; then
-    echo "  Discos detectados:"
-    if command -v lsblk >/dev/null 2>&1; then
-        lsblk -d -o NAME,SIZE,MODEL 2>/dev/null | sed 's/^/    /'
+    CANDIDATOS=""
+    for _d in $(listar_discos); do
+        disco_ocupado "$_d" && continue
+        CANDIDATOS="$CANDIDATOS $_d"
+    done
+    # shellcheck disable=SC2086
+    set -- $CANDIDATOS
+    CUANTOS=$#
+
+    if [ "$CUANTOS" -eq 0 ]; then
+        error "no hay ningún disco donde instalar."
+        nota "Los discos en uso no se ofrecen: el USB del que has arrancado,"
+        nota "por ejemplo. Si esperabas ver uno, comprueba que está conectado."
+        exit 1
+    elif [ "$CUANTOS" -eq 1 ]; then
+        DESTINO="$1"
+        echo "  Se instalará en:"
+        printf '    %s\n' "$(descripcion_disco "$DESTINO")"
+        nota "(es el único disco disponible)"
+        echo
     else
-        ls -1 /dev/sd? /dev/vd? /dev/nvme?n? 2>/dev/null | sed 's/^/    /'
+        echo "  ¿En qué disco?"
+        _i=1
+        for _d in "$@"; do
+            printf '    %s) %s\n' "$_i" "$(descripcion_disco "$_d")"
+            _i=$((_i + 1))
+        done
+        echo
+        _eleccion=""
+        while [ -z "$_eleccion" ]; do
+            printf "  Número [1]: " >&2
+            IFS= read -r _n </dev/tty || _n=""
+            [ -z "$_n" ] && _n=1
+            case "$_n" in
+                ''|*[!0-9]*) echo "  Escribe un número." >&2; continue ;;
+            esac
+            if [ "$_n" -ge 1 ] && [ "$_n" -le "$CUANTOS" ]; then
+                _eleccion="$_n"
+            else
+                echo "  Entre 1 y $CUANTOS." >&2
+            fi
+        done
+        _i=1
+        for _d in "$@"; do
+            [ "$_i" = "$_eleccion" ] && DESTINO="$_d"
+            _i=$((_i + 1))
+        done
+        echo
     fi
-    echo
-    echo "  Uso: m-install <disco>      (por ejemplo: m-install /dev/nvme0n1)"
-    exit 1
 fi
 
 [ -b "$DESTINO" ] || { error "'$DESTINO' no es un disco."; exit 1; }
@@ -101,7 +274,11 @@ echo "  Sistema de archivos para la raíz:"
 echo "    btrfs  instantáneas antes de cada instalación, rollback completo,"
 echo "           compresión transparente (recomendado)"
 echo "    ext4   más simple, sin instantáneas"
-FS="$(preguntar "Elige" "btrfs")"
+if [ -n "$ARG_FS" ]; then
+    FS="$ARG_FS"
+else
+    FS="$(preguntar "Elige" "btrfs")"
+fi
 case "$FS" in
     btrfs)
         if ! command -v mkfs.btrfs >/dev/null 2>&1; then
@@ -113,41 +290,221 @@ case "$FS" in
     *)    error "sólo btrfs o ext4."; exit 1 ;;
 esac
 
-TECLADO="$(preguntar "Teclado" "es")"
-ZONA="$(preguntar "Zona horaria" "Europe/Madrid")"
-EQUIPO="$(preguntar "Nombre del equipo" "mikeos")"
+# Teclado y zona horaria NO se preguntan: ya los elegiste al arrancar el USB,
+# y están escritos en la configuración de esta misma sesión. Volver a pedirlos
+# es hacer trabajar dos veces por lo mismo. Se leen, se enseñan, y se cambian
+# sólo si quieres.
+TECLADO="es"
+ZONA="Europe/Madrid"
+if [ -f /etc/mikeos/system.conf ]; then
+    . /etc/mikeos/system.conf 2>/dev/null || true
+    [ -n "${KEYMAP:-}" ] && TECLADO="$KEYMAP"
+    [ -n "${TIMEZONE:-}" ] && ZONA="$TIMEZONE"
+fi
+[ -n "$ARG_TECLADO" ] && TECLADO="$ARG_TECLADO"
+[ -n "$ARG_ZONA" ] && ZONA="$ARG_ZONA"
+
+if [ -n "$ARG_EQUIPO" ]; then
+    EQUIPO="$ARG_EQUIPO"
+else
+    EQUIPO="$(preguntar "Nombre del equipo" "mikeos")"
+fi
+
+# Contraseña de la cuenta. El USB en vivo va sin contraseña a propósito --
+# nadie quiere inventarse una para probar un sistema -- pero al instalarlo en
+# un equipo de verdad eso deja la pantalla de bloqueo sin nada que comprobar.
+# Se pregunta aquí, no después: es el momento en que la persona está delante.
+#
+# No se obliga. Si la deja en blanco, se instala igual y se dice claramente
+# qué significa, en vez de plantar una contraseña por defecto que todo el
+# mundo conoce, que es peor que no tener ninguna.
+CLAVE=""
+CLAVE2="x"
+if [ "$AUTOMATICO" = "1" ]; then
+    CLAVE="$CLAVE_AUTO"
+    CLAVE2="$CLAVE_AUTO"
+fi
+echo
+[ "$AUTOMATICO" = "1" ] || echo "  Contraseña para la cuenta «mike». Déjala vacía para no poner ninguna."
+[ "$AUTOMATICO" = "1" ] || echo "  Sin contraseña, la pantalla de bloqueo deja entrar sin preguntar."
+while [ "$AUTOMATICO" != "1" ] && [ "$CLAVE" != "$CLAVE2" ]; do
+    printf "  Contraseña: " >&2
+    # stty -echo en vez de "read -s": read -s es de bash y aquí manda sh.
+    stty -echo 2>/dev/null
+    IFS= read -r CLAVE </dev/tty || CLAVE=""
+    stty echo 2>/dev/null
+    echo >&2
+    if [ -z "$CLAVE" ]; then CLAVE2=""; break; fi
+    printf "  Repítela: " >&2
+    stty -echo 2>/dev/null
+    IFS= read -r CLAVE2 </dev/tty || CLAVE2=""
+    stty echo 2>/dev/null
+    echo >&2
+    [ "$CLAVE" = "$CLAVE2" ] || echo "  No coinciden; otra vez." >&2
+done
 
 echo
-printf "  ${ROJO}Se borrará todo lo que haya en %s.${FIN}\n" "$DESTINO"
-printf "  Escribe ${NEGRITA}BORRAR${FIN} para continuar: "
-IFS= read -r CONFIRMA </dev/tty || CONFIRMA=""
-[ "$CONFIRMA" = "BORRAR" ] || { echo "  Cancelado."; exit 0; }
+echo "  ────────────────────────────────────────────"
+echo "  Resumen de lo que se va a hacer:"
+printf '    Disco             %s\n' "$(descripcion_disco "$DESTINO" 2>/dev/null || echo "$DESTINO")"
+case "$MODO_DISCO" in
+    borrar)     printf '    Qué se hace       se borra el disco ENTERO\n' ;;
+    al-lado)    printf '    Qué se hace       se usa el espacio libre; lo demás no se toca\n' ;;
+    reemplazar) printf '    Qué se hace       se usa %s; lo demás no se toca\n' "$PARTICION_OBJETIVO" ;;
+esac
+printf '    Sistema archivos  %s\n' "$FS"
+printf '    Nombre del equipo %s\n' "$EQUIPO"
+printf '    Teclado           %s   (heredado de esta sesión)\n' "$TECLADO"
+printf '    Zona horaria      %s   (heredada de esta sesión)\n' "$ZONA"
+if [ -n "$CLAVE" ]; then
+    echo "    Contraseña        puesta"
+else
+    echo "    Contraseña        sin poner (el bloqueo no pedirá nada)"
+fi
+echo "  ────────────────────────────────────────────"
 echo
+case "$MODO_DISCO" in
+    borrar)
+        printf "  ${ROJO}Se borrará todo lo que haya en %s.${FIN}\n" "$DESTINO" ;;
+    al-lado)
+        printf "  ${ROJO}Se escribirá en el espacio libre de %s.${FIN}\n" "$DESTINO" ;;
+    reemplazar)
+        printf "  ${ROJO}Se borrará todo lo que haya en %s.${FIN}\n" "$PARTICION_OBJETIVO" ;;
+esac
+if [ "$AUTOMATICO" = "1" ]; then
+    # Ya se ha confirmado en la interfaz que llamó aquí. Pedirlo otra vez en
+    # una terminal que nadie está mirando sólo dejaría la instalación colgada.
+    nota "confirmado por quien ha llamado a m-install (--si)"
+else
+    printf "  Escribe ${NEGRITA}BORRAR${FIN} para continuar: "
+    IFS= read -r CONFIRMA </dev/tty || CONFIRMA=""
+    [ "$CONFIRMA" = "BORRAR" ] || { echo "  Cancelado."; exit 0; }
+fi
+echo
+
+# --- 0. Comprobaciones antes de tocar nada -----------------------------------
+#
+# Todo lo que puede dejar el equipo sin arrancar se mira AHORA, cuando aún no
+# se ha escrito un solo byte. Antes esto no existía: el instalador iba de
+# frente, y si el disco era pequeño, si no había partición EFI, o si el equipo
+# había arrancado en modo BIOS, te enterabas cuando ya era tarde.
+if command -v m-particiones >/dev/null 2>&1; then
+    paso "Comprobando que esto va a funcionar"
+    _informe="$(m-particiones comprobar "$DESTINO" "$MODO_DISCO" "$PARTICION_OBJETIVO" 2>/dev/null || true)"
+    _hay_error=0
+    printf '%s\n' "$_informe" | while IFS= read -r _l; do
+        case "$_l" in
+            error=*) printf "  ${ROJO}✗${FIN} %s\n" "${_l#error=}" ;;
+            aviso=*) printf "  ${GRIS}!${FIN} %s\n" "${_l#aviso=}" ;;
+        esac
+    done
+    if printf '%s\n' "$_informe" | grep -q "^resultado=no"; then
+        echo
+        error "no se puede instalar así. No se ha tocado nada del disco."
+        exit 1
+    fi
+    printf '%s\n' "$_informe" | grep -q "^error=" && _hay_error=1
+    [ "$_hay_error" = "1" ] && { error "no se puede instalar así."; exit 1; }
+    ok "sin impedimentos"
+fi
+
+# La partición EFI que ya exista en el disco. Hace falta para los modos que no
+# rehacen el disco: hay que usar la que hay, no crear otra.
+ESP_EXISTENTE=""
+for _ep in $(sfdisk -l -o Device "$DESTINO" 2>/dev/null | grep "^$DESTINO" || true); do
+    [ -b "$_ep" ] || continue
+    if [ "$(blkid -s TYPE -o value "$_ep" 2>/dev/null)" = "vfat" ]; then
+        ESP_EXISTENTE="$_ep"
+        break
+    fi
+done
 
 # --- 1. Particionar ----------------------------------------------------------
-paso "Creando la tabla de particiones (GPT)"
-# La partición EFI son 512 MiB: caben varios kernels a la vez, que es lo que
-# permite quedarse con el anterior cuando se actualiza y poder volver a él.
-sfdisk --quiet --wipe always --label gpt "$DESTINO" >/dev/null <<EOF
+#
+# Tres caminos, según lo que se haya pedido:
+#
+#   borrar      el disco entero se rehace desde cero. Es lo único que hacía
+#               antes esto, y sigue siendo lo correcto para un disco vacío.
+#   al-lado     se usa el hueco libre y NO se toca nada de lo que ya hay. Es
+#               lo que permite tener MIKE OS y Windows en el mismo disco.
+#   reemplazar  se usa una partición concreta, borrando sólo lo que tenga.
+#
+# En los dos últimos NO se crea partición EFI: se reutiliza la que ya existe.
+# Crear una segunda sería el error clásico que deja el equipo arrancando por
+# la que no es y "perdiendo" el otro sistema.
+
+# nvme0n1 -> nvme0n1p1 ; sda -> sda1
+sufijo_particion() {
+    case "$DESTINO" in
+        *[0-9]) printf '%sp%s' "$DESTINO" "$1" ;;
+        *)      printf '%s%s'  "$DESTINO" "$1" ;;
+    esac
+}
+
+case "$MODO_DISCO" in
+    borrar)
+        paso "Creando la tabla de particiones (GPT)"
+        # La partición EFI son 512 MiB: caben varios kernels a la vez, que es
+        # lo que permite quedarse con el anterior al actualizar y poder volver.
+        sfdisk --quiet --wipe always --label gpt "$DESTINO" >/dev/null <<EOF
 ,512M,U,*
 ,,L
 EOF
-sync
-command -v partx >/dev/null 2>&1 && partx -u "$DESTINO" >/dev/null 2>&1 || true
-sleep 1
+        sync
+        command -v partx >/dev/null 2>&1 && partx -u "$DESTINO" >/dev/null 2>&1 || true
+        sleep 1
+        P1="$(sufijo_particion 1)"
+        P2="$(sufijo_particion 2)"
+        [ -b "$P1" ] || { error "no aparece la partición $P1."; exit 1; }
+        ok "$P1 (EFI, 512 MiB) y $P2 (raíz)"
+        CREAR_ESP=si
+        ;;
 
-# nvme0n1 -> nvme0n1p1 ; sda -> sda1
-case "$DESTINO" in
-    *[0-9]) P1="${DESTINO}p1"; P2="${DESTINO}p2" ;;
-    *)      P1="${DESTINO}1";  P2="${DESTINO}2"  ;;
+    al-lado)
+        paso "Haciendo sitio en el espacio libre"
+        # sfdisk añade al final de la tabla sin tocar lo que ya hay. El "-a"
+        # es lo que lo hace seguro: sin él se reescribe la tabla entera.
+        # Una línea vacía significa "donde quepa, todo lo que quepa".
+        printf ',,L\n' | sfdisk --quiet -a "$DESTINO" >/dev/null 2>&1 \
+            || { error "no se ha podido crear la partición en el espacio libre."; exit 1; }
+        sync
+        command -v partx >/dev/null 2>&1 && partx -u "$DESTINO" >/dev/null 2>&1 || true
+        sleep 1
+        # La recién creada es la de número más alto.
+        P2="$(sfdisk -l -o Device "$DESTINO" 2>/dev/null | grep "^$DESTINO" | tail -1)"
+        [ -b "$P2" ] || { error "no aparece la partición nueva."; exit 1; }
+        P1="$ESP_EXISTENTE"
+        CREAR_ESP=no
+        ok "$P2 creada sin tocar el resto del disco"
+        ;;
+
+    reemplazar)
+        paso "Preparando $PARTICION_OBJETIVO"
+        P2="$PARTICION_OBJETIVO"
+        P1="$ESP_EXISTENTE"
+        CREAR_ESP=no
+        ok "se reutiliza $P2; el resto del disco no se toca"
+        ;;
+
+    *)
+        error "modo de instalación desconocido: $MODO_DISCO"
+        exit 1
+        ;;
 esac
-[ -b "$P1" ] || { error "no aparece la partición $P1."; exit 1; }
-ok "$P1 (EFI, 512 MiB) y $P2 (raíz)"
+
+[ -b "$P1" ] || { error "no hay partición EFI utilizable ($P1)."; exit 1; }
 
 # --- 2. Formatear ------------------------------------------------------------
 paso "Formateando"
-mkfs.vfat -F 32 -n MIKEOS_EFI "$P1" >/dev/null 2>&1
-ok "$P1 en FAT32"
+if [ "$CREAR_ESP" = "si" ]; then
+    mkfs.vfat -F 32 -n MIKEOS_EFI "$P1" >/dev/null 2>&1
+    ok "$P1 en FAT32"
+else
+    # La EFI que ya existe NO se formatea: dentro está el arranque del otro
+    # sistema. Formatearla es exactamente lo que hace que Windows "desaparezca"
+    # después de instalar Linux al lado.
+    nota "se conserva la partición EFI existente ($P1) y lo que tenga dentro"
+fi
 
 MONTAJE=/tmp/mikeos_destino
 mkdir -p "$MONTAJE"
@@ -193,22 +550,56 @@ mkdir -p "$MONTAJE/boot/efi"
 mount "$P1" "$MONTAJE/boot/efi"
 mkdir -p "$MONTAJE/boot/efi/EFI/BOOT" "$MONTAJE/boot/efi/EFI/mikeos"
 
+# Dónde está el kernel.
+#
+# En un sistema ya instalado, en /boot. Pero al instalar desde el USB en vivo
+# NO HAY /boot: el kernel viaja en el medio, fuera del sistema comprimido,
+# porque es la firmware quien lo carga antes de que exista nada. La primera
+# versión sólo miraba en /boot, así que instalar desde el USB -- la única
+# forma en que alguien va a instalar esto -- terminaba con un
+# "no encuentro el kernel" y un disco sin arranque.
 KERNEL=""
-for k in /boot/vmlinuz /boot/bzImage /boot/vmlinuz-mikeos; do
+for k in /boot/vmlinuz /boot/bzImage /boot/vmlinuz-mikeos \
+         /mnt/medio/EFI/mikeos/vmlinuz.efi /run/medio/EFI/mikeos/vmlinuz.efi; do
     [ -f "$k" ] && { KERNEL="$k"; break; }
 done
+
+# Y si el medio no está montado en ningún sitio accesible, se busca el
+# dispositivo que lo lleva y se monta aparte. Pasa cuando algo ha tapado el
+# punto de montaje original.
+MEDIO_TEMPORAL=""
+if [ -z "$KERNEL" ]; then
+    for _dev in $(awk '$1 ~ /^\/dev\// {print $1}' /proc/mounts 2>/dev/null) \
+                /dev/sr0 /dev/sda /dev/sdb; do
+        [ -b "$_dev" ] || continue
+        mkdir -p /tmp/medio-instalador 2>/dev/null || continue
+        if mount -o ro "$_dev" /tmp/medio-instalador 2>/dev/null; then
+            if [ -f /tmp/medio-instalador/EFI/mikeos/vmlinuz.efi ]; then
+                KERNEL=/tmp/medio-instalador/EFI/mikeos/vmlinuz.efi
+                MEDIO_TEMPORAL=/tmp/medio-instalador
+                break
+            fi
+            umount /tmp/medio-instalador 2>/dev/null || true
+        fi
+    done
+fi
 if [ -z "$KERNEL" ]; then
     error "no encuentro el kernel en /boot. La instalación queda sin arranque."
     umount "$MONTAJE/boot/efi" || true
     exit 1
 fi
 
-# El kernel ES el ejecutable UEFI (CONFIG_EFI_STUB). BOOTX64.EFI en EFI/BOOT
-# es la ruta que toda firmware prueba sin necesidad de registrar nada, así que
-# el disco arranca aunque la UEFI haya perdido sus entradas.
-cp "$KERNEL" "$MONTAJE/boot/efi/EFI/BOOT/BOOTX64.EFI"
+# El kernel ES el ejecutable UEFI (CONFIG_EFI_STUB). Va a EFI/mikeos y, si no hubiera GRUB,
+# también a EFI/BOOT/BOOTX64.EFI -- lo decide el bloque de GRUB de más abajo.
 cp "$KERNEL" "$MONTAJE/boot/efi/EFI/mikeos/vmlinuz.efi"
-[ -f /boot/initramfs.cpio.gz ] && cp /boot/initramfs.cpio.gz "$MONTAJE/boot/efi/EFI/mikeos/"
+# El initramfs vive al lado del kernel, venga de donde venga.
+INITRAMFS=""
+for i in /boot/initramfs.cpio.gz \
+         "$(dirname "$KERNEL")/initramfs.cpio.gz" \
+         /mnt/medio/EFI/mikeos/initramfs.cpio.gz; do
+    [ -f "$i" ] && { INITRAMFS="$i"; break; }
+done
+[ -n "$INITRAMFS" ] && cp "$INITRAMFS" "$MONTAJE/boot/efi/EFI/mikeos/initramfs.cpio.gz"
 
 # La raíz se identifica por UUID y no por /dev/nvme0n1p2: enchufar un USB
 # puede cambiar los nombres de dispositivo entre un arranque y el siguiente.
@@ -223,6 +614,190 @@ fi
 # por sí solo, sin gestor que se la pase.
 printf '%s' "$CMDLINE" > "$MONTAJE/boot/efi/EFI/BOOT/cmdline.txt"
 printf '%s' "$CMDLINE" > "$MONTAJE/boot/efi/EFI/mikeos/cmdline.txt"
+
+# --- GRUB ---------------------------------------------------------------
+# El kernel sabe arrancar solo (CONFIG_EFI_STUB) y eso se conserva intacto:
+# BOOTX64.EFI pasa a ser GRUB, pero el kernel sigue en EFI/mikeos/vmlinuz.efi
+# con su entrada propia en la UEFI. Si GRUB se estropea, el equipo enciende
+# igual. No encender es el peor fallo que puede tener un sistema operativo, y
+# un gestor de arranque es una pieza más que se puede romper.
+#
+# GRUB no se genera aquí: viene ya construido en /usr/share/mikeos/grub, desde
+# el equipo que compiló el sistema. Lo que se escribe aquí es el MENÚ, que es
+# lo único que no se podía saber antes: hace falta el UUID de este disco.
+GRUB_ORIGEN=/usr/share/mikeos/grub
+if [ -f "$GRUB_ORIGEN/grubx64.efi" ]; then
+    cp "$GRUB_ORIGEN/grubx64.efi" "$MONTAJE/boot/efi/EFI/BOOT/BOOTX64.EFI"
+    [ -d "$GRUB_ORIGEN/tema" ] && cp -r "$GRUB_ORIGEN/tema" "$MONTAJE/boot/efi/EFI/mikeos/tema"
+
+    {
+        echo "# Menú de MIKE OS. Lo escribe m-install; lo reescribe mpm upgrade"
+        echo "# cuando cambia el kernel. Editarlo a mano se pierde en la siguiente"
+        echo "# actualización: los cambios que duran van en /etc/mikeos/install.conf."
+        echo
+        echo "search --no-floppy --file /EFI/mikeos/vmlinuz.efi --set=root"
+        echo "set default=0"
+        echo "set timeout=3"
+        echo "set timeout_style=menu"
+        echo
+        echo "insmod all_video"
+        echo "insmod gfxterm"
+        echo "insmod png"
+        echo "insmod serial"
+        echo "insmod font"
+        echo "set gfxmode=auto"
+        echo
+        echo "# La fuente va empotrada dentro del propio grubx64.efi, así que se"
+        echo "# carga desde (memdisk) y no desde el disco. Sin ella GRUB pinta en"
+        echo "# su modo texto de toda la vida, que no sabe de UTF-8 y deja"
+        echo "# «Configuración» como «Configuraci?n»."
+        echo "loadfont (memdisk)/boot/grub/fonts/unicode.pf2"
+        echo
+        echo "# El tema propio. Si no carga, queda el menú de texto: un arranque"
+        echo "# feo que funciona vale más que uno bonito que no arranca."
+        echo "insmod gfxmenu"
+        echo "if [ -d (\$root)/EFI/mikeos/tema ]; then"
+        echo "    set theme=(\$root)/EFI/mikeos/tema/theme.txt"
+        echo "    export theme"
+        echo "fi"
+        echo "set menu_color_normal=light-gray/black"
+        echo "set menu_color_highlight=black/cyan"
+        echo
+        echo "# También por el puerto serie: es lo que deja comprobar desde fuera"
+        echo "# que el menú salió, sin nadie mirando la pantalla."
+        echo "serial --unit=0 --speed=115200"
+        echo "terminal_output gfxterm serial"
+        echo "terminal_input  console serial"
+        echo
+        echo "menuentry \"MIKE OS\" {"
+        echo "    linux /EFI/mikeos/vmlinuz.efi $CMDLINE"
+        [ -f "$MONTAJE/boot/efi/EFI/mikeos/initramfs.cpio.gz" ] \
+            && echo "    initrd /EFI/mikeos/initramfs.cpio.gz"
+        echo "}"
+        echo
+        # Sin "quiet": cuando algo falla al arrancar, lo que hace falta es ver
+        # los mensajes, no una pantalla limpia.
+        echo "menuentry \"MIKE OS (ver mensajes de arranque)\" {"
+        echo "    linux /EFI/mikeos/vmlinuz.efi ${CMDLINE% quiet}"
+        [ -f "$MONTAJE/boot/efi/EFI/mikeos/initramfs.cpio.gz" ] \
+            && echo "    initrd /EFI/mikeos/initramfs.cpio.gz"
+        echo "}"
+        echo
+        # A consola pelada. Es la red de seguridad cuando el escritorio no
+        # levanta: sin esto, un fallo en Hyprland deja el equipo inservible.
+        echo "menuentry \"MIKE OS (sólo consola, sin escritorio)\" {"
+        echo "    linux /EFI/mikeos/vmlinuz.efi ${CMDLINE% quiet} mikeos_gui=0"
+        [ -f "$MONTAJE/boot/efi/EFI/mikeos/initramfs.cpio.gz" ] \
+            && echo "    initrd /EFI/mikeos/initramfs.cpio.gz"
+        echo "}"
+        echo
+
+        # --- Otros sistemas del equipo: dual boot ---------------------
+        #
+        # Se buscan cargadores EFI ajenos en todas las particiones FAT del
+        # equipo y se les hace una entrada. Es lo que hace que, después de
+        # instalar, Windows siga apareciendo en el menú en vez de "haber
+        # desaparecido" -- que es lo que le pasa a mucha gente y lo que hace
+        # que no se atrevan a instalar nada.
+        #
+        # Se usa "chainloader": no se intenta arrancar el otro sistema, sólo
+        # se le pasa el mando a SU propio cargador, que es quien sabe. Así
+        # funciona con Windows, con otras distribuciones y con lo que sea.
+        #
+        # Se buscan por UUID de partición y no por ruta de dispositivo: un
+        # /dev/sda de hoy puede ser /dev/sdb mañana con un USB enchufado.
+        _n_otros=0
+        for _p in $(ls /dev/sd?[0-9]* /dev/nvme?n?p[0-9]* /dev/vd?[0-9]* /dev/mmcblk?p[0-9]* 2>/dev/null); do
+            # La partición EFI se salta SÓLO si la hemos creado nosotros: en
+            # ese caso no hay nada más dentro. Cuando se reutiliza la que ya
+            # existía -- instalando al lado de Windows, que es el caso que
+            # importa -- ahí es justo donde está el cargador del otro sistema,
+            # y saltarla dejaba a Windows fuera del menú. Los cargadores
+            # propios se descartan igualmente más abajo, por su ruta.
+            if [ "$CREAR_ESP" = "si" ] && [ "$_p" = "$P1" ]; then
+                continue
+            fi
+            [ "$(blkid -s TYPE -o value "$_p" 2>/dev/null)" = "vfat" ] || continue
+            _uuid="$(blkid -s UUID -o value "$_p" 2>/dev/null || true)"
+            [ -n "$_uuid" ] || continue
+
+            # Si es la partición EFI que estamos usando, ya está montada y
+            # NO se puede montar otra vez: Linux rechaza el segundo montaje
+            # del mismo dispositivo con otras opciones. Se mira donde ya está.
+            # Sin esto, instalando al lado de Windows el bucle fallaba
+            # justo en la única partición que tenía algo que encontrar.
+            _propio=no
+            if [ "$_p" = "$P1" ]; then
+                _tmp="$MONTAJE/boot/efi"
+                _propio=si
+            else
+                _tmp=/tmp/m-install-otros
+                mkdir -p "$_tmp" 2>/dev/null || continue
+                mount -o ro "$_p" "$_tmp" 2>/dev/null || continue
+            fi
+
+            # Con "find" y no con un glob: Windows guarda el suyo en
+            # EFI/Microsoft/Boot/bootmgfw.efi, un nivel más hondo que la
+            # mayoría (EFI/fabricante/algo.efi). Buscando sólo a dos niveles
+            # no se encontraba Windows, que es precisamente el sistema con el
+            # que la gente quiere arrancar en paralelo.
+            for _efi in $(find "$_tmp/EFI" -maxdepth 3 -type f \
+                               \( -iname '*.efi' \) 2>/dev/null); do
+                [ -f "$_efi" ] || continue
+                _rel="${_efi#$_tmp}"
+                # Los nuestros no, ni los genéricos de respaldo: el de
+                # EFI/BOOT es una copia de otro y saldría por duplicado.
+                case "$_rel" in
+                    /EFI/mikeos/*|/EFI/BOOT/*|/EFI/boot/*) continue ;;
+                esac
+                # Sólo cargadores, no herramientas sueltas del fabricante.
+                case "$(basename "$_efi" | tr "A-Z" "a-z")" in
+                    bootmgfw.efi|grubx64.efi|shimx64.efi|systemd-bootx64.efi|refind_x64.efi) ;;
+                    *) continue ;;
+                esac
+
+                case "$(basename "$_efi" | tr "A-Z" "a-z")" in
+                    bootmgfw.efi) _nombre="Windows" ;;
+                    refind_x64.efi) _nombre="rEFInd" ;;
+                    systemd-bootx64.efi) _nombre="systemd-boot" ;;
+                    *) _nombre="Otro sistema ($(basename "$(dirname "$_efi")"))" ;;
+                esac
+
+                echo "menuentry \"$_nombre\" {"
+                echo "    insmod part_gpt"
+                echo "    insmod fat"
+                echo "    insmod chain"
+                echo "    search --no-floppy --fs-uuid --set=root $_uuid"
+                echo "    chainloader $_rel"
+                echo "}"
+                echo
+                _n_otros=$((_n_otros + 1))
+            done
+            # Sólo se desmonta lo que hemos montado nosotros: desmontar la
+            # partición EFI de destino a media instalación la dejaría sin
+            # terminar de escribir.
+            [ "$_propio" = "si" ] || umount "$_tmp" 2>/dev/null || true
+        done
+
+        echo "menuentry \"Configuración de la UEFI\" {"
+        echo "    fwsetup"
+        echo "}"
+        echo
+        echo "menuentry \"Apagar\" {"
+        echo "    halt"
+        echo "}"
+    } > "$MONTAJE/boot/efi/EFI/mikeos/grub-disco.cfg"
+
+    if [ "${_n_otros:-0}" -gt 0 ]; then
+        ok "GRUB instalado; $_n_otros sistema(s) más añadidos al menú"
+    else
+        ok "GRUB instalado, con el kernel como respaldo"
+    fi
+else
+    nota "sin GRUB en este medio: se arranca el kernel directamente."
+    # Sin GRUB, la ruta que prueba toda firmware tiene que llevar al kernel.
+    cp "$KERNEL" "$MONTAJE/boot/efi/EFI/BOOT/BOOTX64.EFI"
+fi
 
 # Y además se registra en la UEFI, que es lo que hace que aparezca con su
 # nombre en el menú de arranque en vez de como "disco genérico".
@@ -274,8 +849,25 @@ ZONA_HORARIA="$ZONA"
 EOF
 ok "fstab, teclado, zona horaria y nombre del equipo"
 
+# La contraseña, si la puso. -c sha512 NO es opcional: busybox cifra con DES
+# si no se le dice otra cosa, y DES se queda con los ocho primeros caracteres
+# y se rompe en un rato. Se escribe sobre el /etc/shadow del sistema RECIÉN
+# COPIADO, con -R, no sobre el del medio en vivo.
+if [ -n "$CLAVE" ]; then
+    if printf 'mike:%s\n' "$CLAVE" | chroot "$MONTAJE" /bin/busybox chpasswd -c sha512 2>/dev/null \
+       || printf 'mike:%s\n' "$CLAVE" | busybox chpasswd -c sha512 -R "$MONTAJE" 2>/dev/null; then
+        ok "contraseña de «mike» puesta (sha512)"
+    else
+        error "no se ha podido poner la contraseña; ponla al arrancar con «m-clave poner»."
+    fi
+    CLAVE=""; CLAVE2=""
+else
+    nota "sin contraseña: pon una al arrancar con «m-clave poner»."
+fi
+
 # --- Fin ---------------------------------------------------------------------
 sync
+[ -n "$MEDIO_TEMPORAL" ] && umount "$MEDIO_TEMPORAL" 2>/dev/null || true
 umount "$MONTAJE/boot/efi" 2>/dev/null || true
 [ "$FS" = "btrfs" ] && umount "$MONTAJE/home" 2>/dev/null || true
 umount "$MONTAJE" 2>/dev/null || true

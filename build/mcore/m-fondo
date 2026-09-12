@@ -39,7 +39,27 @@ actual() {
     printf '%s\n' "$_ruta"
 }
 
+# ¿Está puesto "los colores salen del fondo"? Se lee del mismo settings.json.
+ajuste_colores() {
+    [ -f "$CFG_DIR/settings.json" ] || { echo no; return; }
+    sed -n 's/.*"colores_del_fondo"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
+        "$CFG_DIR/settings.json" | head -1 | grep -q si && echo si || echo no
+}
+
 pintar() {
+    # Si el supervisor está en marcha (lo lanza Hyprland al entrar), basta con
+    # tumbar el swaybg actual: el bucle lo levanta al momento releyendo la
+    # ruta guardada. Antes se mataba Y se lanzaba uno aquí, así que acababa
+    # habiendo dos: el del supervisor y este. Se peleaban por la superficie y
+    # a veces ganaba el que llevaba el fondo anterior, que es justo el
+    # "he cambiado el fondo y sigue el de antes" que no tenía explicación.
+    if pgrep -f "m-fondo servicio" >/dev/null 2>&1; then
+        pkill -x swaybg 2>/dev/null || true
+        return 0
+    fi
+
+    # Sin supervisor (una sesión mínima, o alguien llamando a mano) sí hay que
+    # pintarlo aquí.
     _f="$(actual)"
     pkill -x swaybg 2>/dev/null || true
     # Un respiro: sin él, el swaybg nuevo puede arrancar antes de que el
@@ -63,6 +83,13 @@ case "${1:-actual}" in
             *)  _abs="$(cd "$(dirname "$2")" && pwd)/$(basename "$2")" ;;
         esac
         m-apply-settings set "wallpaper=$_abs" >/dev/null 2>&1
+        # Si la paleta venía del fondo, se vuelve a sacar del nuevo. Sin esto,
+        # cambiabas de fondo y el escritorio se quedaba con los colores del
+        # anterior: lo peor de las dos opciones.
+        if [ "$(ajuste_colores)" = "si" ] && command -v m-colores >/dev/null 2>&1; then
+            m-colores --aplicar "$_abs" >/dev/null 2>&1 \
+                && echo "[OK] Paleta del sistema actualizada desde el fondo."
+        fi
         pintar
         echo "[OK] Fondo: $_abs"
         ;;
@@ -88,7 +115,10 @@ case "${1:-actual}" in
             else
                 fallos=$((fallos + 1))
             fi
-            sleep 1
+            # Tras un cambio de fondo esta espera es un parpadeo en negro que
+            # se ve. Se reintenta enseguida; el frenazo de un segundo se deja
+            # sólo para cuando es un fallo de verdad y hay que no quemar CPU.
+            if [ "$fallos" -eq 0 ]; then sleep 0.2; else sleep 1; fi
         done
         echo "m-fondo: swaybg no arranca; se deja de intentar." >&2
         exit 1

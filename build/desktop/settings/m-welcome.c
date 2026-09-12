@@ -128,6 +128,44 @@ static void on_instalar_drivers(GtkWidget *w, gpointer data) {
     g_spawn_command_line_async("/usr/bin/m-terminal -e \"m-drivers --instalar\"", NULL);
 }
 
+/* ¿Estamos arrancados desde el USB en vivo, o desde un disco ya instalado?
+ *
+ * El init monta la raíz en overlay cuando arranca en vivo; instalado, la raíz
+ * es la partición de verdad. Mirar eso es más fiable que buscar el medio: un
+ * USB enchufado en un equipo ya instalado también aparecería. */
+static gboolean en_vivo(void) {
+    gboolean vivo = FALSE;
+    char *contenido = NULL;
+    if (g_file_get_contents("/proc/mounts", &contenido, NULL, NULL)) {
+        char **lineas = g_strsplit(contenido, "\n", -1);
+        for (int i = 0; lineas[i]; i++) {
+            char **campos = g_strsplit(lineas[i], " ", -1);
+            if (campos[0] && campos[1] && campos[2]
+                && g_strcmp0(campos[1], "/") == 0
+                && g_strcmp0(campos[2], "overlay") == 0) {
+                vivo = TRUE;
+            }
+            g_strfreev(campos);
+        }
+        g_strfreev(lineas);
+        g_free(contenido);
+    }
+    return vivo;
+}
+
+/* Instalar en el disco.
+ *
+ * Abre el instalador gráfico. La primera versión lanzaba m-install en una
+ * terminal "porque borra un disco y eso hay que verlo tal cual"; el problema
+ * es que una pantalla de texto preguntando por subvolúmenes de btrfs no la
+ * entiende la mayoría de la gente, y quien no la entiende no instala nada.
+ * El instalador gráfico enseña lo mismo -- qué disco, qué se borra, una
+ * confirmación explícita -- de forma que se pueda leer. */
+static void on_instalar_sistema(GtkWidget *w, gpointer data) {
+    (void)w; (void)data;
+    g_spawn_command_line_async("/usr/bin/m-instalador", NULL);
+}
+
 /* Abre el Centro de Control. Sustituye al párrafo que explicaba dónde estaba:
  * si hay que explicar con palabras dónde se pulsa algo, es que falta el
  * botón. */
@@ -374,6 +412,34 @@ int main(int argc, char **argv) {
     /* Derecha: el equipo, y un acceso al Centro de Control.
      * Donde antes había un párrafo explicando dónde estaba el panel de
      * ajustes, ahora hay un botón que lo abre. */
+    /* Instalar, sólo en el USB en vivo. Hasta ahora la única forma de
+     * instalar el sistema era saber que existía una orden llamada "m-install"
+     * y escribirla en una terminal: quien probaba el USB no tenía ninguna
+     * manera de descubrirlo. Va la primera de la columna porque es lo que la
+     * mayoría quiere hacer justo después de probarlo. */
+    if (en_vivo()) {
+        GtkWidget *tarjeta_inst = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
+        gtk_widget_set_name(tarjeta_inst, "tarjeta");
+        gtk_container_set_border_width(GTK_CONTAINER(tarjeta_inst), 18);
+        GtkWidget *t_in = gtk_label_new("Instalar en este equipo");
+        gtk_widget_set_name(t_in, "tarjetatitulo");
+        gtk_widget_set_halign(t_in, GTK_ALIGN_START);
+        GtkWidget *d_in = gtk_label_new(
+            "Ahora mismo MIKE OS corre en memoria: al apagar no queda nada.\n"
+            "El instalador te pregunta disco, sistema de archivos y contraseña\n"
+            "antes de tocar nada, y avisa de lo que va a borrar.");
+        gtk_widget_set_name(d_in, "customizetext");
+        gtk_widget_set_halign(d_in, GTK_ALIGN_START);
+        GtkWidget *b_in = gtk_button_new_with_label("Instalar MIKE OS");
+        gtk_widget_set_name(b_in, "gobtn");
+        gtk_widget_set_halign(b_in, GTK_ALIGN_START);
+        g_signal_connect(b_in, "clicked", G_CALLBACK(on_instalar_sistema), NULL);
+        gtk_box_pack_start(GTK_BOX(tarjeta_inst), t_in, FALSE, FALSE, 0);
+        gtk_box_pack_start(GTK_BOX(tarjeta_inst), d_in, FALSE, FALSE, 0);
+        gtk_box_pack_start(GTK_BOX(tarjeta_inst), b_in, FALSE, FALSE, 6);
+        gtk_box_pack_start(GTK_BOX(der), tarjeta_inst, FALSE, FALSE, 0);
+    }
+
     gtk_box_pack_start(GTK_BOX(der), build_hardware(), FALSE, FALSE, 0);
 
     GtkWidget *tarjeta_ajustes = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);

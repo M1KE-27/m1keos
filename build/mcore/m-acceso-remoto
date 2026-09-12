@@ -1,0 +1,199 @@
+#!/bin/sh
+# m-acceso-remoto - deja que alguien de fuera entre por SSH a echar una mano.
+#
+# Para qué: estás instalando MIKE OS y quieres que alguien que sabe más te lo
+# mire desde su casa. Esto le abre la puerta durante un rato, le da la
+# dirección a la que conectarse y una contraseña que puedes dictarle por
+# teléfono.
+#
+# Por qué hay contraseña y no se entra a pelo:
+#
+#   1. dropbear -- el servidor SSH de MIKE OS -- NO acepta cuentas con la
+#      contraseña vacía. Las rechaza siempre, así que "sin contraseña" no es
+#      una opción que exista, por mucho que se configure.
+#
+#   2. Y aunque existiera: instalar un sistema se hace muchas veces en el wifi
+#      de una oficina, una universidad o una cafetería. Sin contraseña,
+#      cualquiera en esa red entra; y como m-sudo da root a la cuenta «mike»
+#      sin preguntar, entrar es ser administrador del equipo.
+#
+# Se crea una CUENTA APARTE, con nombre de cuatro letras al azar, en vez de
+# abrir la tuya. Tres motivos:
+#
+#   · Quien escanea la red a ver qué encuentra prueba "root", "admin", "user",
+#     "mike". Cuatro letras al azar no están en esa lista.
+#   · Al cerrar, la cuenta se borra entera. No queda una contraseña temporal
+#     olvidada en la cuenta de verdad, que es lo que pasaba abriendo la tuya.
+#   · Tu cuenta y tus archivos siguen siendo tuyos aunque la ayuda venga de
+#     alguien a quien no conoces tanto.
+#
+# La cuenta va en el grupo «wheel» porque si no, no sirve para ayudar: media
+# instalación necesita privilegios. Quien entre por aquí puede hacer de todo en
+# el equipo, así que se activa para alguien de confianza y se cierra al acabar.
+#
+# Nombre y contraseña se generan al azar, se enseñan en pantalla y no se
+# guardan en ningún sitio.
+#
+#   m-acceso-remoto activar      crea la cuenta temporal y la imprime
+#   m-acceso-remoto estado       dice si está abierto y a qué dirección
+#   m-acceso-remoto cerrar       borra la cuenta temporal
+#
+# Salida de "activar" y "estado", pensada para que la lea el instalador:
+#   estado=abierto|cerrado
+#   ip=192.168.1.40
+#   usuario=abcd   (la cuenta temporal)
+#   clave=xxxx   (sólo en "activar")
+set -u
+
+PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
+export PATH
+
+# Dónde se anota qué cuenta temporal hay abierta, para poder cerrarla luego.
+# En /run: es tmpfs, así que desaparece al apagar aunque nadie cierre nada.
+MARCA=/run/mikeos-acceso-remoto
+
+como_root() {
+    if [ "$(id -u)" = "0" ]; then "$@"; else m-sudo "$@"; fi
+}
+
+# La dirección por la que se llega a este equipo. Se salta loopback y se queda
+# con la primera de una interfaz que esté levantada.
+direccion() {
+    ip -4 addr show 2>/dev/null \
+        | awk '/inet /{ if ($2 !~ /^127\./) { split($2,a,"/"); print a[1]; exit } }'
+}
+
+# Legible al teléfono: sin caracteres que se confundan al dictar (ni O ni 0,
+# ni l ni 1, ni I). Doce caracteres de este alfabeto son de sobra para algo que
+# dura lo que dura una instalación.
+generar() {
+    _alfabeto='abcdefghjkmnpqrstuvwxyz23456789'
+    _n="${#_alfabeto}"
+    _sal=""
+    _i=0
+    while [ "$_i" -lt 12 ]; do
+        # /dev/urandom, no $RANDOM: $RANDOM en un shell POSIX no existe, y
+        # donde existe es predecible.
+        _b="$(od -An -N1 -tu1 < /dev/urandom | tr -d ' \n')"
+        [ -z "$_b" ] && _b=0
+        _p=$(( (_b % _n) + 1 ))
+        _sal="$_sal$(printf '%s' "$_alfabeto" | cut -c"$_p")"
+        _i=$((_i + 1))
+        # Un guion cada cuatro: se dicta mucho mejor.
+        if [ "$_i" = "4" ] || [ "$_i" = "8" ]; then _sal="$_sal-"; fi
+    done
+    printf '%s' "$_sal"
+}
+
+# Nombre de cuenta: cuatro letras, sin dígitos. Un nombre de usuario que
+# empiece por número da problemas con algunas herramientas, y cuatro letras se
+# dictan de una vez.
+generar_nombre() {
+    _letras='abcdefghjkmnpqrstuvwxyz'
+    _n="${#_letras}"
+    _sal=""
+    _i=0
+    while [ "$_i" -lt 4 ]; do
+        _b="$(od -An -N1 -tu1 < /dev/urandom | tr -d ' \n')"
+        [ -z "$_b" ] && _b=0
+        _p=$(( (_b % _n) + 1 ))
+        _sal="$_sal$(printf '%s' "$_letras" | cut -c"$_p")"
+        _i=$((_i + 1))
+    done
+    printf '%s' "$_sal"
+}
+
+cuenta_abierta() {
+    [ -f "$MARCA" ] && head -1 "$MARCA" 2>/dev/null || true
+}
+
+case "${1:-estado}" in
+    activar)
+        if ! pgrep -x dropbear >/dev/null 2>&1; then
+            echo "estado=cerrado"
+            echo "error=El servicio SSH no está en marcha."
+            exit 1
+        fi
+        _ip="$(direccion)"
+        if [ -z "$_ip" ]; then
+            echo "estado=cerrado"
+            echo "error=Este equipo todavía no tiene dirección de red."
+            exit 1
+        fi
+        # Si ya había una abierta, se cierra antes: dos cuentas temporales
+        # sueltas es justo lo que no queremos dejar por ahí.
+        _vieja="$(cuenta_abierta)"
+        [ -n "$_vieja" ] && como_root deluser "$_vieja" >/dev/null 2>&1
+
+        # Se reintenta si el nombre ya existiera, que con cuatro letras puede
+        # pasar aunque sea raro.
+        _intentos=0
+        _cuenta=""
+        while [ "$_intentos" -lt 8 ]; do
+            _n="$(generar_nombre)"
+            if ! grep -q "^$_n:" /etc/passwd 2>/dev/null; then _cuenta="$_n"; break; fi
+            _intentos=$((_intentos + 1))
+        done
+        if [ -z "$_cuenta" ]; then
+            echo "estado=cerrado"
+            echo "error=No se ha podido crear la cuenta temporal."
+            exit 1
+        fi
+
+        # -D: sin preguntar nada. -H: sin carpeta personal, no hace falta para
+        # entrar y arreglar cosas, y así no queda nada que limpiar.
+        if ! como_root adduser -D -H -s /bin/bash "$_cuenta" >/dev/null 2>&1; then
+            echo "estado=cerrado"
+            echo "error=No se ha podido crear la cuenta temporal."
+            exit 1
+        fi
+        # En wheel, o no podría ayudar con nada que necesite privilegios.
+        como_root addgroup "$_cuenta" wheel >/dev/null 2>&1 || true
+
+        _clave="$(generar)"
+        # sha512 explícito: busybox cifra con DES si no se le dice otra cosa,
+        # y DES sólo mira los ocho primeros caracteres.
+        if printf '%s:%s\n' "$_cuenta" "$_clave" | como_root chpasswd -c sha512 >/dev/null 2>&1; then
+            printf '%s\n' "$_cuenta" | como_root tee "$MARCA" >/dev/null 2>&1
+            echo "estado=abierto"
+            echo "ip=$_ip"
+            echo "usuario=$_cuenta"
+            echo "clave=$_clave"
+        else
+            como_root deluser "$_cuenta" >/dev/null 2>&1
+            echo "estado=cerrado"
+            echo "error=No se ha podido fijar la contraseña."
+            exit 1
+        fi
+        ;;
+
+    estado)
+        _c="$(cuenta_abierta)"
+        if [ -n "$_c" ] && grep -q "^$_c:" /etc/passwd 2>/dev/null \
+           && pgrep -x dropbear >/dev/null 2>&1; then
+            echo "estado=abierto"
+            echo "usuario=$_c"
+        else
+            echo "estado=cerrado"
+        fi
+        echo "ip=$(direccion)"
+        ;;
+
+    cerrar)
+        # La cuenta temporal se borra entera. No se para dropbear: quien esté
+        # dentro ahora mismo puede estar a media faena, y cortarle la sesión
+        # sería peor que dejarle terminar. Sin cuenta, nadie más entra.
+        _c="$(cuenta_abierta)"
+        if [ -n "$_c" ]; then
+            como_root deluser "$_c" >/dev/null 2>&1 || true
+            como_root rm -f "$MARCA" >/dev/null 2>&1 || true
+        fi
+        echo "estado=cerrado"
+        echo "ip=$(direccion)"
+        ;;
+
+    *)
+        echo "Uso: m-acceso-remoto [activar|estado|cerrar]" >&2
+        exit 1
+        ;;
+esac

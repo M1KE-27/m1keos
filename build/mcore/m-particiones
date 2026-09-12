@@ -1,0 +1,367 @@
+#!/bin/sh
+# m-particiones - qué hay dentro de un disco, y si se puede instalar ahí.
+#
+# El instalador sólo sabía "borrar el disco entero". Para poder ofrecer
+# instalar AL LADO de otro sistema, reemplazar una partición concreta, o
+# avisar de que estás a punto de borrar un Windows, hace falta primero saber
+# qué hay. Eso es lo que responde esto.
+#
+# Sale en líneas "clave=valor" y no en una tabla bonita porque quien lo lee es
+# el instalador gráfico. Para mirarlo una persona está "m-disk".
+#
+#   m-particiones ver <disco>        qué hay en ese disco
+#   m-particiones libre <disco>      el mayor hueco sin asignar, en bytes
+#   m-particiones comprobar <disco> <modo> [particion]
+#                                    ¿se puede instalar así? (ver abajo)
+#   m-particiones otros-sistemas     qué otros sistemas operativos hay
+#
+# Modos que entiende "comprobar":
+#   borrar       se borra el disco entero
+#   al-lado      se usa el espacio libre que haya
+#   reemplazar   se usa una partición concreta, borrando lo que tenga
+set -eu
+
+PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
+export PATH
+
+# Tamaño mínimo razonable para la raíz. Por debajo de esto el sistema entra,
+# pero no queda sitio para actualizaciones ni para instalar nada.
+MINIMO_RAIZ=$((12 * 1024 * 1024 * 1024))
+# Lo que ocupa la partición EFI que crea m-install.
+ESP_BYTES=$((512 * 1024 * 1024))
+
+como_root() {
+    if [ "$(id -u)" = "0" ]; then "$@"; else m-sudo "$@"; fi
+}
+
+# Los mensajes salen en el idioma que pida quien llama (MIKEOS_LANG=en|es).
+# El instalador arranca en inglés, y que la interfaz esté en inglés mientras
+# los avisos salen en español queda a medio hacer -- y estos avisos son
+# justamente los que hay que entender antes de borrar un disco.
+IDIOMA="${MIKEOS_LANG:-es}"
+case "$IDIOMA" in en|en_*|EN) IDIOMA=en ;; *) IDIOMA=es ;; esac
+
+# msj <clave> [sustituciones...]  -- %s en el texto, en orden.
+msj() {
+    _c="$1"; shift
+    if [ "$IDIOMA" = "en" ]; then
+        case "$_c" in
+          no_disco)   _t="The disk is no longer there." ;;
+          bios)       _t="This computer booted in old BIOS mode, not UEFI. MIKE OS only boots via UEFI: go into your firmware settings and turn off Legacy or CSM mode." ;;
+          pequeno)    _t="The disk is %s GB and at least %s GB are needed." ;;
+          sin_hueco)  _t="Only %s GB are free, and %s GB are needed. Free up space from the other system, or pick another option." ;;
+          sin_part)   _t="You have not chosen which partition to replace." ;;
+          part_chica) _t="That partition is %s GB and at least %s GB are needed." ;;
+          part_usada) _t="That partition is in use right now." ;;
+          sin_esp)    _t="This disk has no EFI partition and is not being erased, so there is nowhere to put the boot files. Choose to erase the disk, or create a 512 MB EFI partition first." ;;
+          esp_chica)  _t="The EFI partition on this disk is only %s MB and the MIKE OS boot files will not fit." ;;
+          esp_justa)  _t="The EFI partition is small (%s MB). It will just about fit; if it fails, space will have to be freed there." ;;
+          msdos)      _t="This disk uses an old MSDOS partition table and UEFI booting needs GPT. Converting it erases the whole disk, so you have to choose «erase the disk»." ;;
+          borra_so)   _t="«%s» will be erased, on %s." ;;
+          secureboot) _t="Secure Boot is on. MIKE OS is not signed by Microsoft, so it will have to be turned off in your firmware settings before the installed system will boot." ;;
+          *) _t="$_c" ;;
+        esac
+    else
+        case "$_c" in
+          no_disco)   _t="El disco indicado ya no está." ;;
+          bios)       _t="Este equipo ha arrancado en modo BIOS antiguo, no en UEFI. MIKE OS sólo arranca por UEFI: entra en la configuración de la placa y desactiva el modo Legacy o CSM." ;;
+          pequeno)    _t="El disco tiene %s GB y hacen falta al menos %s GB." ;;
+          sin_hueco)  _t="Sólo hay %s GB sin usar, y hacen falta %s GB. Libera espacio desde el otro sistema o elige otra opción." ;;
+          sin_part)   _t="No has elegido qué partición reemplazar." ;;
+          part_chica) _t="Esa partición tiene %s GB y hacen falta al menos %s GB." ;;
+          part_usada) _t="Esa partición está en uso ahora mismo." ;;
+          sin_esp)    _t="Este disco no tiene partición EFI y no se va a borrar entero, así que no hay dónde poner el arranque. Elige borrar el disco, o crea antes una partición EFI de 512 MB." ;;
+          esp_chica)  _t="La partición EFI de este disco es de sólo %s MB y no cabe el arranque de MIKE OS." ;;
+          esp_justa)  _t="La partición EFI es pequeña (%s MB). Entrará justo; si da error, habrá que hacer sitio ahí." ;;
+          msdos)      _t="Este disco usa una tabla de particiones antigua (MSDOS) y el arranque por UEFI necesita GPT. Convertirla borra el disco entero, así que hay que elegir «borrar el disco»." ;;
+          borra_so)   _t="Se va a borrar «%s», que está en %s." ;;
+          secureboot) _t="Secure Boot está activado. MIKE OS no lleva la firma de Microsoft, así que habrá que desactivarlo en la configuración de la placa antes de arrancar el sistema instalado." ;;
+          *) _t="$_c" ;;
+        esac
+    fi
+    # shellcheck disable=SC2059
+    printf "$_t\n" "$@"
+}
+
+# Qué sistema operativo vive en una partición. No se adivina por el tipo de
+# partición -- eso miente a menudo -- sino mirando si están los archivos que
+# cada sistema deja siempre.
+que_sistema() {
+    _dev="$1"
+    _fs="$2"
+    _punto=/tmp/m-particiones-mirar
+    mkdir -p "$_punto" 2>/dev/null || { echo "desconocido"; return; }
+
+    case "$_fs" in
+        ntfs) _opts="-t ntfs-3g -o ro" ;;
+        vfat) _opts="-t vfat -o ro" ;;
+        # En btrfs el sistema suele vivir dentro de un subvolumen, no en la
+        # raíz del volumen. Montado a pelo se ve el nivel de arriba -- sólo
+        # @ , @home y las instantáneas -- donde no hay ningún /etc que mirar,
+        # y cualquier instalación de MIKE OS o de otra distro salía como
+        # "desconocido". Se prueba primero @ , que es lo que usa todo el mundo.
+        btrfs) _opts="-t btrfs -o ro,subvol=@" ;;
+        *)    _opts="-o ro" ;;
+    esac
+
+    # shellcheck disable=SC2086
+    if ! como_root mount $_opts "$_dev" "$_punto" 2>/dev/null; then
+        # Si no hay subvolumen @ (una instalación sin subvolúmenes), se prueba
+        # el volumen tal cual antes de rendirse.
+        if [ "$_fs" != "btrfs" ] || \
+           ! como_root mount -t btrfs -o ro "$_dev" "$_punto" 2>/dev/null; then
+            echo "desconocido"
+            return
+        fi
+    fi
+
+    _r="desconocido"
+    if [ -f "$_punto/etc/mikeos/os-release" ] || [ -f "$_punto/etc/mikeos/system.conf" ]; then
+        _r="MIKE OS"
+    elif [ -d "$_punto/Windows/System32" ] || [ -d "$_punto/WINDOWS/system32" ]; then
+        _r="Windows"
+    elif [ -f "$_punto/EFI/Microsoft/Boot/bootmgfw.efi" ]; then
+        [ "$IDIOMA" = "en" ] && _r="Windows boot files" || _r="Arranque de Windows"
+    elif [ -d "$_punto/EFI" ]; then
+        [ "$IDIOMA" = "en" ] && _r="EFI partition" || _r="Partición EFI"
+    elif [ -f "$_punto/etc/os-release" ]; then
+        _r="$(sed -n 's/^PRETTY_NAME="\(.*\)"/\1/p' "$_punto/etc/os-release" 2>/dev/null | head -1)"
+        [ -n "$_r" ] || _r="Linux"
+    elif [ -d "$_punto/System/Library/CoreServices" ]; then
+        _r="macOS"
+    fi
+
+    como_root umount "$_punto" 2>/dev/null || true
+    printf '%s\n' "$_r"
+}
+
+listar_particiones() {
+    _disco="$1"
+    _base="$(basename "$_disco")"
+    for _p in /sys/block/"$_base"/"$_base"*; do
+        [ -d "$_p" ] || continue
+        _n="$(basename "$_p")"
+        _dev="/dev/$_n"
+        [ -b "$_dev" ] || continue
+        _sect="$(cat "$_p/size" 2>/dev/null || echo 0)"
+        _ini="$(cat "$_p/start" 2>/dev/null || echo 0)"
+        # como_root: blkid lee el dispositivo directamente y sin privilegios
+        # devuelve vacío sin quejarse. Sin esto, todas las particiones salían
+        # como "sin-formato" y no se reconocía ningún sistema.
+        _fs="$(como_root blkid -s TYPE -o value "$_dev" 2>/dev/null || true)"
+        _lab="$(como_root blkid -s LABEL -o value "$_dev" 2>/dev/null || true)"
+        _montada=no
+        grep -qE "^$_dev " /proc/mounts 2>/dev/null && _montada=si
+        printf '%s\t%s\t%s\t%s\t%s\t%s\n' \
+            "$_dev" "$((_sect * 512))" "${_fs:-sin-formato}" \
+            "${_lab:-}" "$_montada" "$((_ini * 512))"
+    done
+}
+
+case "${1:-}" in
+    ver)
+        DISCO="${2:-}"
+        [ -b "$DISCO" ] || { echo "error=no es un disco"; exit 1; }
+        BASE="$(basename "$DISCO")"
+
+        echo "disco=$DISCO"
+        echo "bytes=$(( $(cat "/sys/block/$BASE/size" 2>/dev/null || echo 0) * 512 ))"
+
+        # Tipo de tabla. Importa mucho: en un disco con tabla MSDOS no se
+        # puede arrancar por UEFI sin rehacerla, y eso borra todo lo que haya.
+        _tabla="$(como_root blkid -s PTTYPE -o value "$DISCO" 2>/dev/null || true)"
+        echo "tabla=${_tabla:-ninguna}"
+
+        _n=0
+        listar_particiones "$DISCO" | while IFS="$(printf '\t')" read -r dev bytes fs lab mont ini; do
+            _n=$((_n + 1))
+            echo "particion=$dev"
+            echo "  bytes=$bytes"
+            echo "  fs=$fs"
+            echo "  etiqueta=$lab"
+            echo "  montada=$mont"
+            echo "  inicio=$ini"
+            echo "  sistema=$(que_sistema "$dev" "$fs")"
+        done
+        ;;
+
+    libre)
+        DISCO="${2:-}"
+        [ -b "$DISCO" ] || { echo 0; exit 1; }
+        BASE="$(basename "$DISCO")"
+        TOTAL=$(( $(cat "/sys/block/$BASE/size" 2>/dev/null || echo 0) * 512 ))
+
+        # Sin tabla de particiones, el disco entero está libre. Es el caso de
+        # un disco nuevo, y hay que decirlo bien: informar de 0 haría que el
+        # instalador creyera que no cabe nada.
+        _tabla="$(como_root blkid -s PTTYPE -o value "$DISCO" 2>/dev/null || true)"
+        if [ -z "$_tabla" ]; then
+            echo "$TOTAL"
+            exit 0
+        fi
+
+        # Con tabla: el mayor hueco SEGUIDO. No vale "total menos lo ocupado",
+        # porque el espacio libre puede estar partido en trozos y sólo sirve el
+        # más grande de ellos.
+        #
+        # Se calcula ordenando las particiones por dónde empiezan y midiendo
+        # los huecos entre el final de una y el principio de la siguiente. Se
+        # hace a mano y no con parted porque parted no funciona aquí (ver
+        # scripts/build.sh).
+        listar_particiones "$DISCO" \
+            | awk -F"$(printf '\t')" '{ print $6, $2 }' \
+            | sort -n \
+            | awk -v total="$TOTAL" '
+                BEGIN { fin = 1048576; max = 0 }   # el primer MiB no se usa
+                {
+                    if ($1 > fin) { hueco = $1 - fin; if (hueco > max) max = hueco }
+                    if ($1 + $2 > fin) fin = $1 + $2
+                }
+                END {
+                    # Y el hueco del final, que es el caso más común: alguien
+                    # encogió Windows y dejó sitio detrás.
+                    if (total > fin) { hueco = total - fin; if (hueco > max) max = hueco }
+                    print max + 0
+                }'
+        ;;
+
+    otros-sistemas)
+        # Recorre TODAS las particiones de TODOS los discos buscando otros
+        # sistemas. Sirve para dos cosas: avisar antes de borrarlos, y añadirlos
+        # al menú de GRUB después de instalar.
+        for _d in /sys/block/*; do
+            _n="$(basename "$_d")"
+            case "$_n" in loop*|ram*|sr*|fd*|dm-*|zram*) continue ;; esac
+            [ -b "/dev/$_n" ] || continue
+            listar_particiones "/dev/$_n" | while IFS="$(printf '\t')" read -r dev bytes fs lab mont ini; do
+                _s="$(que_sistema "$dev" "$fs")"
+                case "$_s" in
+                    desconocido|"Partición EFI"|"EFI partition") continue ;;
+                esac
+                printf '%s\t%s\t%s\n' "$dev" "$_s" "$bytes"
+            done
+        done
+        ;;
+
+    comprobar)
+        # Todo lo que puede salir mal ANTES de tocar el disco. Cada problema
+        # sale como "error=" (no se puede seguir) o "aviso=" (se puede, pero
+        # hay que saberlo). El instalador los enseña y te devuelve al paso de
+        # las particiones en vez de dejarte con medio sistema escrito.
+        DISCO="${2:-}"
+        MODO="${3:-borrar}"
+        OBJETIVO="${4:-}"
+        [ -b "$DISCO" ] || { echo "error=$(msj no_disco)"; exit 1; }
+        BASE="$(basename "$DISCO")"
+        TOTAL=$(( $(cat "/sys/block/$BASE/size" 2>/dev/null || echo 0) * 512 ))
+
+        PROBLEMAS=0
+
+        # 1. Arrancar por UEFI es obligatorio: este kernel no sabe arrancar por
+        #    BIOS y no lo va a saber. Si el equipo arrancó en modo antiguo, el
+        #    sistema instalado no encendería y no habría forma de saber por qué.
+        if [ ! -d /sys/firmware/efi ]; then
+            echo "error=$(msj bios)"
+            PROBLEMAS=$((PROBLEMAS + 1))
+        fi
+
+        # 2. Sitio suficiente.
+        case "$MODO" in
+            borrar)
+                if [ "$TOTAL" -lt $((MINIMO_RAIZ + ESP_BYTES)) ]; then
+                    echo "error=$(msj pequeno "$((TOTAL / 1000000000))" "$(((MINIMO_RAIZ + ESP_BYTES) / 1000000000))")"
+                    PROBLEMAS=$((PROBLEMAS + 1))
+                fi
+                ;;
+            al-lado)
+                _libre="$("$0" libre "$DISCO" 2>/dev/null || echo 0)"
+                if [ "${_libre:-0}" -lt $((MINIMO_RAIZ + ESP_BYTES)) ]; then
+                    echo "error=$(msj sin_hueco "$(( ${_libre:-0} / 1000000000 ))" "$(((MINIMO_RAIZ + ESP_BYTES) / 1000000000))")"
+                    PROBLEMAS=$((PROBLEMAS + 1))
+                fi
+                ;;
+            reemplazar)
+                if [ ! -b "$OBJETIVO" ]; then
+                    echo "error=$(msj sin_part)"
+                    PROBLEMAS=$((PROBLEMAS + 1))
+                else
+                    _pb="$(( $(cat "/sys/class/block/$(basename "$OBJETIVO")/size" 2>/dev/null || echo 0) * 512 ))"
+                    if [ "$_pb" -lt "$MINIMO_RAIZ" ]; then
+                        echo "error=$(msj part_chica "$((_pb / 1000000000))" "$((MINIMO_RAIZ / 1000000000))")"
+                        PROBLEMAS=$((PROBLEMAS + 1))
+                    fi
+                    if grep -qE "^$OBJETIVO " /proc/mounts 2>/dev/null; then
+                        echo "error=$(msj part_usada)"
+                        PROBLEMAS=$((PROBLEMAS + 1))
+                    fi
+                fi
+                ;;
+        esac
+
+        # 3. La partición EFI. Sin ella no hay arranque, y es el fallo que más
+        #    veces deja un equipo sin encender después de instalar.
+        _esp=""
+        for _p in $(listar_particiones "$DISCO" | awk -F"$(printf '\t')" '$3 == "vfat" { print $1 }'); do
+            _esp="$_p"
+            break
+        done
+        if [ "$MODO" != "borrar" ]; then
+            if [ -z "$_esp" ]; then
+                echo "error=$(msj sin_esp)"
+                PROBLEMAS=$((PROBLEMAS + 1))
+            else
+                _eb="$(( $(cat "/sys/class/block/$(basename "$_esp")/size" 2>/dev/null || echo 0) * 512 ))"
+                # 100 MB es el mínimo del estándar; por debajo de 60 no cabe
+                # ni nuestro GRUB, que son 16 MB, más lo que ya hubiera.
+                if [ "$_eb" -lt $((60 * 1024 * 1024)) ]; then
+                    echo "error=$(msj esp_chica "$((_eb / 1024 / 1024))")"
+                    PROBLEMAS=$((PROBLEMAS + 1))
+                elif [ "$_eb" -lt $((200 * 1024 * 1024)) ]; then
+                    echo "aviso=$(msj esp_justa "$((_eb / 1024 / 1024))")"
+                fi
+            fi
+        fi
+
+        # 4. Tabla de particiones incompatible. Un disco MSDOS con cosas dentro
+        #    no se puede convertir a GPT sin borrarlo.
+        _tabla="$(como_root blkid -s PTTYPE -o value "$DISCO" 2>/dev/null || true)"
+        if [ "$MODO" != "borrar" ] && [ "$_tabla" = "dos" ]; then
+            echo "error=$(msj msdos)"
+            PROBLEMAS=$((PROBLEMAS + 1))
+        fi
+
+        # 5. Otros sistemas que se van a perder. No impide seguir -- es tu
+        #    disco -- pero decirlo DESPUÉS no sirve de nada.
+        if [ "$MODO" = "borrar" ]; then
+            listar_particiones "$DISCO" | while IFS="$(printf '\t')" read -r dev bytes fs lab mont ini; do
+                _s="$(que_sistema "$dev" "$fs")"
+                case "$_s" in
+                    desconocido|"Partición EFI"|"EFI partition") ;;
+                    *) echo "aviso=$(msj borra_so "$_s" "$dev")" ;;
+                esac
+            done
+        fi
+
+        # 6. Secure Boot. El kernel de MIKE OS no lleva la firma de Microsoft,
+        #    así que con Secure Boot activo la firmware se niega a arrancarlo.
+        if [ -d /sys/firmware/efi/efivars ]; then
+            _sb="$(od -An -t u1 -j 4 -N 1 \
+                   /sys/firmware/efi/efivars/SecureBoot-* 2>/dev/null \
+                   | tr -d ' \n' || true)"
+            if [ "$_sb" = "1" ]; then
+                echo "aviso=$(msj secureboot)"
+            fi
+        fi
+
+        if [ "$PROBLEMAS" -eq 0 ]; then
+            echo "resultado=ok"
+        else
+            echo "resultado=no"
+        fi
+        ;;
+
+    *)
+        echo "Uso: m-particiones [ver|libre|otros-sistemas|comprobar] <disco> ..." >&2
+        exit 1
+        ;;
+esac

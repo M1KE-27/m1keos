@@ -41,6 +41,49 @@ static double terminal_alpha(void) {
     return pct / 100.0;
 }
 
+/* Un color de settings.json.
+ *
+ * Se lee a mano en vez de con una librería de JSON porque el archivo lo
+ * escribe m-apply-settings con un formato fijo, una clave por línea, y meter
+ * un analizador entero para sacar siete cadenas de seis caracteres sería
+ * cargar la terminal con una dependencia por nada.
+ *
+ * Para qué: cuando la paleta sale del fondo de pantalla (m-colores), la
+ * terminal tiene que ir a juego con el resto. Antes llevaba sus colores
+ * escritos dentro, así que el escritorio cambiaba de color y ella se quedaba
+ * en gris azulado, que es justo lo que se nota. */
+static gboolean color_ajuste(const char *clave, GdkRGBA *salida) {
+    const char *home = g_getenv("HOME");
+    char path[512];
+    snprintf(path, sizeof(path), "%s/.config/mike/settings.json",
+             home && *home ? home : "/root");
+    FILE *f = fopen(path, "r");
+    if (!f) return FALSE;
+
+    char linea[512];
+    char patron[128];
+    snprintf(patron, sizeof(patron), "\"%s\"", clave);
+    gboolean hallado = FALSE;
+
+    while (fgets(linea, sizeof(linea), f)) {
+        char *k = strstr(linea, patron);
+        if (!k) continue;
+        /* El valor es lo que va entre las comillas de después de los dos
+         * puntos: "clave": "#rrggbb", */
+        char *dp = strchr(k + strlen(patron), ':');
+        if (!dp) continue;
+        char *c1 = strchr(dp, '"');
+        if (!c1) continue;
+        char *c2 = strchr(c1 + 1, '"');
+        if (!c2) continue;
+        *c2 = '\0';
+        hallado = gdk_rgba_parse(salida, c1 + 1);
+        break;
+    }
+    fclose(f);
+    return hallado;
+}
+
 static char *tab_cwd(VteTerminal *terminal) {
     const char *uri = vte_terminal_get_current_directory_uri(terminal);
     if (!uri || !*uri) return g_strdup(initial_cwd());
@@ -102,9 +145,20 @@ static void add_tab(MTerminal *app, const char *cwd) {
     PangoFontDescription *font = pango_font_description_from_string("Monospace 11");
     vte_terminal_set_font(terminal, font);
     pango_font_description_free(font);
+    /* Los valores de aquí son los de siempre: si el archivo de ajustes falta
+     * o no trae la clave, la terminal sale exactamente igual que antes. */
     GdkRGBA foreground = { 0.85, 0.85, 0.85, 1.0 };
-    GdkRGBA background = { 0.07, 0.07, 0.08, terminal_alpha() };
+    GdkRGBA background = { 0.07, 0.07, 0.08, 1.0 };
     GdkRGBA cursor = { 0.80, 0.80, 0.82, 1.0 };
+    color_ajuste("color_texto", &foreground);
+    color_ajuste("color_fondo", &background);
+    if (!color_ajuste("accent_color", &cursor)) {
+        cursor.red = 0.80; cursor.green = 0.80; cursor.blue = 0.82; cursor.alpha = 1.0;
+    }
+    /* La transparencia manda sobre lo que traiga el color: es un ajuste
+     * aparte y el usuario espera que se respete. */
+    background.alpha = terminal_alpha();
+    cursor.alpha = 1.0;
     vte_terminal_set_colors(terminal, &foreground, &background, NULL, 0);
     vte_terminal_set_color_cursor(terminal, &cursor);
     vte_terminal_set_scrollback_lines(terminal, 10000);

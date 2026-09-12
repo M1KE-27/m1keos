@@ -1,0 +1,40 @@
+#!/bin/sh
+# m-instalador - abre el instalador de MIKE OS.
+#
+# Lo llama el botón de la ventana de bienvenida. Lanza instalador.qml en su
+# propia instancia de Quickshell, igual que la pantalla de bloqueo: la barra
+# sigue con la suya y, si el instalador se cierra, el escritorio no se entera.
+#
+# El instalador NO se ejecuta como root. Pide privilegios sólo cuando toca
+# tocar el disco, y lo hace llamando a "m-sudo m-install". Correr toda la
+# interfaz como root significaría que un fallo en el QML corre como root, y no
+# hay ninguna razón para eso: dibujar botones no necesita privilegios.
+set -u
+
+QML="${HOME:-/root}/.config/mike/quickshell/instalador.qml"
+[ -f "$QML" ] || QML="/etc/mikeos/desktop/instalador.qml"
+
+if [ ! -f "$QML" ]; then
+    echo "m-instalador: falta instalador.qml." >&2
+    exit 1
+fi
+
+# Uno y no más: dos instaladores a la vez podrían mandarle a m-install dos
+# discos distintos.
+# Se busca la invocación EXACTA de quickshell, no el nombre del archivo
+# suelto: "instalador.qml" aparece en cualquier orden que lo mencione -- un
+# "cp", un editor, un grep -- y la guardia daba por hecho que ya había
+# uno en marcha cuando no lo había.
+if pgrep -f "quickshell .*instalador\.qml" >/dev/null 2>&1; then
+    exit 0
+fi
+
+# Instalar sobre el propio sistema instalado no tiene sentido y es la mejor
+# forma de que alguien se borre su equipo por error. Sólo desde el USB en vivo,
+# que se reconoce porque la raíz va montada en overlay.
+if ! grep -qE "^overlay / overlay" /proc/mounts 2>/dev/null; then
+    echo "m-instalador: esto ya es un MIKE OS instalado; no hay nada que instalar." >&2
+    exit 1
+fi
+
+exec quickshell -p "$QML"

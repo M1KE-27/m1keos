@@ -254,7 +254,6 @@ rm -rf "$DESK_SPEC"
 mkdir -p "$DESK_SPEC/root/usr/bin"
 mkdir -p "$DESK_SPEC/root/etc/skel/.config/mike/quickshell"
 mkdir -p "$DESK_SPEC/root/etc/skel/.config/mike/theme"
-mkdir -p "$DESK_SPEC/root/etc/skel/.config/mike/waybar"
 mkdir -p "$DESK_SPEC/root/etc/mikeos/desktop"
 
 # Copiar binarios y scripts ejecutables
@@ -273,11 +272,16 @@ chmod 755 "$DESK_SPEC/root/usr/bin"/*
 cp "$PROJECT_ROOT/build/desktop/hyprland.conf" "$DESK_SPEC/root/etc/skel/.config/mike/"
 cp "$PROJECT_ROOT/build/desktop/hyprland.local.conf" "$DESK_SPEC/root/etc/skel/.config/mike/"
 cp "$PROJECT_ROOT/build/desktop/hyprland.conf" "$DESK_SPEC/root/etc/mikeos/desktop/"
-cp "$PROJECT_ROOT/build/desktop/quickshell/shell.qml" "$DESK_SPEC/root/etc/skel/.config/mike/quickshell/"
-cp "$PROJECT_ROOT/build/desktop/quickshell/shell.qml" "$DESK_SPEC/root/etc/mikeos/desktop/"
+# Todos los componentes QML, no sólo shell.qml: sin Paleta.qml y sin qmldir
+# la barra no llega ni a dibujarse ("Dato is not a type"). El paquete llevaba
+# únicamente shell.qml, así que un "mpm upgrade" del escritorio entregaba una
+# barra que no arrancaba.
+"$PROJECT_ROOT/scripts/qmldir.sh"
+for _qc in "$PROJECT_ROOT"/build/desktop/quickshell/*.qml "$PROJECT_ROOT"/build/desktop/quickshell/qmldir; do
+    cp "$_qc" "$DESK_SPEC/root/etc/skel/.config/mike/quickshell/"
+    cp "$_qc" "$DESK_SPEC/root/etc/mikeos/desktop/"
+done
 cp "$PROJECT_ROOT/build/desktop/theme/colors.conf" "$DESK_SPEC/root/etc/skel/.config/mike/theme/"
-cp "$PROJECT_ROOT/build/desktop/waybar/config.jsonc" "$DESK_SPEC/root/etc/skel/.config/mike/waybar/"
-cp "$PROJECT_ROOT/build/desktop/waybar/style.css" "$DESK_SPEC/root/etc/skel/.config/mike/waybar/"
 
 cat << 'EOF' > "$DESK_SPEC/meta.json"
 {

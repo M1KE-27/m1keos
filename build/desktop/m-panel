@@ -1,6 +1,5 @@
 #!/bin/sh
-# MIKE OS panel launcher: Waybar cuando está disponible; Quickshell como
-# fallback ligero incluido en el perfil gráfico.
+# MIKE OS panel launcher: lanza y supervisa la barra de Quickshell.
 #
 # Supervisa el panel en vez de lanzarlo y olvidarse: si Quickshell muere (un
 # fallo de QML, un `pkill` de m-apply-settings que no llegó a relanzarlo, un
@@ -8,9 +7,7 @@
 # caída dejaba el escritorio sin barra hasta reiniciar la sesión entera.
 set -u
 
-CONFIG="${HOME:-/root}/.config/mike/waybar"
 SHELL_QML="${HOME:-/root}/.config/mike/quickshell/shell.qml"
-mkdir -p "$CONFIG"
 
 # Un reinicio inmediato en bucle quemaría CPU si el panel no arranca nunca
 # (por ejemplo, un error de sintaxis en shell.qml). Se corta tras varios
@@ -22,17 +19,13 @@ run_panel() {
     # La barra de MIKE OS es la de Quickshell: la que se configura desde el
     # Centro de Control, con sus módulos, sus zonas y su paleta.
     #
-    # Antes waybar iba primero "si está disponible". O sea que instalar waybar
-    # por cualquier motivo hacía desaparecer la barra del sistema y la
-    # sustituía en silencio por otra con una configuración de hace versiones.
-    # Nadie relacionaría una cosa con la otra.
+    # Aquí hubo una rama de respaldo a waybar que no podía ejecutarse nunca,
+    # porque waybar no se empaqueta en el sistema. Lo único que hacía era
+    # prometer una red de seguridad inexistente y arrastrar una configuración
+    # de hace versiones. Si algún día falta Quickshell, el escritorio se queda
+    # sin barra y hay que enterarse, no disimularlo.
     if command -v quickshell >/dev/null 2>&1 && [ -f "$SHELL_QML" ]; then
         quickshell -p "$SHELL_QML"
-        return $?
-    fi
-    # waybar queda de red de seguridad, por si algún día no hubiera Quickshell.
-    if command -v waybar >/dev/null 2>&1; then
-        waybar -c "$CONFIG/config.jsonc" -s "$CONFIG/style.css"
         return $?
     fi
     return 127
@@ -43,9 +36,9 @@ while :; do
     run_panel
     RC=$?
 
-    # 127 = no hay ningún panel instalado: no tiene sentido reintentar.
+    # 127 = no hay panel instalado: no tiene sentido reintentar.
     if [ "$RC" = "127" ]; then
-        echo "m-panel: no hay panel disponible (ni waybar ni quickshell)." >&2
+        echo "m-panel: falta quickshell o su shell.qml; no hay barra." >&2
         while :; do sleep 3600; done
     fi
 

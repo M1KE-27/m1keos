@@ -208,6 +208,13 @@ Canvas {
             ctx.beginPath()
             ctx.moveTo(3, 14); ctx.lineTo(12, 19); ctx.lineTo(21, 14); ctx.stroke()
             return
+        case "bloqueo":
+            // Candado: el cuerpo abajo y el arco por encima, en la misma
+            // rejilla de 24x24 que el resto.
+            caja(ctx, 5, 11, 14, 9, 2)
+            arco(ctx, 12, 11, 4.2, Math.PI, Math.PI * 2)
+            linea(ctx, 12, 14, 12, 17)
+            return
         case "servicios":
             circulo(ctx, 12, 12, 3, false)
             linea(ctx, 12, 3, 12, 6);   linea(ctx, 12, 18, 12, 21)

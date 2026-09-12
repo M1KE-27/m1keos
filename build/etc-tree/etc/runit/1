@@ -13,6 +13,28 @@ mountpoint -q /dev/pts || mount -t devpts devpts /dev/pts -o mode=0620,gid=5 2>/
 mountpoint -q /dev/shm || mount -t tmpfs -o mode=1777,nosuid,nodev tmpfs /dev/shm 2>/dev/null || true
 mountpoint -q /run || mount -t tmpfs none /run 2>/dev/null || true
 mountpoint -q /tmp || mount -t tmpfs none /tmp 2>/dev/null || true
+# Y ahora lo que pida /etc/fstab: el resto de particiones del equipo.
+#
+# Esto FALTABA, y era la razón de que un sistema instalado arrancara a una
+# consola pelada. m-install deja /home en su propio subvolumen de btrfs (@home)
+# y la partición EFI en /boot/efi, los dos apuntados en fstab. Como aquí sólo
+# se montaban los sistemas virtuales, ninguno de los dos se montaba nunca:
+#
+#   · /home quedaba siendo la carpeta vacía que hay dentro de @, propiedad de
+#     root, así que la sesión no podía ni crear /home/mike y el escritorio se
+#     rendía con "Permission denied".
+#   · /boot/efi no estaba montada, así que «mpm upgrade» no podía poner ahí un
+#     kernel nuevo.
+#
+# No se veía porque el USB en vivo no usa fstab (va sobre overlay) y las
+# pruebas de arranque sólo comprobaban que runit llegase a levantarse.
+#
+# Cada entrada por separado y sin parar si una falla: una partición de datos
+# que alguien desenchufó no puede impedir que el equipo encienda.
+if [ -f /etc/fstab ]; then
+    mount -a 2>/dev/null || true
+fi
+
 # Compat FHS: muchas libs (D-Bus incluida) traen /var/run/... hardcoded en
 # vez de /run/... como dirección por defecto. Sin este symlink, iwd/
 # bluetoothd no encuentran el socket del bus del sistema aunque exista.
@@ -39,7 +61,12 @@ if [ ! -s /etc/machine-id ]; then
     fi
 fi
 
-# Configurar hostname desde /etc/mikeos/system.conf
+# Configurar hostname y zona horaria.
+#
+# /etc/hostname manda sobre system.conf. Es el archivo estándar, el que espera
+# cualquiera que venga de otra distribución, y el que escribe m-install al
+# preguntarte el nombre del equipo. Leyendo sólo system.conf, el nombre que
+# elegías al instalar se ignoraba y todos los equipos se llamaban "mikeos".
 if [ -f /etc/mikeos/system.conf ]; then
     . /etc/mikeos/system.conf
     [ -n "${HOSTNAME:-}" ] && hostname "$HOSTNAME"
@@ -55,6 +82,11 @@ echo "======================================================"
 echo "               Welcome to MIKE OS"
 echo "======================================================"
 echo " Kernel: $(uname -r) on $(uname -m)"
+# /etc/hostname, si lo hay, tiene la última palabra (ver arriba).
+if [ -s /etc/hostname ]; then
+    hostname "$(head -1 /etc/hostname | tr -d " \t\r\n")" 2>/dev/null || true
+fi
+
 echo " Init:   runit (PID 1, 0% systemd)"
 echo " Host:   $(hostname)"
 echo " Shell:  MKShell"

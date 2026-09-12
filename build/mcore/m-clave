@@ -1,0 +1,134 @@
+#!/bin/sh
+# m-clave - la contraseña de tu cuenta, sin adivinanzas.
+#
+# MIKE OS se instala sin contraseña: las cuentas salen con "!" en /etc/shadow,
+# que significa "bloqueada, no se puede entrar con contraseña". Para un USB en
+# vivo está bien -- nadie quiere inventarse una clave para probar un sistema --
+# pero en cuanto lo instalas en un portátil deja dos cosas colgando:
+#
+#   1. La pantalla de bloqueo no tiene nada contra qué comprobar.
+#   2. m-sudo da root a cualquiera del grupo "wheel" sin preguntar.
+#
+# Esto arregla lo primero y deja lo segundo a la vista en "m-clave estado",
+# porque es mejor saberlo que descubrirlo.
+#
+#   m-clave estado           dice cómo está la cuenta (para guiones)
+#   m-clave ver              lo mismo, explicado para personas
+#   m-clave poner [usuario]  pide una contraseña nueva y la fija
+#   m-clave quitar [usuario] la vuelve a dejar sin contraseña
+set -u
+
+YO="$(id -un)"
+CUENTA="${2:-$YO}"
+
+# Leer /etc/shadow es cosa de root. Si ya lo somos, nos ahorramos el rodeo.
+como_root() {
+    if [ "$(id -u)" = "0" ]; then
+        "$@"
+    else
+        m-sudo "$@"
+    fi
+}
+
+# Primer campo de contraseña de esa cuenta en /etc/shadow.
+hash_de() {
+    como_root cat /etc/shadow 2>/dev/null \
+        | awk -F: -v u="$1" '$1 == u { print $2; exit }'
+}
+
+estado_de() {
+    _h="$(hash_de "$1")"
+    if [ -z "$_h" ]; then
+        # Sin entrada en shadow no se puede decir nada útil.
+        echo "desconocida"
+    elif [ "$_h" = "!" ] || [ "$_h" = "*" ] || [ "${_h#!}" != "$_h" ]; then
+        echo "sin-clave"
+    elif [ "${_h#\$}" = "$_h" ]; then
+        # Sin "$" delante es DES, el formato de los años setenta que busybox
+        # sigue usando por defecto: se queda con los OCHO primeros caracteres
+        # de la contraseña y el resto lo tira, y se rompe en un rato con
+        # cualquier portátil. Cuenta como puesta, pero hay que decirlo.
+        echo "debil"
+    else
+        echo "puesta"
+    fi
+}
+
+case "${1:-ver}" in
+    estado)
+        estado_de "$CUENTA"
+        ;;
+
+    ver)
+        _e="$(estado_de "$CUENTA")"
+        echo "Cuenta: $CUENTA"
+        case "$_e" in
+            puesta)
+                echo "  Contraseña: puesta."
+                ;;
+            debil)
+                echo "  Contraseña: puesta, pero con cifrado DES."
+                echo "  DES sólo mira los 8 primeros caracteres y se rompe rápido."
+                echo "  Vuelve a ponerla con:  m-clave poner"
+                ;;
+            sin-clave)
+                echo "  Contraseña: NO hay."
+                echo "  La pantalla de bloqueo no puede protegerte sin una."
+                echo "  Ponla con:  m-clave poner"
+                ;;
+            *)
+                echo "  Contraseña: no se ha podido averiguar."
+                ;;
+        esac
+        # Esto se dice siempre, tenga contraseña o no: es lo que de verdad
+        # decide si el equipo está protegido.
+        if id -nG "$CUENTA" 2>/dev/null | tr ' ' '\n' | grep -qx wheel; then
+            echo
+            echo "  Aviso: «$CUENTA» está en el grupo «wheel», así que m-sudo le da"
+            echo "  root sin pedir contraseña. Cualquiera que llegue a una consola"
+            echo "  de este equipo es administrador. La pantalla de bloqueo sirve"
+            echo "  contra miradas, no contra alguien con tiempo y teclado."
+        fi
+        ;;
+
+    poner)
+        # busybox passwd ya pide la contraseña dos veces y comprueba que
+        # coincidan. No hay motivo para reimplementar eso aquí, ni para que la
+        # contraseña pase por una variable de shell donde podría acabar en el
+        # historial o en el entorno de un hijo.
+        if [ "$CUENTA" != "$YO" ] && [ "$(id -u)" != "0" ]; then
+            echo "m-clave: sólo root puede cambiar la contraseña de otra cuenta." >&2
+            exit 1
+        fi
+        # -a sha512 NO es opcional. busybox cifra con DES si no se le dice
+        # otra cosa, y no hace caso de /etc/login.defs, así que no hay forma
+        # de arreglarlo por configuración: o se pasa aquí, o cada contraseña
+        # del sistema nace rota.
+        como_root passwd -a sha512 "$CUENTA" || exit $?
+        echo
+        echo "[OK] Contraseña puesta para $CUENTA."
+        echo "     Ya puedes bloquear la sesión con SUPER+L."
+        ;;
+
+    quitar)
+        if [ "$CUENTA" != "$YO" ] && [ "$(id -u)" != "0" ]; then
+            echo "m-clave: sólo root puede cambiar la contraseña de otra cuenta." >&2
+            exit 1
+        fi
+        printf 'Se va a quitar la contraseña de %s. ¿Seguro? [s/N] ' "$CUENTA"
+        read -r _r
+        case "$_r" in
+            s|S|si|SI|sí|SÍ) ;;
+            *) echo "Cancelado."; exit 0 ;;
+        esac
+        como_root passwd -l "$CUENTA" >/dev/null 2>&1 \
+            || { echo "m-clave: no se ha podido quitar." >&2; exit 1; }
+        echo "[OK] $CUENTA se queda sin contraseña."
+        echo "     La pantalla de bloqueo dejará entrar sin preguntar."
+        ;;
+
+    *)
+        echo "Uso: m-clave [ver|estado|poner|quitar] [usuario]" >&2
+        exit 1
+        ;;
+esac

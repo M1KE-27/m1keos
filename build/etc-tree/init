@@ -109,10 +109,19 @@ if grep -q "mikeos_recovery=1" /proc/cmdline 2>/dev/null; then
 fi
 
 # Si se especificó arranque en disco persistente (root=/dev/vda o root=/dev/sda)
+# Se recorre entera y gana el ÚLTIMO valor de cada clave. Importa: el kernel
+# lleva su propia línea compilada dentro (CONFIG_CMDLINE) y el gestor de
+# arranque añade la suya detrás, así que en un sistema instalado llegan dos
+# "root=" -- el de fábrica (/dev/ram0) y el bueno. Quedarse con el primero es
+# arrancar siempre el equivocado.
 ROOT_SPEC=""
+ROOT_FS=""
+ROOT_FLAGS=""
 for arg in $(cat /proc/cmdline); do
     case "$arg" in
-        root=*) ROOT_SPEC="${arg#root=}" ;;
+        root=*)        ROOT_SPEC="${arg#root=}" ;;
+        rootfstype=*)  ROOT_FS="${arg#rootfstype=}" ;;
+        rootflags=*)   ROOT_FLAGS="${arg#rootflags=}" ;;
     esac
 done
 
@@ -170,8 +179,13 @@ montar_en_vivo() {
 
     # El medio se queda montado dentro del sistema: el instalador lo necesita
     # para copiar, y así "m-install" funciona desde el propio USB.
-    mkdir -p /mnt/root/run/medio
-    mount --move /mnt/medio /mnt/root/run/medio 2>/dev/null || true
+    # El medio se deja en /mnt/medio y NO en /run/medio. En /run duraba lo que
+    # tardaba el sistema en montar su propio tmpfs encima, que lo tapaba: la
+    # entrada seguía en /proc/mounts, pero la carpeta ya no existía para nadie.
+    # Eso dejaba al instalador sin poder leer el kernel del USB y la
+    # instalación terminaba sin arranque.
+    mkdir -p /mnt/root/mnt/medio
+    mount --move /mnt/medio /mnt/root/mnt/medio 2>/dev/null || true
     return 0
 }
 
@@ -229,7 +243,17 @@ fi
 if [ -n "$ROOT_DEV" ] && [ "$ROOT_DEV" != "/dev/ram0" ] && wait_for_block "$ROOT_DEV" "${ROOT_TIMEOUT:-15}"; then
     log "Montando disco raíz persistente: $ROOT_DEV"
     mkdir -p /mnt/root
-    if mount -t "${ROOT_FS:-ext4}" -o rw,noatime "$ROOT_DEV" /mnt/root 2>/dev/null || mount "$ROOT_DEV" /mnt/root 2>/dev/null; then
+    # rootflags NO es opcional con btrfs. m-install crea la raíz dentro del
+    # subvolumen @, así que sin "subvol=@" se monta el nivel de arriba: ahí
+    # sólo están @, @home y @instantaneas, no hay /sbin/runit, y el arranque
+    # se rendía y seguía corriendo dentro del initramfs. El sistema parecía
+    # encender -- llegaba a runit y a la consola -- pero era el initramfs, no
+    # el disco: sin escritorio, sin fastfetch y sin nada instalado.
+    OPCIONES_RAIZ="rw,noatime"
+    [ -n "$ROOT_FLAGS" ] && OPCIONES_RAIZ="$OPCIONES_RAIZ,$ROOT_FLAGS"
+    if mount -t "${ROOT_FS:-auto}" -o "$OPCIONES_RAIZ" "$ROOT_DEV" /mnt/root 2>/dev/null \
+       || mount -o "$OPCIONES_RAIZ" "$ROOT_DEV" /mnt/root 2>/dev/null \
+       || mount "$ROOT_DEV" /mnt/root 2>/dev/null; then
       if [ -x /mnt/root/sbin/runit ]; then
         # Preparar nodos y devtmpfs en la raíz persistente antes de switch_root
         mkdir -p /mnt/root/dev /mnt/root/proc /mnt/root/sys /mnt/root/run /mnt/root/tmp

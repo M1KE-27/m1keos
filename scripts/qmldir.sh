@@ -15,7 +15,13 @@ DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../build/desktop/quickshell" && pwd)"
     echo
     for f in "$DIR"/*.qml; do
         tipo="$(basename "$f" .qml)"
-        [ "$tipo" = "shell" ] && continue
+        # Los archivos que empiezan en minúscula son programas enteros
+        # (shell.qml, bloqueo.qml), no componentes. Un tipo QML tiene que
+        # empezar por mayúscula, así que declararlos aquí no sólo sobra:
+        # invalida el qmldir y con él TODOS los componentes de la carpeta.
+        case "$tipo" in
+            [a-z]*) continue ;;
+        esac
         if [ "$tipo" = "Paleta" ]; then
             echo "singleton $tipo 1.0 $tipo.qml"
         else

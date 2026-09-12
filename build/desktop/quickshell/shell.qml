@@ -42,6 +42,14 @@ ShellRoot {
         onLoaded: {
             try {
                 root.aj = JSON.parse(text())
+                // El Centro de Control guarda su propia copia editable y, en
+                // cuanto se toca un control, deja de seguir al archivo para
+                // siempre. Si algo más lo reescribe (m-settings desde la
+                // consola, otra sesión, o el propio m-apply-settings al
+                // normalizar un valor), el panel se quedaba enseñando lo de
+                // antes y en el siguiente cambio lo volvía a escribir encima.
+                // Volver a leerlo aquí lo mantiene contando la verdad.
+                settingsState.sincronizar()
             } catch (e) {
                 console.warn("ajustes ilegibles, se mantienen los anteriores:", e)
             }
@@ -109,7 +117,36 @@ ShellRoot {
     // Autoocultar: la barra se retira y sólo vuelve al acercar el cursor al
     // borde. Con autoocultar no reserva espacio, o dejaría un hueco vacío.
     property bool barAutohide: ajuste("bar_autohide", false)
-    property bool barVisible: !barAutohide
+    // Adrede sin binding: más abajo se le asigna a mano al esconder y al
+    // sacar la barra, y una asignación imperativa mata el binding para
+    // siempre. Escrito como "!barAutohide", bastaba usar el autoocultar una
+    // vez para que barVisible dejara de seguirlo: al desactivarlo después, la
+    // barra podía quedarse escondida sin forma de recuperarla. El handler lo
+    // devuelve a su sitio cada vez que cambia el ajuste.
+    property bool barVisible: true
+    onBarAutohideChanged: barVisible = !barAutohide
+
+    // Estado de la contraseña de la cuenta: "puesta", "debil", "sin-clave" o
+    // "desconocida". Lo dice m-clave, que es quien puede leer /etc/shadow.
+    property string estadoClave: "desconocida"
+    Process {
+        id: mirarClave
+        running: true
+        command: ["m-clave", "estado"]
+        stdout: StdioCollector {
+            onStreamFinished: root.estadoClave = text.trim() || "desconocida"
+        }
+    }
+    Process { id: bloquearAhora; command: ["m-bloquear"] }
+    // Poner la contraseña es interactivo (se teclea dos veces), así que va en
+    // una terminal de verdad en vez de en un cuadro del panel: reimplementar
+    // aquí la doble comprobación sería repetir lo que passwd ya hace bien.
+    Process {
+        id: abrirClave
+        command: ["m-terminal", "-e", "sh", "-c",
+                  "m-clave poner; echo; echo 'Pulsa Intro para cerrar.'; read x"]
+        onExited: mirarClave.running = true
+    }
 
     // Distribución de teclado activa, para que el botón enseñe cuál es.
     property string kbActual: String(ajuste("kb_layout", "us,es")).split(",")[0]
@@ -278,7 +315,11 @@ ShellRoot {
                 color: root.volNivel < 0 ? Paleta.textoTenue : Paleta.texto
                 anchors.verticalCenter: parent.verticalCenter
             }
+            // En vertical no cabe: "sin audio" son 60 px de texto en una
+            // barra de 48 y se salía de la pantalla. El icono ya distingue
+            // mudo, bajo y alto, que es lo que se mira de un vistazo.
             Text {
+                visible: !root.vertical
                 text: root.volNivel < 0 ? "sin audio"
                     : (root.volMute ? "mudo" : root.volNivel + "%")
                 color: root.volNivel < 0 ? Paleta.textoTenue : Paleta.texto
@@ -303,7 +344,11 @@ ShellRoot {
                 tamano: root.fontSize + 2
                 anchors.verticalCenter: parent.verticalCenter
             }
+            // Igual que el volumen: el nombre de la red no cabe de lado. El
+            // icono ya dice si hay wifi, cable o nada; el nombre está en el
+            // Centro de Control.
             Text {
+                visible: !root.vertical
                 text: root.redNombre
                 color: root.redTipo === "none" ? Paleta.textoTenue : Paleta.texto
                 font.pixelSize: root.fontSize
@@ -320,32 +365,41 @@ ShellRoot {
     // progreso además del número: de un vistazo se ve la carga sin leer.
     Component {
         id: modMedidores
-        Row {
+        // En horizontal van en fila, con etiqueta, barrita y número. En
+        // vertical no cabe nada de eso de lado: los dos medidores se apilan,
+        // la barrita desaparece y queda la etiqueta encima del número, que es
+        // lo único que se lee en 48 px de ancho. Antes se salía de la pantalla.
+        Grid {
+            columns: root.vertical ? 1 : 99
             spacing: Math.round(root.fontSize * 0.9)
+            horizontalItemAlignment: Grid.AlignHCenter
+            verticalItemAlignment: Grid.AlignVCenter
 
             Repeater {
                 model: [
                     { etiqueta: "CPU", valor: root.cpuUso },
                     { etiqueta: "RAM", valor: root.memUso }
                 ]
-                Row {
-                    spacing: 4
+                Grid {
+                    columns: root.vertical ? 1 : 99
+                    spacing: root.vertical ? 0 : 4
+                    horizontalItemAlignment: Grid.AlignHCenter
+                    verticalItemAlignment: Grid.AlignVCenter
                     Text {
                         text: modelData.etiqueta
                         color: Paleta.textoTenue
                         font.pixelSize: Math.max(8, root.fontSize - 3)
                         font.bold: true
-                        anchors.verticalCenter: parent.verticalCenter
                     }
                     // Barrita: se rellena con la carga y se pone ámbar cuando
                     // pasa de tres cuartos, para que un pico se note sin mirar
                     // el número.
                     Rectangle {
+                        visible: !root.vertical
                         width: Math.round(root.fontSize * 2.2)
                         height: Math.max(4, Math.round(root.fontSize * 0.42))
                         radius: height / 2
                         color: Paleta.borde
-                        anchors.verticalCenter: parent.verticalCenter
                         Rectangle {
                             width: parent.width * Math.min(100, Math.max(0, modelData.valor)) / 100
                             height: parent.height
@@ -357,13 +411,14 @@ ShellRoot {
                     Text {
                         text: modelData.valor + "%"
                         color: Paleta.texto
-                        font.pixelSize: root.fontSize
+                        font.pixelSize: root.vertical
+                                        ? Math.max(8, root.fontSize - 2) : root.fontSize
                         font.bold: true
                         // Ancho fijo: sin esto la barra se movía a cada
                         // actualización al pasar de 9 a 10 o de 99 a 100.
                         width: Math.round(root.fontSize * 2.4)
-                        horizontalAlignment: Text.AlignRight
-                        anchors.verticalCenter: parent.verticalCenter
+                        horizontalAlignment: root.vertical
+                                             ? Text.AlignHCenter : Text.AlignRight
                     }
                 }
             }
@@ -375,15 +430,17 @@ ShellRoot {
     // decide qué existe.
     Component {
         id: modBotones
-        Row {
+        Grid {
+            columns: root.vertical ? 1 : 99
             spacing: Math.round(root.fontSize * 0.8)
+            horizontalItemAlignment: Grid.AlignHCenter
+            verticalItemAlignment: Grid.AlignVCenter
             Repeater {
-                model: ajuste("bar_buttons", ["captura", "teclado"])
+                model: root.ajuste("bar_buttons", ["captura", "teclado"])
                 Text {
                     text: root.iconoBoton(modelData)
                     color: pulsable.hovered ? root.accent : Paleta.texto
                     font.pixelSize: root.fontSize + 2
-                    anchors.verticalCenter: parent.verticalCenter
                     Behavior on color { ColorAnimation { duration: 120 } }
                     HoverHandler { id: pulsable; cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: root.pulsarBoton(modelData) }
@@ -536,12 +593,21 @@ ShellRoot {
 
     PanelWindow {
         id: bar
-        anchors {
-            top:    root.vertical ? true : root.barPos !== "bottom"
-            bottom: root.vertical ? true : root.barPos === "bottom"
-            left:   root.vertical ? root.barPos === "left"  : true
-            right:  root.vertical ? root.barPos === "right" : true
-        }
+        // Los cuatro bordes se asignan de golpe, como un solo valor. Escritos
+        // uno a uno, al pasar de arriba a un lateral había un instante con los
+        // cuatro puestos, que en wlr-layer-shell significa "pantalla completa":
+        // el compositor reconfiguraba la superficie con la zona reservada en el
+        // borde equivocado y ahí se quedaba. Anchors es un value type, así que
+        // esta forma es una única llamada y no existe estado intermedio.
+        anchors: root.vertical
+            ? ({ top: true,
+                 bottom: true,
+                 left:  root.barPos === "left",
+                 right: root.barPos === "right" })
+            : ({ left: true,
+                 right: true,
+                 top:    root.barPos !== "bottom",
+                 bottom: root.barPos === "bottom" })
         // barHeight es el grosor de la franja. Se declara en las dos
         // dimensiones a propósito: la que va anclada por sus dos extremos
         // (izquierda+derecha en horizontal, arriba+abajo en vertical) la
@@ -700,32 +766,62 @@ ShellRoot {
             }
         }
 
-        // --- Zona inicial (arriba o izquierda) ---
-        Zona {
-            modulos: ajuste("bar_left", ["identidad"])
-            anchors.left: root.vertical ? undefined : parent.left
-            anchors.leftMargin: root.vertical ? 0 : root.barMargin
-            anchors.top: root.vertical ? parent.top : undefined
-            anchors.topMargin: root.vertical ? root.barMargin : 0
-            anchors.verticalCenter: root.vertical ? undefined : parent.verticalCenter
-            anchors.horizontalCenter: root.vertical ? parent.horizontalCenter : undefined
+        // --- Zonas de los extremos ---
+        // Hay una variante por orientación en vez de una sola que gire, y no
+        // es por gusto. Cuando un mismo item cambiaba de anclaje, QML
+        // reevaluaba las seis bindings UNA A UNA, no de golpe, y entre medias
+        // existía un instante con "top" y "verticalCenter" puestos a la vez.
+        // Qt lee esa pareja como un estiramiento: calcula una altura y la fija
+        // con setHeight(), lo que marca el alto como explícito PARA SIEMPRE.
+        // Desde ahí el rectángulo dejaba de medirse por su implicitHeight
+        // aunque el binding siguiera vivo: la barra se rompía al moverla a un
+        // lado y seguía rota al devolverla arriba, porque la medida se había
+        // quedado congelada y nada la recuperaba.
+        //
+        // Con un Loader por orientación, cada Zona nace con sus anclajes
+        // definitivos y no los toca nunca. Al girar la barra la anterior se
+        // destruye y la nueva se crea limpia, así que no hay estado que
+        // corromper. La zona central nunca tuvo el fallo: usa centerIn, un
+        // único anclaje que no cambia.
+
+        // Extremo inicial, barra horizontal: pegado a la izquierda.
+        Loader {
+            active: !root.vertical
+            anchors.left: parent.left
+            anchors.leftMargin: root.barMargin
+            anchors.verticalCenter: parent.verticalCenter
+            sourceComponent: Zona { modulos: root.ajuste("bar_left", ["identidad"]) }
+        }
+        // Extremo inicial, barra vertical: pegado arriba.
+        Loader {
+            active: root.vertical
+            anchors.top: parent.top
+            anchors.topMargin: root.barMargin
+            anchors.horizontalCenter: parent.horizontalCenter
+            sourceComponent: Zona { modulos: root.ajuste("bar_left", ["identidad"]) }
         }
 
         // --- Zona central ---
         Zona {
-            modulos: ajuste("bar_center", ["espacios"])
+            modulos: root.ajuste("bar_center", ["espacios"])
             anchors.centerIn: parent
         }
 
-        // --- Zona final (abajo o derecha) ---
-        Zona {
-            modulos: ajuste("bar_right", ["reloj", "ajustes"])
-            anchors.right: root.vertical ? undefined : parent.right
-            anchors.rightMargin: root.vertical ? 0 : root.barMargin
-            anchors.bottom: root.vertical ? parent.bottom : undefined
-            anchors.bottomMargin: root.vertical ? root.barMargin : 0
-            anchors.verticalCenter: root.vertical ? undefined : parent.verticalCenter
-            anchors.horizontalCenter: root.vertical ? parent.horizontalCenter : undefined
+        // Extremo final, barra horizontal: pegado a la derecha.
+        Loader {
+            active: !root.vertical
+            anchors.right: parent.right
+            anchors.rightMargin: root.barMargin
+            anchors.verticalCenter: parent.verticalCenter
+            sourceComponent: Zona { modulos: root.ajuste("bar_right", ["reloj", "ajustes"]) }
+        }
+        // Extremo final, barra vertical: pegado abajo.
+        Loader {
+            active: root.vertical
+            anchors.bottom: parent.bottom
+            anchors.bottomMargin: root.barMargin
+            anchors.horizontalCenter: parent.horizontalCenter
+            sourceComponent: Zona { modulos: root.ajuste("bar_right", ["reloj", "ajustes"]) }
         }
     }
 
@@ -734,12 +830,11 @@ ShellRoot {
     // así que no reserva espacio ni pinta nada.
     PanelWindow {
         visible: root.barAutohide && !root.barVisible
-        anchors {
-            top: root.barPos === "top"
-            bottom: root.barPos === "bottom"
-            left: root.barPos !== "right"
-            right: root.barPos !== "left"
-        }
+        // De golpe también, por lo mismo que la barra.
+        anchors: ({ top:    root.barPos === "top",
+                    bottom: root.barPos === "bottom",
+                    left:   root.barPos !== "right",
+                    right:  root.barPos !== "left" })
         implicitHeight: root.vertical ? 0 : 3
         implicitWidth:  root.vertical ? 3 : 0
         color: "transparent"
@@ -896,6 +991,34 @@ ShellRoot {
         property bool barAutohide: root.barAutohide
         property string clockFormat: root.clockFormat
         property bool clockSeconds: root.clockSeconds
+
+        // Reescribe todo el estado con lo que dice el archivo. Se llama al
+        // recargarlo. Si el valor ya coincide -- el caso normal, porque casi
+        // siempre venimos de haberlo guardado nosotros -- no cambia la huella
+        // y no se dispara otro guardado: no hay bucle.
+        function sincronizar() {
+            barPosition    = root.barPos
+            workspaceCount = root.ajuste("workspace_count", 4)
+            blurEnabled    = root.ajuste("blur_enabled", false)
+            opacity        = root.ajuste("terminal_opacity", 98)
+            animSpeed      = root.ajuste("animation_speed", "fast")
+            accentColor    = root.accent
+            kbLayout       = root.ajuste("kb_layout", "us,es")
+            barShape       = root.barShape
+            barGrouping    = root.barGrouping
+            screenCorners  = root.screenCorners
+            barHeight      = root.barHeight
+            barModuleHeight = root.ajuste("bar_module_height", 36)
+            barFontSize    = root.ajuste("bar_font_size", 12)
+            barSpacing     = root.pillSpacing
+            zonaIzq        = root.ajuste("bar_left", ["identidad"]).join(",")
+            zonaCentro     = root.ajuste("bar_center", ["espacios"]).join(",")
+            zonaDer        = root.ajuste("bar_right", ["reloj", "ajustes"]).join(",")
+            barOpacity     = root.ajuste("bar_opacity", 100)
+            barAutohide    = root.barAutohide
+            clockFormat    = root.clockFormat
+            clockSeconds   = root.clockSeconds
+        }
     }
 
     readonly property var secciones: [
@@ -904,6 +1027,7 @@ ShellRoot {
         { id: "barra",      nombre: "Barra",       icono: "barra" },
         { id: "escritorio", nombre: "Escritorio",  icono: "escritorio" },
         { id: "interfaz",   nombre: "Interfaz",    icono: "interfaz" },
+        { id: "bloqueo",    nombre: "Bloqueo",     icono: "bloqueo" },
         { id: "servicios",  nombre: "Servicios",   icono: "servicios" },
         { id: "avanzado",   nombre: "Avanzado",    icono: "avanzado" },
         { id: "acercade",   nombre: "Acerca de",   icono: "info" }
@@ -1454,7 +1578,67 @@ ShellRoot {
                                 Layout.fillWidth: true
                                 visible: root.seccion === "interfaz"
                                 Titulo { texto: "Interfaz" }
-                                Pendiente { texto: "Avisos, pantalla de bloqueo, vista general y tipografías llegan en el Bloque 4." }
+                                Pendiente { texto: "Avisos, vista general y tipografías llegan en el Bloque 4. La pantalla de bloqueo tiene apartado propio." }
+                            }
+
+                            // ===== BLOQUEO =====
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                visible: root.seccion === "bloqueo"
+
+                                Titulo { texto: "Pantalla de bloqueo" }
+
+                                GridLayout {
+                                    columns: 2; columnSpacing: 14; rowSpacing: 10
+                                    Layout.fillWidth: true
+
+                                    Etiqueta { texto: "Contraseña de la cuenta" }
+                                    Row {
+                                        spacing: 8
+                                        Layout.alignment: Qt.AlignRight
+                                        Text {
+                                            text: root.estadoClave === "puesta"  ? "Puesta"
+                                                : root.estadoClave === "debil"    ? "Débil (DES)"
+                                                : root.estadoClave === "sin-clave" ? "Sin contraseña"
+                                                : "Sin averiguar"
+                                            color: root.estadoClave === "puesta"
+                                                   ? Paleta.texto : Paleta.aviso
+                                            font.pixelSize: 11
+                                            font.bold: true
+                                            anchors.verticalCenter: parent.verticalCenter
+                                        }
+                                        CtlButton {
+                                            text: root.estadoClave === "puesta" ? "Cambiar" : "Poner"
+                                            small: true
+                                            onClicked: abrirClave.running = true
+                                        }
+                                    }
+
+                                    Etiqueta { texto: "Bloquear ahora" }
+                                    CtlButton {
+                                        text: "Bloquear"; small: true
+                                        Layout.alignment: Qt.AlignRight
+                                        onClicked: { root.panelOpen = false; bloquearAhora.running = true }
+                                    }
+                                }
+
+                                // Se dice tal cual: una pantalla de bloqueo sobre
+                                // una cuenta sin contraseña no protege de nada, y
+                                // más vale saberlo antes que creerse protegido.
+                                Pendiente {
+                                    visible: root.estadoClave === "sin-clave"
+                                    texto: "Esta cuenta no tiene contraseña, así que el bloqueo deja entrar sin preguntar. Ponle una aquí arriba."
+                                }
+                                Pendiente {
+                                    visible: root.estadoClave === "debil"
+                                    texto: "La contraseña está cifrada con DES, que sólo mira sus 8 primeros caracteres. Vuelve a ponerla desde aquí para pasarla a sha512."
+                                }
+                                Pendiente {
+                                    texto: "Aviso: con la cuenta en el grupo «wheel», m-sudo da root sin pedir contraseña. El bloqueo protege de miradas, no de alguien con tiempo y teclado."
+                                }
+                                Pendiente {
+                                    texto: "El bloqueo automático por inactividad todavía no está: Quickshell 0.3.1 no expone el aviso de inactividad de Wayland. De momento se bloquea a mano con SUPER+L."
+                                }
                             }
 
                             // ===== SERVICIOS =====

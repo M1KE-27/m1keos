@@ -1,0 +1,93 @@
+#!/bin/sh
+# m-bloquear - bloquea la sesión.
+#
+# Lo llama el atajo SUPER+L y el botón del Centro de Control. Lanza bloqueo.qml
+# en su propia instancia de Quickshell: la barra sigue con la suya y, si el
+# bloqueo se cae, la barra no se entera.
+#
+# ---------------------------------------------------------------------------
+# Lo importante de este archivo, que costó descubrirlo:
+#
+# ext-session-lock-v1 no admite dos clientes a la vez, y tampoco admite que
+# uno nuevo tome el relevo si el anterior murió con la sesión bloqueada.
+# Cuando eso pasa, Hyprland deja la pantalla en su relleno a cuadros magenta,
+# el cliente nuevo se estrella con "invalid object", y NO HAY FORMA de volver
+# a bloquear ni de desbloquear desde la sesión: no queda nadie a quien darle
+# la contraseña. Se comprobó en una máquina de pruebas.
+#
+# De ahí dos decisiones:
+#
+#   1. Un solo proceso, comprobado a conciencia. Dos a la vez es la forma más
+#      fácil de llegar al estado malo, y es la que provocó el problema aquí.
+#
+#   2. No se reintenta a ciegas. Si el bloqueo cae DESPUÉS de haber bloqueado,
+#      reintentar no arregla nada -- vuelve a estrellarse -- así que lo único
+#      útil es decir por dónde se sale. Sólo se reintenta si cayó tan pronto
+#      que no llegó a bloquear (un error de QML, por ejemplo), que es el caso
+#      en que el reintento sí sirve para algo.
+# ---------------------------------------------------------------------------
+set -u
+
+QML="${HOME:-/root}/.config/mike/quickshell/bloqueo.qml"
+[ -f "$QML" ] || QML="/etc/mikeos/desktop/bloqueo.qml"
+
+if [ ! -f "$QML" ]; then
+    echo "m-bloquear: falta bloqueo.qml; no se bloquea." >&2
+    exit 1
+fi
+
+# Uno y no más: si el atajo se pulsa dos veces seguidas, la segunda no debe
+# levantar nada. Dos clientes de bloqueo a la vez es justo lo que lleva al
+# estado del que no se sale.
+# Se busca la invocación EXACTA de quickshell, no el nombre del archivo
+# suelto: "bloqueo.qml" aparece en cualquier orden que lo mencione -- un
+# "cp", un editor, un grep -- y la guardia daba por hecho que ya había
+# uno en marcha cuando no lo había.
+if pgrep -f "quickshell .*bloqueo\.qml" >/dev/null 2>&1; then
+    exit 0
+fi
+# Sin contraseña esto no protege de nada, pero se bloquea igual: la pantalla lo
+# dice a las claras y deja abrir. Es preferible a no hacer nada al pulsar el
+# atajo, que parece que el sistema está roto.
+if command -v m-clave >/dev/null 2>&1; then
+    if [ "$(m-clave estado 2>/dev/null)" = "sin-clave" ]; then
+        echo "m-bloquear: la cuenta no tiene contraseña (m-clave poner)." >&2
+    fi
+fi
+
+# Por debajo de esto no le ha dado tiempo ni a dibujar: si cae tan rápido, es
+# que ni siquiera llegó a pedirle el bloqueo al compositor.
+UMBRAL=3
+
+intentos=0
+while [ "$intentos" -lt 3 ]; do
+    inicio="$(date +%s 2>/dev/null || echo 0)"
+    quickshell -p "$QML"
+    rc=$?
+    fin="$(date +%s 2>/dev/null || echo 0)"
+
+    # Salida limpia: la persona ha entrado.
+    [ "$rc" = "0" ] && exit 0
+
+    if [ "$((fin - inicio))" -ge "$UMBRAL" ]; then
+        # Aguantó lo suficiente para haber bloqueado. Reintentar aquí es
+        # perder el tiempo y ensuciar el registro.
+        echo "m-bloquear: la pantalla de bloqueo se cayó con la sesión ya" >&2
+        echo "  bloqueada (código $rc). El compositor no deja que otra ocupe" >&2
+        echo "  su sitio, así que desde aquí no se puede arreglar." >&2
+        echo >&2
+        echo "  Para recuperar la sesión:" >&2
+        echo "    - Ctrl+Alt+F2 para ir a otra consola y entrar desde ahí, o" >&2
+        echo "    - desde otro equipo:  ssh mike@este-equipo" >&2
+        echo "    y en cualquiera de los dos:  m-sudo pkill -x Hyprland" >&2
+        echo "  Eso cierra la sesión gráfica y la vuelve a levantar limpia." >&2
+        exit 1
+    fi
+
+    intentos=$((intentos + 1))
+    echo "m-bloquear: la pantalla no llegó a arrancar (código $rc); reintento." >&2
+    sleep 0.5
+done
+
+echo "m-bloquear: bloqueo.qml no arranca; la sesión se queda sin bloquear." >&2
+exit 1

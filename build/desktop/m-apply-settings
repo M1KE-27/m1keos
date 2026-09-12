@@ -172,6 +172,21 @@ BAR_BUTTONS="$(leer       bar_buttons     lista                          'captur
 # Escritorio
 WORKSPACE_COUNT="$(leer   workspace_count entero:1:10                    4)"
 ACCENT_COLOR="$(leer      accent_color    color                          '#00d4ff')"
+# La paleta completa. Existe porque "sacar los colores del fondo" (m-colores)
+# no cambia sólo el acento: cambia el lienzo, las cápsulas, los bordes y el
+# texto, para que el escritorio se vea de una pieza con el fondo. Cuando nadie
+# la ha tocado, estos valores son exactamente los que lleva Paleta.qml escritos
+# dentro, así que el sistema sale igual que siempre.
+COLOR_FONDO="$(leer       color_fondo           color                    '#0b0d11')"
+COLOR_SUPERFICIE="$(leer  color_superficie      color                    '#161a21')"
+COLOR_SUPERFICIE_ALTA="$(leer color_superficie_alta color                '#1f242d')"
+COLOR_BORDE="$(leer       color_borde           color                    '#262c36')"
+COLOR_TEXTO="$(leer       color_texto           color                    '#e8ebf0')"
+COLOR_TEXTO_TENUE="$(leer color_texto_tenue     color                    '#79818f')"
+COLOR_SOBRE_ACENTO="$(leer color_sobre_acento   color                    '#05070c')"
+# Si la paleta vino del fondo: lo mira m-fondo para volver a sacarla cuando
+# cambies de fondo, en vez de dejar los colores del anterior.
+COLORES_DEL_FONDO="$(leer colores_del_fondo     opcion:si:no             'no')"
 # El fondo es un ajuste como cualquier otro, no una ruta escrita a fuego en
 # hyprland.conf. Antes había dos: la de arranque (siempre la de fábrica) y la
 # que guardaba m-wallhaven, así que el fondo elegido se perdía al salir de la
@@ -231,6 +246,14 @@ if [ ! -f "$SETTINGS" ]; then
         echo '-- === Escritorio ===========================================================';
         _linea workspace_count   "$WORKSPACE_COUNT"       'espacios de trabajo (1-10)'
         _linea accent_color      "\"$ACCENT_COLOR\""      'color de acento, #rrggbb'
+        _linea color_fondo            "\"$COLOR_FONDO\""            'el lienzo'
+        _linea color_superficie       "\"$COLOR_SUPERFICIE\""       'cápsulas y ventanas'
+        _linea color_superficie_alta  "\"$COLOR_SUPERFICIE_ALTA\""  'bajo el cursor'
+        _linea color_borde            "\"$COLOR_BORDE\""            'separaciones'
+        _linea color_texto            "\"$COLOR_TEXTO\""            'lo que se lee'
+        _linea color_texto_tenue      "\"$COLOR_TEXTO_TENUE\""      'lo secundario'
+        _linea color_sobre_acento     "\"$COLOR_SOBRE_ACENTO\""     'texto encima del acento'
+        _linea colores_del_fondo      "\"$COLORES_DEL_FONDO\""      'la paleta sale del fondo: si | no'
         _linea wallpaper         "\"$WALLPAPER\""         'ruta del fondo de pantalla'
         _linea blur_enabled      "$_blur_txt"             'desenfoque (cuesta rendimiento)'
         _linea animation_speed   "\"$ANIMATION_SPEED\""   'instant | fast | normal'
@@ -259,10 +282,10 @@ MODULOS_CENTRO="$(lista_json "$BAR_CENTER")"
 MODULOS_DER="$(lista_json "$BAR_RIGHT")"
 BOTONES_MODEL="$(lista_json "$BAR_BUTTONS")"
 
-case "$BAR_POSITION" in
-    left|right) BAR_VERTICAL="true" ;;
-    *)          BAR_VERTICAL="false" ;;
-esac
+# Aquí se derivaba "bar_vertical" a partir de la posición y se escribía en
+# settings.json. El QML nunca lo leyó: calcula la orientación por su cuenta
+# desde bar_position. Una clave de más en el archivo es una invitación a que
+# alguien la use y acabe con dos fuentes de verdad para lo mismo.
 
 # --- Ajustes en vivo para la barra -------------------------------------
 # La barra lee este archivo mientras está en marcha y se revincula sola
@@ -273,9 +296,16 @@ BLUR_JSON="false"; [ "$BLUR_ENABLED" = "1" ] && BLUR_JSON="true"
 cat > "$AJUSTES_JSON.tmp" <<JSON
 {
   "accent_color":      "$ACCENT_COLOR",
+  "color_fondo":           "$COLOR_FONDO",
+  "color_superficie":      "$COLOR_SUPERFICIE",
+  "color_superficie_alta": "$COLOR_SUPERFICIE_ALTA",
+  "color_borde":           "$COLOR_BORDE",
+  "color_texto":           "$COLOR_TEXTO",
+  "color_texto_tenue":     "$COLOR_TEXTO_TENUE",
+  "color_sobre_acento":    "$COLOR_SOBRE_ACENTO",
+  "colores_del_fondo":     "$COLORES_DEL_FONDO",
   "wallpaper":         "$WALLPAPER",
   "bar_position":      "$BAR_POSITION",
-  "bar_vertical":      $BAR_VERTICAL,
   "bar_shape":         "$BAR_SHAPE",
   "bar_grouping":      "$BAR_GROUPING",
   "bar_height":        $BAR_HEIGHT,
