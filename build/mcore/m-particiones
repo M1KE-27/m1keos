@@ -48,10 +48,10 @@ msj() {
         case "$_c" in
           no_disco)   _t="The disk is no longer there." ;;
           bios)       _t="This computer booted in old BIOS mode, not UEFI. MIKE OS only boots via UEFI: go into your firmware settings and turn off Legacy or CSM mode." ;;
-          pequeno)    _t="The disk is %s GB and at least %s GB are needed." ;;
-          sin_hueco)  _t="Only %s GB are free, and %s GB are needed. Free up space from the other system, or pick another option." ;;
+          pequeno)    _t="The disk is %s and at least %s are needed." ;;
+          sin_hueco)  _t="Only %s is free, and %s is needed. Free up space from the other system, or pick another option." ;;
           sin_part)   _t="You have not chosen which partition to replace." ;;
-          part_chica) _t="That partition is %s GB and at least %s GB are needed." ;;
+          part_chica) _t="That partition is %s and at least %s are needed." ;;
           part_usada) _t="That partition is in use right now." ;;
           sin_esp)    _t="This disk has no EFI partition and is not being erased, so there is nowhere to put the boot files. Choose to erase the disk, or create a 512 MB EFI partition first." ;;
           esp_chica)  _t="The EFI partition on this disk is only %s MB and the MIKE OS boot files will not fit." ;;
@@ -65,10 +65,10 @@ msj() {
         case "$_c" in
           no_disco)   _t="El disco indicado ya no está." ;;
           bios)       _t="Este equipo ha arrancado en modo BIOS antiguo, no en UEFI. MIKE OS sólo arranca por UEFI: entra en la configuración de la placa y desactiva el modo Legacy o CSM." ;;
-          pequeno)    _t="El disco tiene %s GB y hacen falta al menos %s GB." ;;
-          sin_hueco)  _t="Sólo hay %s GB sin usar, y hacen falta %s GB. Libera espacio desde el otro sistema o elige otra opción." ;;
+          pequeno)    _t="El disco tiene %s y hacen falta al menos %s." ;;
+          sin_hueco)  _t="Sólo hay %s sin usar, y hacen falta %s. Libera espacio desde el otro sistema o elige otra opción." ;;
           sin_part)   _t="No has elegido qué partición reemplazar." ;;
-          part_chica) _t="Esa partición tiene %s GB y hacen falta al menos %s GB." ;;
+          part_chica) _t="Esa partición tiene %s y hacen falta al menos %s." ;;
           part_usada) _t="Esa partición está en uso ahora mismo." ;;
           sin_esp)    _t="Este disco no tiene partición EFI y no se va a borrar entero, así que no hay dónde poner el arranque. Elige borrar el disco, o crea antes una partición EFI de 512 MB." ;;
           esp_chica)  _t="La partición EFI de este disco es de sólo %s MB y no cabe el arranque de MIKE OS." ;;
@@ -133,6 +133,19 @@ que_sistema() {
 
     como_root umount "$_punto" 2>/dev/null || true
     printf '%s\n' "$_r"
+}
+
+# Tamaño legible. Decir "0 GB" de una partición de 700 MB hace que el mensaje
+# parezca estropeado, y un error que parece estropeado no se lo cree nadie.
+legible() {  # legible <bytes>
+    _b="${1:-0}"
+    if [ "$_b" -ge 1000000000 ]; then
+        echo "$((_b / 1000000000)) GB"
+    elif [ "$_b" -ge 1000000 ]; then
+        echo "$((_b / 1000000)) MB"
+    else
+        echo "$((_b / 1000)) KB"
+    fi
 }
 
 listar_particiones() {
@@ -269,14 +282,14 @@ case "${1:-}" in
         case "$MODO" in
             borrar)
                 if [ "$TOTAL" -lt $((MINIMO_RAIZ + ESP_BYTES)) ]; then
-                    echo "error=$(msj pequeno "$((TOTAL / 1000000000))" "$(((MINIMO_RAIZ + ESP_BYTES) / 1000000000))")"
+                    echo "error=$(msj pequeno "$(legible "$TOTAL")" "$(legible $((MINIMO_RAIZ + ESP_BYTES)))")"
                     PROBLEMAS=$((PROBLEMAS + 1))
                 fi
                 ;;
             al-lado)
                 _libre="$("$0" libre "$DISCO" 2>/dev/null || echo 0)"
                 if [ "${_libre:-0}" -lt $((MINIMO_RAIZ + ESP_BYTES)) ]; then
-                    echo "error=$(msj sin_hueco "$(( ${_libre:-0} / 1000000000 ))" "$(((MINIMO_RAIZ + ESP_BYTES) / 1000000000))")"
+                    echo "error=$(msj sin_hueco "$(legible "${_libre:-0}")" "$(legible $((MINIMO_RAIZ + ESP_BYTES)))")"
                     PROBLEMAS=$((PROBLEMAS + 1))
                 fi
                 ;;
@@ -287,7 +300,7 @@ case "${1:-}" in
                 else
                     _pb="$(( $(cat "/sys/class/block/$(basename "$OBJETIVO")/size" 2>/dev/null || echo 0) * 512 ))"
                     if [ "$_pb" -lt "$MINIMO_RAIZ" ]; then
-                        echo "error=$(msj part_chica "$((_pb / 1000000000))" "$((MINIMO_RAIZ / 1000000000))")"
+                        echo "error=$(msj part_chica "$(legible "$_pb")" "$(legible "$MINIMO_RAIZ")")"
                         PROBLEMAS=$((PROBLEMAS + 1))
                     fi
                     if grep -qE "^$OBJETIVO " /proc/mounts 2>/dev/null; then

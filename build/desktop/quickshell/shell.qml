@@ -138,6 +138,47 @@ ShellRoot {
         }
     }
 
+    // --- Batería -----------------------------------------------------
+    //
+    // No existía. En una máquina virtual no hay batería y no se echa de menos;
+    // en un portátil, no tener ni idea de cuánta queda significa que el equipo
+    // se apaga de golpe a media faena. Y un apagado sin avisar en btrfs puede
+    // dejar el sistema de archivos a medias.
+    //
+    // Se lee de /sys/class/power_supply, que es donde el kernel lo publica. Si
+    // no hay batería (sobremesa, máquina virtual) el módulo no se dibuja: un
+    // indicador de batería al 0% en un sobremesa sería peor que ninguno.
+    property int bateriaPct: -1
+    property string bateriaEstado: ""
+    readonly property bool hayBateria: bateriaPct >= 0
+
+    Process {
+        id: leerBateria
+        running: true
+        command: ["sh", "-c",
+            "for b in /sys/class/power_supply/BAT*; do " +
+            "  [ -r \"$b/capacity\" ] || continue; " +
+            "  printf '%s %s' \"$(cat $b/capacity)\" \"$(cat $b/status 2>/dev/null)\"; " +
+            "  exit 0; done"]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                var t = text.trim()
+                if (t === "") { raiz_sin_bateria(); return }
+                var p = t.split(" ")
+                root.bateriaPct = parseInt(p[0])
+                root.bateriaEstado = p.length > 1 ? p[1] : ""
+            }
+        }
+    }
+    function raiz_sin_bateria() { root.bateriaPct = -1 }
+    Timer {
+        // Cada treinta segundos: la batería no cambia tan rápido como para
+        // justificar despertar el disco más a menudo, y cada lectura que no
+        // hace falta es batería gastada en mirar la batería.
+        interval: 30000; running: true; repeat: true
+        onTriggered: leerBateria.running = true
+    }
+
     // Estado de la contraseña de la cuenta: "puesta", "debil", "sin-clave" o
     // "desconocida". Lo dice m-clave, que es quien puede leer /etc/shadow.
     property string estadoClave: "desconocida"
@@ -461,6 +502,62 @@ ShellRoot {
         }
     }
 
+    // Batería. Sólo aparece si el equipo tiene una.
+    Component {
+        id: modBateria
+        Row {
+            spacing: 6
+            visible: root.hayBateria
+
+            // La pila se dibuja con su nivel dentro, no con un icono por cada
+            // tramo: así el nivel se ve de un vistazo sin leer el número.
+            Item {
+                width: root.fontSize + 9
+                height: root.fontSize
+                anchors.verticalCenter: parent.verticalCenter
+                Rectangle {
+                    id: carcasa
+                    width: parent.width - 2
+                    height: parent.height - 4
+                    y: 2
+                    radius: 3
+                    color: "transparent"
+                    border.width: 1.4
+                    border.color: root.bateriaPct <= 15 && root.bateriaEstado !== "Charging"
+                                  ? Paleta.aviso : Paleta.texto
+                    Rectangle {
+                        // El relleno nunca baja de 2 px: al 1% una barra de
+                        // cero píxeles se ve igual que "sin batería".
+                        width: Math.max(2, (carcasa.width - 5) * Math.max(0, Math.min(100, root.bateriaPct)) / 100)
+                        height: carcasa.height - 5
+                        x: 2.5; y: 2.5
+                        radius: 1.5
+                        color: root.bateriaEstado === "Charging" ? Paleta.ok
+                             : (root.bateriaPct <= 15 ? Paleta.aviso : Paleta.texto)
+                        Behavior on width { NumberAnimation { duration: 300 } }
+                    }
+                }
+                // El pinchito del polo positivo.
+                Rectangle {
+                    width: 2; height: parent.height - 10
+                    x: parent.width - 2; y: 5
+                    radius: 1
+                    color: root.bateriaPct <= 15 && root.bateriaEstado !== "Charging"
+                           ? Paleta.aviso : Paleta.texto
+                }
+            }
+            Text {
+                visible: !root.vertical
+                text: root.bateriaPct + "%"
+                color: root.bateriaPct <= 15 && root.bateriaEstado !== "Charging"
+                       ? Paleta.aviso : Paleta.texto
+                font.pixelSize: root.fontSize
+                font.bold: true
+                anchors.verticalCenter: parent.verticalCenter
+            }
+        }
+    }
+
     Component {
         id: modAjustes
         Icono {
@@ -483,6 +580,7 @@ ShellRoot {
             case "volumen":   return modVolumen
             case "red":       return modRed
             case "medidores": return modMedidores
+            case "bateria":   return modBateria
             case "botones":   return modBotones
             case "ajustes":   return modAjustes
         }
@@ -538,6 +636,7 @@ ShellRoot {
         { id: "identidad", nombre: "Identidad" },
         { id: "espacios",  nombre: "Espacios" },
         { id: "reloj",     nombre: "Reloj" },
+        { id: "bateria",   nombre: "Batería" },
         { id: "medidores", nombre: "Medidores" },
         { id: "red",       nombre: "Red" },
         { id: "volumen",   nombre: "Volumen" },
@@ -686,6 +785,12 @@ ShellRoot {
             id: isla
             property string modulo: ""
             property bool agrupada: false
+
+            // Si el módulo de dentro decide no dibujarse, la isla tampoco.
+            // Sin esto quedaba una cápsula vacía en la barra: le pasó al
+            // módulo de batería, que se esconde solo cuando el equipo no tiene
+            // ninguna, y dejaba un hueco con borde en mitad de la fila.
+            visible: carga.item === null || carga.item.visible
             // La isla crece en la dirección de la barra y mantiene el grosor
             // en la perpendicular, para que todas queden alineadas.
             // En vertical el grosor lo manda la anchura disponible de la

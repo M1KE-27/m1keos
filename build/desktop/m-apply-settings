@@ -164,7 +164,11 @@ METRICS_INTERVAL="$(leer  metrics_interval entero:1000:30000             3000)"
 # de shell.qml; uno desconocido simplemente no pinta nada.
 BAR_LEFT="$(leer          bar_left        lista                          identidad)"
 BAR_CENTER="$(leer        bar_center      lista                          espacios)"
-BAR_RIGHT="$(leer         bar_right       lista                          'medidores,red,volumen,reloj,botones,ajustes')"
+# «bateria» va en la lista por defecto. El módulo se esconde solo si el equipo
+# no tiene batería, así que en un sobremesa o en una máquina virtual no estorba,
+# y en un portátil aparece sin que nadie tenga que descubrir que existe. Estar
+# ahí es justamente lo que evita quedarse sin batería sin haberlo visto venir.
+BAR_RIGHT="$(leer         bar_right       lista                          'medidores,red,volumen,bateria,reloj,botones,ajustes')"
 # Botones rápidos disponibles. Sólo se admiten los que tienen función real:
 # captura de pantalla y cambio de teclado.
 BAR_BUTTONS="$(leer       bar_buttons     lista                          'captura,teclado')"
@@ -237,7 +241,15 @@ if [ ! -f "$SETTINGS" ]; then
         _linea metrics_interval  "$METRICS_INTERVAL"      'refresco de medidores en ms (1000-30000)'
         echo
         echo '-- Módulos de la barra, por zona y en orden. Disponibles:'
-        echo '--   identidad, espacios, reloj, ajustes'
+        echo '--   identidad  la marca del sistema'
+        echo '--   espacios   los escritorios'
+        echo '--   reloj      hora y fecha'
+        echo '--   medidores  CPU y memoria'
+        echo '--   red        wifi o cable'
+        echo '--   volumen    nivel de sonido'
+        echo '--   bateria    sólo aparece si el equipo tiene'
+        echo '--   botones    los botones rápidos de abajo'
+        echo '--   ajustes    abre el Centro de Control'
         _linea bar_left          "\"$BAR_LEFT\""          'zona izquierda'
         _linea bar_center        "\"$BAR_CENTER\""        'zona central'
         _linea bar_right         "\"$BAR_RIGHT\""         'zona derecha'

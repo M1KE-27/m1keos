@@ -401,7 +401,7 @@ chmod 755 "$ROOTFS_DIR/usr/bin/jq"
 # de copiarlo daba un aviso falso en cada build.
 
 # Instalar MCore
-for util in m-service m-system m-network m-user m-disk m-info m-doctor m-log m-sudo m-autenticar m-clave m-acceso-remoto m-colores m-particiones m-install m-screenshot m-volume m-metrics m-audio-setup m-fastfetch m-workspace-cycle m-drivers m-wifi m-bluetooth m-wallhaven m-fondo m-internet; do
+for util in m-service m-system m-network m-user m-disk m-info m-doctor m-log m-sudo m-autenticar m-clave m-acceso-remoto m-colores m-particiones m-brillo m-tapa m-install m-screenshot m-volume m-metrics m-audio-setup m-fastfetch m-workspace-cycle m-drivers m-wifi m-bluetooth m-wallhaven m-fondo m-internet; do
     cp "$BUILD_DIR/mcore/$util" "$ROOTFS_DIR/usr/bin/"
     chmod 755 "$ROOTFS_DIR/usr/bin/$util"
 done
@@ -923,19 +923,39 @@ FW_ORIGEN="/lib/firmware"
 FW_DESTINO="$ROOTFS_DIR/lib/firmware"
 if [ -d "$FW_ORIGEN" ]; then
     mkdir -p "$FW_DESTINO"
-    # Gráficos AMD: Picasso y Raven son la Surface Laptop 3 AMD; Renoir, la 4.
-    # Vega10/Vega20 por si aparece una tarjeta dedicada.
-    # Sólo lo que este hardware pide de verdad. La primera versión de esta
-    # lista metía i915 (28 MB) y todas las revisiones de iwlwifi (239 MB) por
-    # llevarlas "de propina", y dejaba una imagen de 937 MB para un sistema
-    # que presume de ocupar poco. Lo de otros fabricantes se instala a
-    # demanda: para eso hay un gestor de paquetes (ver firmware-extra).
+    # La regla para decidir qué entra y qué no:
+    #
+    #   Si sin ese firmware el equipo se queda SIN PANTALLA, entra. De todo lo
+    #   demás se puede salir: sin wifi se puede enchufar un cable, sin sonido
+    #   se puede trabajar, sin bluetooth también. Sin imagen no se puede ni
+    #   leer el error, que es exactamente lo que le pasó a una Surface Laptop 4
+    #   con una versión que llevaba el driver pero no su firmware.
+    #
+    # GRÁFICAS: todo lo que lleve un portátil de los últimos diez años.
+    #   picasso, raven          Ryzen 2000-3000 (Surface Laptop 3 AMD)
+    #   renoir, green_sardine   Ryzen 4000-5000 (Surface Laptop 4 AMD)
+    #   yellow_carp             Ryzen 6000 (Rembrandt)
+    #   vega10, vega20          tarjetas dedicadas. El comentario de antes
+    #                           decía que estaban incluidas y NO lo estaban:
+    #                           la lista no las nombraba por ninguna parte.
+    #   i915                    Intel. La versión anterior lo dejaba fuera
+    #                           diciendo que eran 28 MB; son 9,6. Sin él,
+    #                           cualquier portátil Intel se queda a oscuras
+    #                           igual que se quedó la Surface.
+    #
+    # Lo de red sigue fuera a propósito y es un compromiso incómodo: iwlwifi
+    # son cientos de megas. Se instala con "mpm install firmware-extra"... para
+    # lo cual hace falta red. O sea que en un portátil con wifi Intel y sin
+    # cable, la primera vez hay que tirar de móvil por USB. Está documentado en
+    # m-drivers, que dice exactamente qué falta y cómo traerlo.
     FW_PATRONES="
         amdgpu/picasso*   amdgpu/raven*     amdgpu/renoir*
-        amdgpu/green_sardine*
+        amdgpu/green_sardine*   amdgpu/yellow_carp*
+        amdgpu/vega10*    amdgpu/vega20*
+        i915/*
         ath10k/QCA6174/*  ath10k/QCA9377/*
         qca/*usb*         qca/nvm*          qca/rampatch*
-        amd-ucode/*
+        amd-ucode/*       intel-ucode/*
         rtw88/*
         regulatory.db*
     "

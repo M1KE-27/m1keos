@@ -1,0 +1,64 @@
+#!/bin/sh
+# m-tapa - qué pasa al cerrar y abrir la tapa del portátil.
+#
+# No existía nada de esto. En una máquina virtual no hay tapa; en un portátil,
+# cerrarla y que la pantalla siga encendida es quedarse sin batería dentro de la
+# mochila. Y un apagado de golpe con la raíz en btrfs puede dejar el sistema de
+# archivos a medias.
+#
+# Lo que hace al cerrar:
+#   1. Bloquea la sesión, para que abrirla pida la contraseña.
+#   2. Apaga la pantalla, que es lo que de verdad ahorra batería.
+#
+# Lo que NO hace, y es a propósito: suspender. Suspender y despertar bien
+# necesita ajustes de energía y firmware que este sistema aún no tiene
+# probados, y un equipo que suspende pero no despierta es peor que uno que no
+# suspende: pierdes el trabajo y encima parece que se ha roto. Cuando eso esté
+# probado en hardware de verdad, se cambia aquí y en hyprland.conf.
+#
+#   m-tapa cerrar     bloquea y apaga la pantalla
+#   m-tapa abrir      enciende la pantalla
+set -u
+
+PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
+export PATH
+
+# Con un monitor externo conectado, cerrar la tapa NO debe apagar nada: mucha
+# gente usa el portátil cerrado con una pantalla y un teclado fuera, y apagarle
+# la pantalla externa sería exactamente lo contrario de lo que quiere.
+pantallas_externas() {
+    _n=0
+    for _s in /sys/class/drm/card*-*/status; do
+        [ -r "$_s" ] || continue
+        [ "$(cat "$_s" 2>/dev/null)" = "connected" ] || continue
+        case "$_s" in
+            # eDP y LVDS son la pantalla interna del propio portátil.
+            *eDP*|*LVDS*) continue ;;
+        esac
+        _n=$((_n + 1))
+    done
+    echo "$_n"
+}
+
+case "${1:-}" in
+    cerrar)
+        if [ "$(pantallas_externas)" -gt 0 ]; then
+            # Hay monitor externo: se deja todo como está.
+            exit 0
+        fi
+        # Primero bloquear y luego apagar: al revés, la pantalla se enciende
+        # otra vez al aparecer la ventana de bloqueo.
+        command -v m-bloquear >/dev/null 2>&1 && setsid m-bloquear >/dev/null 2>&1 &
+        sleep 1
+        hyprctl dispatch dpms off >/dev/null 2>&1 || true
+        ;;
+
+    abrir)
+        hyprctl dispatch dpms on >/dev/null 2>&1 || true
+        ;;
+
+    *)
+        echo "Uso: m-tapa [cerrar|abrir]" >&2
+        exit 1
+        ;;
+esac

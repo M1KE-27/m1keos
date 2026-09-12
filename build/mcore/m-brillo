@@ -1,0 +1,74 @@
+#!/bin/sh
+# m-brillo - el brillo de la pantalla.
+#
+# No existía. En una máquina virtual da igual, porque el brillo lo pone el
+# monitor de verdad que hay detrás; en un portátil es de las primeras cosas que
+# alguien toca, y las teclas de brillo no hacían nada porque no había a quién
+# llamar.
+#
+# El kernel expone el brillo en /sys/class/backlight. Puede haber varios
+# controladores a la vez (amdgpu_bl0, intel_backlight, acpi_video0) y no todos
+# funcionan en el mismo equipo: se prueba el que de verdad responde, no el
+# primero que aparece.
+#
+#   m-brillo              imprime el porcentaje actual
+#   m-brillo subir        +10%
+#   m-brillo bajar        -10%
+#   m-brillo 60           lo pone al 60%
+set -u
+
+PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
+export PATH
+
+# Qué controlador usar. Los de la gráfica (amdgpu, intel, nvidia) mandan sobre
+# los de ACPI: acpi_video0 existe en muchos equipos donde no hace nada, y
+# escribir ahí da la falsa impresión de que funcionó.
+controlador() {
+    for _pref in amdgpu_bl1 amdgpu_bl0 intel_backlight nvidia_wmi_ec_backlight \
+                 nv_backlight apple_backlight; do
+        [ -w "/sys/class/backlight/$_pref/brightness" ] && { echo "$_pref"; return; }
+    done
+    for _c in /sys/class/backlight/*; do
+        [ -w "$_c/brightness" ] && { basename "$_c"; return; }
+    done
+}
+
+CTRL="$(controlador)"
+if [ -z "$CTRL" ]; then
+    # Sin controlador no hay nada que hacer, pero hay que DECIRLO. Un monitor
+    # de sobremesa no tiene control por software, y eso no es un fallo.
+    echo "m-brillo: este equipo no deja controlar el brillo por software." >&2
+    echo "  (normal en monitores externos: se ajusta con sus propios botones)" >&2
+    exit 1
+fi
+
+BASE="/sys/class/backlight/$CTRL"
+MAXIMO="$(cat "$BASE/max_brightness" 2>/dev/null || echo 0)"
+[ "${MAXIMO:-0}" -gt 0 ] || { echo "m-brillo: $CTRL no dice su máximo." >&2; exit 1; }
+ACTUAL="$(cat "$BASE/brightness" 2>/dev/null || echo 0)"
+PCT=$(( ACTUAL * 100 / MAXIMO ))
+
+fijar() {  # fijar <porcentaje>
+    _p="$1"
+    # Nunca a cero. Dejar la pantalla completamente apagada con las teclas de
+    # brillo parece que el equipo se ha colgado, y quien lo hizo no tiene forma
+    # de ver para subirlo otra vez. El mínimo es 1%.
+    [ "$_p" -lt 1 ] && _p=1
+    [ "$_p" -gt 100 ] && _p=100
+    _valor=$(( _p * MAXIMO / 100 ))
+    [ "$_valor" -lt 1 ] && _valor=1
+    if ! printf '%s' "$_valor" > "$BASE/brightness" 2>/dev/null; then
+        # El archivo suele pertenecer a root. m-sudo para eso está.
+        printf '%s' "$_valor" | m-sudo tee "$BASE/brightness" >/dev/null 2>&1 \
+            || { echo "m-brillo: no se ha podido escribir el brillo." >&2; exit 1; }
+    fi
+    echo "$_p"
+}
+
+case "${1:-}" in
+    ""|actual) echo "$PCT" ;;
+    subir)     fijar $(( PCT + 10 )) ;;
+    bajar)     fijar $(( PCT - 10 )) ;;
+    *[!0-9]*)  echo "Uso: m-brillo [actual|subir|bajar|<0-100>]" >&2; exit 1 ;;
+    *)         fijar "$1" ;;
+esac

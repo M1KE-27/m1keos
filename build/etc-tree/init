@@ -255,7 +255,11 @@ if [ -z "$ROOT_DEV" ] || [ "$ROOT_DEV" = "/dev/ram0" ]; then
         fi
     fi
 fi
-ROOT_TIMEOUT=15
+# Treinta segundos, no quince. Un NVMe de portátil puede tardar bastante más
+# que un disco virtual en estar listo, y rendirse pronto significa arrancar sin
+# raíz: o sea, a una consola pelada sin explicación. Esperar de más no le
+# cuesta nada a quien tiene un disco rápido, porque en cuanto aparece sigue.
+ROOT_TIMEOUT=30
 [ -f /etc/mikeos/boot.conf ] && . /etc/mikeos/boot.conf
 
 # root=vivo lo pone el menú de GRUB del USB. También se intenta cuando no hay

@@ -163,6 +163,36 @@ echo "=================="
 echo "Recomendado:$INSTALAR"
 echo
 
+# El problema del huevo y la gallina, dicho antes de que muerda.
+#
+# Todo esto se descarga del repositorio, o sea que hace falta internet. Si lo
+# que falta justamente es el firmware de la tarjeta WiFi, no hay forma de
+# bajarlo por WiFi. Antes se intentaba igual y salía un error de red genérico
+# que no explicaba nada, dejando a quien lo leía convencido de que el
+# repositorio estaba caído.
+if ! m-internet >/dev/null 2>&1; then
+    echo "AVISO: ahora mismo no hay internet, y esto se descarga."
+    echo
+    case "$INSTALAR" in
+        *firmware*|*wifi*|*iwlwifi*)
+            echo "  Y lo que falta es justo lo que da acceso a la red, así que"
+            echo "  por WiFi no se puede resolver. Tres salidas:"
+            echo
+            echo "    1. Un cable de red. Es lo más rápido si tienes puerto o"
+            echo "       un adaptador USB."
+            echo "    2. El móvil por USB: conéctalo y activa «compartir"
+            echo "       internet» o «anclaje a red por USB». Casi todos los"
+            echo "       móviles funcionan sin instalar nada."
+            echo "    3. Otro equipo: descarga el paquete a un USB y luego"
+            echo "       «mpm install /ruta/al/paquete.mpk»."
+            ;;
+        *)
+            echo "  Conéctate a una red y vuelve a ejecutar esto."
+            ;;
+    esac
+    echo
+fi
+
 case "${1:-}" in
     --instalar)
         # -y a propósito: quien llega aquí ya ha dicho que sí, sea pulsando

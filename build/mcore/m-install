@@ -495,9 +495,27 @@ esac
 [ -b "$P1" ] || { error "no hay partición EFI utilizable ($P1)."; exit 1; }
 
 # --- 2. Formatear ------------------------------------------------------------
+#
+# Cada orden de aquí abajo comprueba si funcionó y dice qué pasó si no.
+#
+# Antes todas acababan en ">/dev/null 2>&1" sin mirar el resultado. Con
+# "set -e" el script sí abortaba, pero en SILENCIO: se veía "Formateando" y el
+# programa se terminaba. Sin error, sin motivo, sin nada. Un disco con sectores
+# defectuosos o una partición que otro proceso tiene abierta daban exactamente
+# esa nada.
+hacer() {  # hacer "<qué estoy haciendo>" orden...
+    _titulo="$1"; shift
+    if ! "$@" >/tmp/m-install-paso.out 2>&1; then
+        error "$_titulo"
+        sed 's/^/    /' /tmp/m-install-paso.out 2>/dev/null | head -4
+        exit 1
+    fi
+}
+
 paso "Formateando"
 if [ "$CREAR_ESP" = "si" ]; then
-    mkfs.vfat -F 32 -n MIKEOS_EFI "$P1" >/dev/null 2>&1
+    hacer "no se ha podido formatear $P1 como FAT32" \
+        mkfs.vfat -F 32 -n MIKEOS_EFI "$P1"
     ok "$P1 en FAT32"
 else
     # La EFI que ya existe NO se formatea: dentro está el arranque del otro
@@ -510,39 +528,76 @@ MONTAJE=/tmp/mikeos_destino
 mkdir -p "$MONTAJE"
 
 if [ "$FS" = "btrfs" ]; then
-    mkfs.btrfs -f -L MIKEOS_ROOT "$P2" >/dev/null 2>&1
+    hacer "no se ha podido formatear $P2 como btrfs" \
+        mkfs.btrfs -f -L MIKEOS_ROOT "$P2"
     # Subvolúmenes: @ para el sistema y @home para los datos. Separarlos es lo
     # que permite revertir una actualización que salió mal sin llevarse por
     # delante los archivos de quien usa el equipo.
-    mount "$P2" "$MONTAJE"
-    btrfs subvolume create "$MONTAJE/@"          >/dev/null
-    btrfs subvolume create "$MONTAJE/@home"      >/dev/null
-    btrfs subvolume create "$MONTAJE/@instantaneas" >/dev/null
-    umount "$MONTAJE"
+    hacer "no se ha podido montar $P2" mount "$P2" "$MONTAJE"
+    hacer "no se ha podido crear el subvolumen @" \
+        btrfs subvolume create "$MONTAJE/@"
+    hacer "no se ha podido crear el subvolumen @home" \
+        btrfs subvolume create "$MONTAJE/@home"
+    hacer "no se ha podido crear el subvolumen @instantaneas" \
+        btrfs subvolume create "$MONTAJE/@instantaneas"
+    hacer "no se ha podido desmontar $P2" umount "$MONTAJE"
     # zstd:1 es el nivel bajo a propósito: comprime lo justo para que el disco
     # lea menos, sin gastar procesador en apretar más de lo que compensa.
     OPCIONES="compress=zstd:1,noatime,ssd"
-    mount -o "$OPCIONES,subvol=@" "$P2" "$MONTAJE"
+    hacer "no se ha podido montar el subvolumen @" \
+        mount -o "$OPCIONES,subvol=@" "$P2" "$MONTAJE"
     mkdir -p "$MONTAJE/home"
-    mount -o "$OPCIONES,subvol=@home" "$P2" "$MONTAJE/home"
+    hacer "no se ha podido montar el subvolumen @home" \
+        mount -o "$OPCIONES,subvol=@home" "$P2" "$MONTAJE/home"
     ok "$P2 en btrfs con @ , @home e instantáneas"
 else
-    mkfs.ext4 -F -L MIKEOS_ROOT "$P2" >/dev/null 2>&1
-    mount "$P2" "$MONTAJE"
+    hacer "no se ha podido formatear $P2 como ext4" \
+        mkfs.ext4 -F -L MIKEOS_ROOT "$P2"
+    hacer "no se ha podido montar $P2" mount "$P2" "$MONTAJE"
     ok "$P2 en ext4"
 fi
 
 # --- 3. Copiar el sistema ----------------------------------------------------
 paso "Copiando el sistema"
+
+# Cuánto hay que copiar y cuánto cabe. Antes no se miraba: si el disco se
+# llenaba a media copia, cp fallaba, el error iba a /dev/null, el script decía
+# "sistema base copiado" tan tranquilo y el equipo quedaba con media
+# instalación que no arranca. Y sin una sola pista de por qué.
+NECESARIO_KB=0
 for d in bin sbin usr etc var root home lib lib64; do
     [ -d "/$d" ] || continue
     [ -L "/$d" ] && continue
-    cp -a "/$d" "$MONTAJE/" 2>/dev/null || true
+    _t="$(du -sk "/$d" 2>/dev/null | cut -f1)"
+    NECESARIO_KB=$((NECESARIO_KB + ${_t:-0}))
 done
+DISPONIBLE_KB="$(df -k "$MONTAJE" 2>/dev/null | awk 'NR==2 {print $4}')"
+# Un 12% de margen: los metadatos del sistema de archivos y los subvolúmenes
+# ocupan, y quedarse justo es quedarse corto.
+MINIMO_KB=$((NECESARIO_KB + NECESARIO_KB / 8))
+if [ -n "$DISPONIBLE_KB" ] && [ "$DISPONIBLE_KB" -lt "$MINIMO_KB" ]; then
+    error "no cabe: hacen falta $((MINIMO_KB / 1024)) MB y sólo hay $((DISPONIBLE_KB / 1024)) MB."
+    nota "No se ha copiado nada. Elige un disco o una partición más grande."
+    exit 1
+fi
+
+# Y ahora, copiando de verdad: si algo falla, se dice y se para. Una
+# instalación a medias es peor que ninguna, porque parece que funcionó.
+for d in bin sbin usr etc var root home lib lib64; do
+    [ -d "/$d" ] || continue
+    [ -L "/$d" ] && continue
+    if ! cp -a "/$d" "$MONTAJE/" 2>/tmp/m-install-copia.err; then
+        error "falló al copiar /$d."
+        head -3 /tmp/m-install-copia.err 2>/dev/null | sed 's/^/    /'
+        nota "El disco queda a medias. No lo arranques: vuelve a instalar."
+        exit 1
+    fi
+done
+sync
 mkdir -p "$MONTAJE/proc" "$MONTAJE/sys" "$MONTAJE/dev" "$MONTAJE/run" \
          "$MONTAJE/tmp" "$MONTAJE/boot"
 chmod 1777 "$MONTAJE/tmp"
-ok "sistema base copiado"
+ok "sistema base copiado ($((NECESARIO_KB / 1024)) MB)"
 
 # --- 4. Arranque UEFI --------------------------------------------------------
 paso "Preparando el arranque"
@@ -603,12 +658,18 @@ done
 
 # La raíz se identifica por UUID y no por /dev/nvme0n1p2: enchufar un USB
 # puede cambiar los nombres de dispositivo entre un arranque y el siguiente.
+#
+# Y sin "quiet". Se quitó del menú del USB porque escondía los fallos, y aquí
+# hacía exactamente lo mismo: un sistema instalado que no arrancara se veía
+# como una pantalla negra en vez de decir qué le pasaba. La entrada "ver
+# mensajes de arranque" del menú deja de tener sentido si la normal también
+# los enseña, pero se conserva: quita también el "splash" si algún día lo hay.
 UUID="$(blkid -s UUID -o value "$P2" 2>/dev/null || true)"
 if [ -n "$UUID" ]; then RAIZ="root=UUID=$UUID"; else RAIZ="root=$P2"; fi
 if [ "$FS" = "btrfs" ]; then
-    CMDLINE="$RAIZ rw rootflags=subvol=@ rootfstype=btrfs quiet"
+    CMDLINE="$RAIZ rw rootflags=subvol=@ rootfstype=btrfs"
 else
-    CMDLINE="$RAIZ rw rootfstype=ext4 quiet"
+    CMDLINE="$RAIZ rw rootfstype=ext4"
 fi
 # La firmware lee la línea de órdenes de este archivo cuando el kernel arranca
 # por sí solo, sin gestor que se la pase.
@@ -871,11 +932,33 @@ else
 fi
 
 # --- Fin ---------------------------------------------------------------------
+#
+# El desmontaje NO es un trámite. Mientras haya algo montado puede quedar
+# escritura sin volcar al disco; si alguien apaga el equipo justo aquí, la
+# instalación queda incompleta y no arranca. Por eso se sincroniza primero y se
+# comprueba después: si algo se queda montado, hay que decirlo, no rematar con
+# un "instalado con éxito" que puede no ser verdad.
+paso "Terminando de escribir en el disco"
 sync
 [ -n "$MEDIO_TEMPORAL" ] && umount "$MEDIO_TEMPORAL" 2>/dev/null || true
 umount "$MONTAJE/boot/efi" 2>/dev/null || true
 [ "$FS" = "btrfs" ] && umount "$MONTAJE/home" 2>/dev/null || true
 umount "$MONTAJE" 2>/dev/null || true
+sync
+
+# Si algo sigue montado, se reintenta una vez tras un respiro: casi siempre es
+# un proceso que todavía tenía un archivo abierto y suelta enseguida.
+if mountpoint -q "$MONTAJE" 2>/dev/null; then
+    sleep 2
+    sync
+    umount -l "$MONTAJE" 2>/dev/null || true
+fi
+if mountpoint -q "$MONTAJE" 2>/dev/null; then
+    error "el disco de destino sigue montado; puede quedar algo sin escribir."
+    nota "Antes de apagar, ejecuta:  sync  y luego  umount $MONTAJE"
+    exit 1
+fi
+ok "todo volcado al disco"
 
 echo
 printf "  ${VERDE}${NEGRITA}MIKE OS instalado en %s${FIN}\n" "$DESTINO"
