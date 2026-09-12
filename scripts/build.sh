@@ -1089,6 +1089,13 @@ install_etc etc/shells 644
 install_etc etc/fstab 644
 
 install_etc etc/os-release 644
+# La versión vive en un solo sitio, el archivo VERSION de la raíz del
+# proyecto, y se sustituye aquí. Antes estaba escrita a mano en os-release y
+# en tres puntos más del QML, así que publicar una versión nueva significaba
+# acordarse de cuatro archivos: el Centro de Control siguió diciendo 0.2.0
+# durante toda la 0.3.0.
+MIKEOS_VERSION="$(tr -d ' \n' < "$PROJECT_ROOT/VERSION" 2>/dev/null || echo 0.0.0)"
+sed -i "s/@VERSION@/$MIKEOS_VERSION/g" "$ROOTFS_DIR/etc/os-release"
 
 # Configurar skeleton /etc/skel y ~/.config/mike
 mkdir -p "$ROOTFS_DIR/etc/skel/.config/mike/quickshell" "$ROOTFS_DIR/etc/skel/.config/mike/theme"

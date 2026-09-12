@@ -1,18 +1,29 @@
 <!doctype html>
 <html lang="es"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Kernel · MIKE OS</title><link rel="stylesheet" href="../estilo.css"></head><body>
+<meta name="color-scheme" content="dark">
+<meta name="description" content="MIKE OS: un sistema operativo construido desde el kernel hacia arriba. Sin systemd, con gestor de paquetes, shell y escritorio propios.">
+<meta property="og:title" content="Kernel · MIKE OS">
+<meta property="og:description" content="Un sistema operativo construido desde el kernel hacia arriba.">
+<meta property="og:image" content="https://m1keos.duckdns.org/capturas/escritorio.png">
+<meta property="og:type" content="website">
+<title>Kernel · MIKE OS</title>
+<link rel="icon" href="../favicon.svg" type="image/svg+xml">
+<link rel="preload" href="../tipos/geist-700.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../estilo.css"></head><body>
 <nav><div class="cont">
   <a class="marca" href="../index.html">
-    <svg viewBox="0 0 24 24" fill="none" stroke="#e8ebf0" stroke-width="2"
-         stroke-linecap="round" stroke-linejoin="round"><path d="M5 6l6 6-6 6"/><path d="M13 18h7"/></svg>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 6l6 6-6 6"/><path d="M13 18h7"/></svg>
     MIKE OS</a>
-  <a class="enl" href="../index.html">Inicio</a>
-  <a class="enl" href="../descargas.html">Descargar</a>
+  <a class="enl " href="../index.html">Inicio</a>
+  <a class="enl " href="../capturas/index.html">Capturas</a>
   <a class="enl aqui" href="../docs/index.html">Documentación</a>
   <a class="enl " href="../wiki/index.html">Wiki</a>
+  <a class="enl derecha" href="https://github.com/M1KE-27/m1keos">Código</a>
+  <a class="btn " href="../descargas.html">Descargar</a>
 </div></nav>
-<div class="cont">
+<div class="cont"><main>
 <header><h1>Kernel</h1></header>
 <article><h1 id="mike-os-kernel-management-and-lifecycle">MIKE OS — Kernel Management and Lifecycle</h1>
 <h2 id="1-overview">1. Overview</h2>
@@ -45,5 +56,3 @@ mpm kernel remove 7.1.0
 <li><code>CONFIG_EXT4_FS=y</code>: Native rootfs filesystem support.</li>
 <li><code>CONFIG_VIRTIO_BLK=y</code> &amp; <code>CONFIG_VIRTIO_NET=y</code>: Hypervisor acceleration.</li>
 </ul></article>
-<footer>MIKE OS · <a href="../index.html">Inicio</a></footer>
-</div></body></html>

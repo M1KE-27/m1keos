@@ -1,18 +1,29 @@
 <!doctype html>
 <html lang="es"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Red · MIKE OS</title><link rel="stylesheet" href="../estilo.css"></head><body>
+<meta name="color-scheme" content="dark">
+<meta name="description" content="MIKE OS: un sistema operativo construido desde el kernel hacia arriba. Sin systemd, con gestor de paquetes, shell y escritorio propios.">
+<meta property="og:title" content="Red · MIKE OS">
+<meta property="og:description" content="Un sistema operativo construido desde el kernel hacia arriba.">
+<meta property="og:image" content="https://m1keos.duckdns.org/capturas/escritorio.png">
+<meta property="og:type" content="website">
+<title>Red · MIKE OS</title>
+<link rel="icon" href="../favicon.svg" type="image/svg+xml">
+<link rel="preload" href="../tipos/geist-700.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../estilo.css"></head><body>
 <nav><div class="cont">
   <a class="marca" href="../index.html">
-    <svg viewBox="0 0 24 24" fill="none" stroke="#e8ebf0" stroke-width="2"
-         stroke-linecap="round" stroke-linejoin="round"><path d="M5 6l6 6-6 6"/><path d="M13 18h7"/></svg>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 6l6 6-6 6"/><path d="M13 18h7"/></svg>
     MIKE OS</a>
-  <a class="enl" href="../index.html">Inicio</a>
-  <a class="enl" href="../descargas.html">Descargar</a>
+  <a class="enl " href="../index.html">Inicio</a>
+  <a class="enl " href="../capturas/index.html">Capturas</a>
   <a class="enl aqui" href="../docs/index.html">Documentación</a>
   <a class="enl " href="../wiki/index.html">Wiki</a>
+  <a class="enl derecha" href="https://github.com/M1KE-27/m1keos">Código</a>
+  <a class="btn " href="../descargas.html">Descargar</a>
 </div></nav>
-<div class="cont">
+<div class="cont"><main>
 <header><h1>Red</h1></header>
 <article><h1 id="mike-os-networking-and-ssh">MIKE OS — Networking and SSH</h1>
 <h2 id="1-network-architecture">1. Network Architecture</h2>
@@ -42,5 +53,3 @@ m-network static eth0 192.168.1.50/24 192.168.1.1
   ssh -p 2222 mike@localhost</code></li>
 <li><strong>Client Tool</strong>: <code>ssh</code> / <code>dbclient</code> and <code>scp</code> are pre-installed in <code>/usr/bin/</code>.</li>
 </ul></article>
-<footer>MIKE OS · <a href="../index.html">Inicio</a></footer>
-</div></body></html>

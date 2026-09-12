@@ -1,70 +1,170 @@
 <!doctype html>
 <html lang="es"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>MIKE OS</title><link rel="stylesheet" href="estilo.css"></head><body>
+<meta name="color-scheme" content="dark">
+<meta name="description" content="MIKE OS: un sistema operativo construido desde el kernel hacia arriba. Sin systemd, con gestor de paquetes, shell y escritorio propios.">
+<meta property="og:title" content="MIKE OS">
+<meta property="og:description" content="Un sistema operativo construido desde el kernel hacia arriba.">
+<meta property="og:image" content="https://m1keos.duckdns.org/capturas/escritorio.png">
+<meta property="og:type" content="website">
+<title>MIKE OS</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="preload" href="tipos/geist-700.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="estilo.css"></head><body>
 <nav><div class="cont">
   <a class="marca" href="index.html">
-    <svg viewBox="0 0 24 24" fill="none" stroke="#e8ebf0" stroke-width="2"
-         stroke-linecap="round" stroke-linejoin="round"><path d="M5 6l6 6-6 6"/><path d="M13 18h7"/></svg>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 6l6 6-6 6"/><path d="M13 18h7"/></svg>
     MIKE OS</a>
   <a class="enl aqui" href="index.html">Inicio</a>
-  <a class="enl " href="descargas.html">Descargar</a>
+  <a class="enl " href="capturas/index.html">Capturas</a>
   <a class="enl " href="docs/index.html">Documentación</a>
   <a class="enl " href="wiki/index.html">Wiki</a>
+  <a class="enl derecha" href="https://github.com/M1KE-27/m1keos">Código</a>
+  <a class="btn " href="descargas.html">Descargar</a>
 </div></nav>
-<div class="cont">
-<header>
-  <div class="estado"><span class="punto"></span>En desarrollo · arranca en hardware UEFI</div>
-  <h1>Un sistema operativo hecho desde cero.</h1>
-  <p class="lema">Kernel Linux propio, init con runit, gestor de paquetes propio
-    y escritorio propio. Cero systemd.</p>
-</header>
+<div class="portada"><div class="cont"><div class="rejilla">
+  <div>
+    <h1>Escrito desde el kernel hacia arriba.</h1>
+    <p class="entradilla">MIKE OS es un sistema operativo completo. Kernel
+      propio, sin systemd, gestor de paquetes y escritorio escritos para él.</p>
+    <div class="acciones">
+      <a class="btn btn-vivo" href="https://github.com/M1KE-27/m1keos/releases/download/v0.3.0/mikeos.iso">Descargar v0.3.0</a>
+      <a class="btn" href="docs/instalacion.html">Cómo se instala</a>
+    </div>
+    <p class="bajo-boton">307M &nbsp;·&nbsp; x86_64 UEFI</p>
+  </div>
+  <div class="captura-portada">
+    <img src="capturas/bienvenida.png" width="1600" height="900"
+         alt="El escritorio de MIKE OS con la ventana de bienvenida abierta">
+  </div>
+</div>
 
 <div class="cifras">
-  <div class="cifra"><b>0,59 s</b><span>en arrancar</span></div>
-  <div class="cifra"><b>50 MB</b><span>de RAM en reposo</span></div>
-  <div class="cifra"><b>0 %</b><span>systemd</span></div>
-  <div class="cifra"><b>175M</b><span>la imagen entera</span></div>
+  <div class="cifra"><b>0,59 s</b><span>del kernel a la consola</span></div>
+  <div class="cifra"><b>324 MB</b><span>de RAM con el escritorio</span></div>
+  <div class="cifra"><b>25 s</b><span>en compilar el sistema</span></div>
+  <div class="cifra"><b>0</b><span>líneas de systemd</span></div>
 </div>
+</div></div>
 
-<figure>
-  <img src="capturas/escritorio.png" alt="El escritorio de MIKE OS">
-  <figcaption>El escritorio: Hyprland con la barra de MIKE OS.</figcaption>
-</figure>
+<div class="cont">
 
-<h2>Sin gestor de arranque</h2>
-<p>El kernel se compila con <code>CONFIG_EFI_STUB</code>, así que es él mismo un
-  ejecutable UEFI: se copia en la partición EFI como
-  <code>EFI/BOOT/BOOTX64.EFI</code> y la firmware lo arranca directamente. No hay
-  GRUB que mantener ni que se pueda romper.</p>
+<section>
+  <div class="prosa">
+    <h2>Qué hay aquí dentro</h2>
+    <p>MIKE OS no es una distribución con otro tema encima. El kernel se
+      configura y se compila aquí, el init es runit, y el gestor de paquetes, la
+      shell, la terminal y el escritorio están escritos para este sistema.</p>
+  </div>
+  <div class="piezas">
+    <div><b>kernel 7.2.0-12252-g388b607d107c</b><span>configurado a mano, con arranque UEFI propio y btrfs dentro</span></div>
+    <div><b>runit</b><span>el init. Arranca los servicios y los vigila; si uno se cae, vuelve</span></div>
+    <div><b>mpm</b><span>gestor de paquetes con instantáneas antes de cada cambio y vuelta atrás</span></div>
+    <div><b>mkshell</b><span>la shell del sistema</span></div>
+    <div><b>Hyprland + Quickshell</b><span>el compositor y una barra escrita en QML para esto</span></div>
+    <div><b>8 paquetes</b><span>en el repositorio propio</span></div>
+  </div>
+</section>
 
-<h2>Qué lleva dentro</h2>
-<div class="rejilla">
-  <div class="tarj"><h3>Kernel 7.2.0-12252-g388b607d107c</h3>
-    <p>Compilado para este sistema. Soporte de hardware real, arranque UEFI y
-      la configuración afinada para portátil.</p></div>
-  <div class="tarj"><h3>mpm</h3>
-    <p>Gestor de paquetes propio: verificación SHA256, resolución de
-      dependencias e instantáneas de btrfs antes de instalar.</p></div>
-  <div class="tarj"><h3>Escritorio</h3>
-    <p>Barra y Centro de Control escritos para MIKE OS. Se configura todo sin
-      tocar un archivo.</p></div>
-  <div class="tarj"><h3>MKShell</h3>
-    <p>Shell propia en C, con tuberías, redirecciones y variables.</p></div>
+<section>
+  <div class="prosa">
+    <h2>Se instala desde una interfaz, no desde la terminal</h2>
+    <p>Hasta la versión anterior había que saber que existía una orden llamada
+      <code>m-install</code>. Ahora hay un instalador gráfico: detecta el disco
+      solo, te enseña qué hay dentro y te avisa de qué vas a borrar antes de
+      borrarlo.</p>
+  </div>
+
+  <figure>
+    <img src="capturas/instalador-disco.png" width="1600" height="900"
+         alt="El instalador enseñando el disco, las particiones y el aviso de lo que se va a borrar">
+    <figcaption>Detecta el disco, lista sus particiones con el sistema que hay en
+      cada una, y avisa en ámbar de lo que se va a perder. Si algo impediría que
+      el equipo arrancara despu&eacute;s, no deja continuar y explica por qué.</figcaption>
+  </figure>
+
+  <div class="prosa">
+    <h3>Instalar al lado de Windows</h3>
+    <p>Usa el espacio libre y no toca nada de lo que ya hay. La partición EFI que
+      encuentre se conserva tal cual, con el arranque de Windows dentro: eso es
+      lo que hace que Windows siga apareciendo en el menú en vez de
+      «desaparecer». Al terminar, GRUB lo añade solo.</p>
+
+    <h3>Alguien puede ayudarte desde su casa</h3>
+    <p>Si te atascas instalando, el paso de red enciende SSH, crea una cuenta
+      temporal de cuatro letras y te enseña la orden exacta y la contraseña para
+      dictársela por teléfono. Al desactivarlo, la cuenta se borra.</p>
+  </div>
+
+  <figure>
+    <img src="capturas/instalador-red.png" width="1600" height="594"
+         alt="El paso de red del instalador, con la tarjeta de ayuda remota">
+    <figcaption>En inglés por defecto, con español a un clic.</figcaption>
+  </figure>
+</section>
+
+<section>
+  <div class="prosa">
+    <h2>Grabarlo y arrancar</h2>
+  </div>
+  <ol class="pasos">
+    <li>
+      <h3>Grabar la imagen en un USB</h3>
+      <p>Comprueba la letra del dispositivo antes de ejecutarlo: esto borra el
+        USB entero.</p>
+      <pre><code>sudo dd if=mikeos.iso of=/dev/sdX bs=4M status=progress oflag=sync</code></pre>
+    </li>
+    <li>
+      <h3>Desactivar Secure Boot</h3>
+      <p>El kernel no lleva la firma de Microsoft, así que la firmware se niega a
+        arrancarlo con Secure Boot activo. En la mayoría de equipos se desactiva
+        entrando en la configuración de la placa al encender.</p>
+    </li>
+    <li>
+      <h3>Probar, y luego instalar si convence</h3>
+      <p>El USB arranca a un escritorio completo que corre en memoria: no toca tu
+        disco. Cuando quieras instalarlo, el botón está en la ventana de
+        bienvenida.</p>
+    </li>
+  </ol>
+</section>
+
+<section>
+  <div class="prosa">
+    <h2>Lo que todavía no funciona</h2>
+    <p>Esto es una versión alpha y esta lista es parte de la documentación, no
+      una nota al pie. Si algo de aquí te bloquea, mejor saberlo ahora que con el
+      disco a medio formatear.</p>
+  </div>
+  <div class="limites">
+    <div><b>Secure Boot</b><p>Hay que desactivarlo. El kernel no está firmado por Microsoft y no lo va a estar pronto.</p></div>
+    <div><b>Sólo UEFI</b><p>No arranca por BIOS ni con CSM. En equipos anteriores a 2012 no va a funcionar.</p></div>
+    <div><b>Particionado manual</b><p>El instalador sabe borrar, instalar al lado y reemplazar. Para crear o redimensionar a mano, trae GParted con <code>mpm install gparted</code>.</p></div>
+    <div><b>Privilegios</b><p><code>m-sudo</code> da root a la cuenta sin pedir contraseña. La pantalla de bloqueo protege de miradas, no de alguien con tiempo y teclado.</p></div>
+    <div><b>Hardware real</b><p>Probado en QEMU con firmware UEFI de verdad. En portátiles físicos está sin probar: esta versión existe para eso.</p></div>
+  </div>
+</section>
+
+<section>
+  <div class="prosa"><h2>El escritorio</h2>
+  <p>La barra y el Centro de Control están escritos en QML para este sistema. Se
+    puede mover la barra a cualquier borde, cambiar su forma y elegir qué módulos
+    lleva. El fondo de pantalla puede teñir la paleta entera, terminal incluida.</p>
+  </div>
+  <div class="galeria">
+    <a href="capturas/centro-de-control.png"><img width="1600" height="782" src="capturas/centro-de-control.png" alt="El Centro de Control de MIKE OS" loading="lazy"><span>El Centro de Control</span></a>
+    <a href="capturas/bloqueo.png"><img width="1600" height="842" src="capturas/bloqueo.png" alt="La pantalla de bloqueo" loading="lazy"><span>La pantalla de bloqueo</span></a>
+    <a href="capturas/terminal.png"><img width="1600" height="900" src="capturas/terminal.png" alt="La terminal de MIKE OS" loading="lazy"><span>La terminal</span></a>
+    <a href="capturas/grub.png"><img width="1600" height="1000" src="capturas/grub.png" alt="El menú de arranque de MIKE OS" loading="lazy"><span>El menú de arranque</span></a>
+  </div>
+  <p style="margin-top:22px"><a href="capturas/index.html">Ver todas las capturas</a></p>
+</section>
+
 </div>
-
-<h2>Actualizaciones</h2>
-<p>Las actualizaciones se piden, no se empujan. El repositorio ya viene
-  configurado, así que basta con:</p>
-<pre><span class="c"># cuando quieras la última versión</span>
-mpm update &amp;&amp; mpm upgrade</pre>
-<p class="tenue">El kernel también viaja por ahí, y al instalarse conserva el
-  anterior para poder volver si no arranca.
-  <a href="docs/actualizaciones.html">Cómo funciona →</a></p>
-
-<p style="margin-top:36px">
-  <a class="boton" href="descargas.html">Descargar</a>
-  <a class="boton sec" href="docs/index.html" style="margin-left:8px">Documentación</a>
-</p>
-<footer>MIKE OS · servido desde un mini PC en casa · actualizado el 12 de September de 2026</footer>
-</div></body></html>
+<footer><div class="cont">
+MIKE OS 0.3.0, licencia MIT. Servido desde un mini PC en casa.
+Actualizado el 12 de September de 2026.
+<a href="https://github.com/M1KE-27/m1keos">Código en GitHub</a>
+</div></footer>
+</body></html>

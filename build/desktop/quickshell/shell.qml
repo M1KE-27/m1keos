@@ -126,6 +126,18 @@ ShellRoot {
     property bool barVisible: true
     onBarAutohideChanged: barVisible = !barAutohide
 
+    // La versión del sistema, leída de /etc/os-release. Antes estaba escrita a
+    // mano en dos sitios de este archivo, así que al publicar la 0.3.0 el
+    // Centro de Control siguió diciendo 0.2.0. Ahora sale de donde toca.
+    property string versionSistema: "—"
+    FileView {
+        path: "/etc/os-release"
+        onLoaded: {
+            var m = /VERSION="?([^"\n]+)"?/.exec(text())
+            if (m) root.versionSistema = m[1]
+        }
+    }
+
     // Estado de la contraseña de la cuenta: "puesta", "debil", "sin-clave" o
     // "desconocida". Lo dice m-clave, que es quien puede leer /etc/shadow.
     property string estadoClave: "desconocida"
@@ -1158,7 +1170,7 @@ ShellRoot {
                         Item { Layout.fillHeight: true }
 
                         Text {
-                            text: "MIKE OS 0.2.0"
+                            text: "MIKE OS " + root.versionSistema
                             color: Paleta.textoTenue; font.pixelSize: 10
                             Layout.leftMargin: 12
                         }
@@ -1679,7 +1691,7 @@ ShellRoot {
                                     ColumnLayout {
                                         spacing: 3
                                         Text { text: "MIKE OS"; color: Paleta.texto; font.pixelSize: 18; font.bold: true }
-                                        Text { text: "Versión 0.2.0 · x86_64"; color: Paleta.textoTenue; font.pixelSize: 11 }
+                                        Text { text: "Versión " + root.versionSistema + " · x86_64"; color: Paleta.textoTenue; font.pixelSize: 11 }
                                     }
                                 }
 

@@ -1,43 +1,50 @@
 <!doctype html>
 <html lang="es"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Documentación · MIKE OS</title><link rel="stylesheet" href="../estilo.css"></head><body>
+<meta name="color-scheme" content="dark">
+<meta name="description" content="MIKE OS: un sistema operativo construido desde el kernel hacia arriba. Sin systemd, con gestor de paquetes, shell y escritorio propios.">
+<meta property="og:title" content="Documentación · MIKE OS">
+<meta property="og:description" content="Un sistema operativo construido desde el kernel hacia arriba.">
+<meta property="og:image" content="https://m1keos.duckdns.org/capturas/escritorio.png">
+<meta property="og:type" content="website">
+<title>Documentación · MIKE OS</title>
+<link rel="icon" href="../favicon.svg" type="image/svg+xml">
+<link rel="preload" href="../tipos/geist-700.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="../estilo.css"></head><body>
 <nav><div class="cont">
   <a class="marca" href="../index.html">
-    <svg viewBox="0 0 24 24" fill="none" stroke="#e8ebf0" stroke-width="2"
-         stroke-linecap="round" stroke-linejoin="round"><path d="M5 6l6 6-6 6"/><path d="M13 18h7"/></svg>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 6l6 6-6 6"/><path d="M13 18h7"/></svg>
     MIKE OS</a>
-  <a class="enl" href="../index.html">Inicio</a>
-  <a class="enl" href="../descargas.html">Descargar</a>
+  <a class="enl " href="../index.html">Inicio</a>
+  <a class="enl " href="../capturas/index.html">Capturas</a>
   <a class="enl aqui" href="../docs/index.html">Documentación</a>
   <a class="enl " href="../wiki/index.html">Wiki</a>
+  <a class="enl derecha" href="https://github.com/M1KE-27/m1keos">Código</a>
+  <a class="btn " href="../descargas.html">Descargar</a>
 </div></nav>
-<div class="cont">
+<div class="cont"><main>
 <header><h1>Documentación</h1>
 <p class="lema">Cómo está hecho MIKE OS por dentro. Se genera desde el propio
 repositorio, así que no puede quedarse vieja.</p></header>
-<h2>Empezar</h2>
-<div class="rejilla">
-  <div class="tarj"><h3><a href="instalacion.html">Instalación</a></h3>
-    <p>Del USB al primer arranque.</p></div>
-  <div class="tarj"><h3><a href="actualizaciones.html">Actualizaciones</a></h3>
-    <p>Cómo llega a tu equipo lo que cambia.</p></div>
+<h2>Empezar por aquí</h2>
+<div class="indice">
+  <a href="instalacion.html"><b>Instalación</b><span>Del USB al primer arranque.</span></a>
+  <a href="actualizaciones.html"><b>Actualizaciones</b><span>Cómo llega a tu equipo lo que cambia.</span></a>
 </div>
 <h2>El sistema por dentro</h2>
-<div class="rejilla">
-<div class="tarj"><h3><a href="architecture.html">Arquitectura</a></h3></div>
-<div class="tarj"><h3><a href="benchmarks.html">Rendimiento</a></h3></div>
-<div class="tarj"><h3><a href="boot.html">Arranque</a></h3></div>
-<div class="tarj"><h3><a href="desktop.html">Escritorio</a></h3></div>
-<div class="tarj"><h3><a href="development.html">Desarrollo</a></h3></div>
-<div class="tarj"><h3><a href="kernel.html">Kernel</a></h3></div>
-<div class="tarj"><h3><a href="mcore.html">Herramientas mcore</a></h3></div>
-<div class="tarj"><h3><a href="mkshell.html">MKShell</a></h3></div>
-<div class="tarj"><h3><a href="mpm.html">Gestor de paquetes</a></h3></div>
-<div class="tarj"><h3><a href="networking.html">Red</a></h3></div>
-<div class="tarj"><h3><a href="recovery.html">Modo rescate</a></h3></div>
-<div class="tarj"><h3><a href="runit.html">Init con runit</a></h3></div>
-<div class="tarj"><h3><a href="ssh.html">SSH</a></h3></div>
+<div class="indice">
+<a href="architecture.html"><b>Arquitectura</b><span>Cómo encajan las piezas: kernel, init, servicios y escritorio.</span></a>
+<a href="benchmarks.html"><b>Rendimiento</b><span>Cuánto tarda en arrancar y cuánta memoria gasta, medido.</span></a>
+<a href="boot.html"><b>Arranque</b><span>Del firmware UEFI al escritorio, paso por paso.</span></a>
+<a href="desktop.html"><b>Escritorio</b><span>Hyprland, la barra de Quickshell y el Centro de Control.</span></a>
+<a href="development.html"><b>Desarrollo</b><span>Compilar el sistema, probarlo en una máquina virtual y depurarlo.</span></a>
+<a href="kernel.html"><b>Kernel</b><span>Qué se activa en la configuración del kernel y por qué.</span></a>
+<a href="mcore.html"><b>Herramientas mcore</b><span>Las herramientas m-* que trae el sistema.</span></a>
+<a href="mkshell.html"><b>MKShell</b><span>La shell escrita para MIKE OS.</span></a>
+<a href="mpm.html"><b>Gestor de paquetes</b><span>El gestor de paquetes, las instantáneas y la vuelta atrás.</span></a>
+<a href="networking.html"><b>Red</b><span>Cable, WiFi y qué hacer cuando no hay red.</span></a>
+<a href="recovery.html"><b>Modo rescate</b><span>Qué hacer cuando el equipo no arranca.</span></a>
+<a href="runit.html"><b>Init con runit</b><span>El init y la supervisión de servicios.</span></a>
+<a href="ssh.html"><b>SSH</b><span>Entrar desde otro equipo.</span></a>
 </div>
-<footer>MIKE OS · <a href="../index.html">Inicio</a></footer>
-</div></body></html>

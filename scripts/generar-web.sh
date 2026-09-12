@@ -63,187 +63,444 @@ N_PKG="$(find "$RAIZ/build/repo" -name '*.mpk' 2>/dev/null | wc -l | tr -d ' ')"
 # La ISO se sirve desde las releases de GitHub, no desde aquí. La etiqueta sale
 # de la última publicada, así que la web no puede quedarse enlazando una vieja.
 ETIQUETA_ISO="$(gh release list --repo "${MIKEOS_REPO_GITHUB:-M1KE-27/m1keos}" --limit 1 --json tagName -q '.[0].tagName' 2>/dev/null || true)"
-[ -n "$ETIQUETA_ISO" ] || ETIQUETA_ISO="v0.2.0"
+# La versión sale del archivo VERSION de la raíz, que es la única fuente: la
+# misma que acaba en /etc/os-release y en el Centro de Control.
+VERSION="$(tr -d ' \n' < "$RAIZ/VERSION" 2>/dev/null || echo 0.0.0)"
+[ -n "$ETIQUETA_ISO" ] || ETIQUETA_ISO="v$VERSION"
 URL_ISO="https://github.com/${MIKEOS_REPO_GITHUB:-M1KE-27/m1keos}/releases/download/$ETIQUETA_ISO/mikeos.iso"
 FECHA="$(date +'%-d de %B de %Y')"
 gris "  kernel $KVER · ISO $ISO_TAM · $N_PKG paquetes"
 
 # --- Hoja de estilo compartida ------------------------------------------------
-# Los mismos cinco colores que el escritorio (ver quickshell/Paleta.qml): la web
-# y el sistema tienen que parecer la misma cosa.
+#
+# Los colores son los del escritorio (build/desktop/quickshell/Paleta.qml). Para
+# el sitio de un sistema operativo, la fuente honesta de color es el propio
+# sistema: lo que se ve aquí es lo que se ve al arrancarlo.
+#
+# La regla que lo separa del "dark tech" de plantilla es la misma que sigue el
+# escritorio: el acento SÓLO para lo que está vivo. En toda la página aparece en
+# cinco sitios contados. El color lo ponen las capturas, no la decoración.
+#
+# Y una idea tipográfica, una sola: la letra dice quién escribió la cadena. Lo
+# que escribió una persona va en Geist; lo que escribió una máquina (órdenes,
+# rutas, tamaños, sumas de verificación, líneas de registro) va en mono. Nunca
+# mono para etiquetas ni para adornar.
+paso "Escribiendo la hoja de estilo"
 cat > "$WEB/estilo.css" <<'CSS'
+/* Autoalojadas: 60 KB que sirve el mismo mini PC. Enlazar Google Fonts sería
+   mandar a cada visitante a pedirle algo a un tercero sin necesidad. */
+@font-face{font-family:Geist;src:url(tipos/geist-400.woff2)format("woff2");font-weight:400;font-display:swap}
+@font-face{font-family:Geist;src:url(tipos/geist-500.woff2)format("woff2");font-weight:500;font-display:swap}
+@font-face{font-family:Geist;src:url(tipos/geist-700.woff2)format("woff2");font-weight:700;font-display:swap}
+@font-face{font-family:"JB Mono";src:url(tipos/jbmono-400.woff2)format("woff2");font-weight:400;font-display:swap}
+
 :root{
-  --fondo:#0b0d11; --superficie:#161a21; --superficie-alta:#1f242d;
-  --borde:#262c36; --texto:#e8ebf0; --tenue:#79818f; --acento:#00d4ff;
+  --lienzo:#090b10;
+  --superficie:#12161d;
+  --borde:#232a35;
+  --texto:#e8ebf0;
+  --tenue:#79818f;
+  --vivo:#00d4ff;
+
+  --sans:Geist,ui-sans-serif,system-ui,sans-serif;
+  --mono:"JB Mono",ui-monospace,SFMono-Regular,monospace;
+
+  /* Una sola escala de radios, documentada: reglas estructurales a 0,
+     superficies e imágenes a 10, cosas pulsables en cápsula. */
+  --r-sup:10px;
 }
+
 *{box-sizing:border-box}
-body{margin:0;background:var(--fondo);color:var(--texto);
-  font:15px/1.65 system-ui,-apple-system,"Segoe UI",sans-serif;
-  -webkit-font-smoothing:antialiased}
-.cont{max-width:900px;margin:0 auto;padding:0 24px}
-a{color:var(--acento);text-decoration:none}
-a:hover{text-decoration:underline}
-nav{border-bottom:1px solid var(--borde);position:sticky;top:0;
-  background:rgba(11,13,17,.92);backdrop-filter:blur(8px);z-index:10}
-nav .cont{display:flex;align-items:center;gap:24px;height:56px}
-nav .marca{display:flex;align-items:center;gap:10px;font-weight:700;
-  color:var(--texto);margin-right:auto}
-nav .marca svg{width:20px;height:20px}
-nav a.enl{color:var(--tenue);font-size:14px}
-nav a.enl:hover{color:var(--texto);text-decoration:none}
-nav a.enl.aqui{color:var(--texto)}
-header{padding:64px 0 40px}
-h1{font-size:clamp(30px,5.5vw,46px);margin:0 0 14px;letter-spacing:-1px;line-height:1.12}
-h2{font-size:13px;text-transform:uppercase;letter-spacing:1.2px;
-  color:var(--tenue);margin:44px 0 18px;font-weight:700}
-h3{font-size:16px;margin:28px 0 8px}
-.lema{color:var(--tenue);font-size:18px;max-width:52ch;margin:0}
-.estado{display:inline-block;border:1px solid var(--borde);border-radius:999px;
-  padding:4px 12px;font-size:12px;color:var(--tenue);margin-bottom:18px}
-.punto{display:inline-block;width:6px;height:6px;border-radius:50%;
-  background:var(--acento);margin-right:7px;vertical-align:1px}
-.cifras{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));
-  gap:1px;background:var(--borde);border:1px solid var(--borde);
-  border-radius:10px;overflow:hidden;margin:36px 0}
-.cifra{background:var(--superficie);padding:18px}
-.cifra b{display:block;font-size:22px;color:var(--acento);font-weight:700}
-.cifra span{color:var(--tenue);font-size:12px}
-pre{background:var(--superficie);border:1px solid var(--borde);border-radius:8px;
-  padding:15px 17px;overflow-x:auto;margin:14px 0;
-  font:13px/1.7 ui-monospace,"SF Mono",Menlo,monospace}
-pre .c{color:var(--tenue)}
-code{background:var(--superficie);border:1px solid var(--borde);border-radius:4px;
-  padding:1px 5px;font:13px ui-monospace,Menlo,monospace}
-pre code{background:none;border:none;padding:0}
-.rejilla{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px}
-.tarj{background:var(--superficie);border:1px solid var(--borde);
-  border-radius:10px;padding:18px}
-.tarj h3{margin:0 0 6px;font-size:15px}
-.tarj p{margin:0;color:var(--tenue);font-size:14px}
-.boton{display:inline-block;background:var(--acento);color:#05070c;
-  font-weight:700;padding:11px 22px;border-radius:8px;font-size:15px}
-.boton:hover{background:#33ddff;text-decoration:none}
-.boton.sec{background:var(--superficie-alta);color:var(--texto);
-  border:1px solid var(--borde)}
-.tenue{color:var(--tenue)}
-figure{margin:22px 0}
-figure img{width:100%;border:1px solid var(--borde);border-radius:10px;display:block}
-figcaption{color:var(--tenue);font-size:13px;margin-top:8px}
-table{width:100%;border-collapse:collapse;margin:16px 0;font-size:14px}
-th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--borde)}
-th{color:var(--tenue);font-size:12px;text-transform:uppercase;letter-spacing:.6px}
-.aviso{background:var(--superficie);border:1px solid var(--borde);
-  border-left:3px solid var(--acento);border-radius:6px;padding:14px 16px;margin:18px 0}
-.aviso p{margin:0;font-size:14px}
-footer{padding:40px 0 64px;margin-top:56px;border-top:1px solid var(--borde);
-  color:var(--tenue);font-size:13px}
-ul,ol{padding-left:22px}
-li{margin:5px 0}
-li > ul,li > ol{margin:5px 0}
-/* Dentro de un documento, los encabezados son jerarquía real, no etiquetas de
-   sección: h2 en mayúsculas pequeñas se come la estructura de un texto largo. */
-article h2{font-size:22px;text-transform:none;letter-spacing:-.3px;
-  color:var(--texto);margin:40px 0 12px;font-weight:700}
-article h3{font-size:17px;margin:26px 0 8px}
-article h4{font-size:15px;margin:22px 0 6px;color:var(--tenue)}
-blockquote{margin:16px 0;padding:2px 0 2px 16px;border-left:3px solid var(--borde);
-  color:var(--tenue)}
-blockquote p{margin:6px 0}
-hr{border:none;border-top:1px solid var(--borde);margin:32px 0}
-table code{font-size:12px}
-td strong{color:var(--texto)}
-/* Una tabla ancha desborda el móvil; que se desplace ella, no la página. */
-.tabla-ancha{overflow-x:auto}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0;background:var(--lienzo);color:var(--texto);
+  font-family:var(--sans);font-size:17px;line-height:1.65;
+  font-weight:400;letter-spacing:-0.003em;
+  -webkit-font-smoothing:antialiased;
+}
+::selection{background:var(--vivo);color:#04121a}
+
+.cont{max-width:1180px;margin:0 auto;padding:0 32px}
+.prosa{max-width:68ch}
+
+/* --- Navegación. Una línea, 64 px, sin excepciones. --- */
+nav{border-bottom:1px solid var(--borde);position:sticky;top:0;z-index:10;
+    background:rgba(9,11,16,.86);backdrop-filter:blur(14px)}
+nav .cont{display:flex;align-items:center;gap:28px;height:64px}
+.marca{display:flex;align-items:center;gap:9px;color:var(--texto);
+       text-decoration:none;font-weight:700;letter-spacing:-0.02em;margin-right:8px}
+.marca svg{width:17px;height:17px;flex:none}
+.enl{color:var(--tenue);text-decoration:none;font-size:14.5px;font-weight:500}
+.enl:hover{color:var(--texto)}
+.enl.aqui{color:var(--texto)}
+nav .derecha{margin-left:auto}
+
+/* --- Botones. Cápsula, y sólo el primario lleva el acento. --- */
+.btn{display:inline-block;padding:11px 20px;border-radius:999px;
+     font-size:14.5px;font-weight:500;text-decoration:none;
+     border:1px solid var(--borde);color:var(--texto);background:transparent}
+.btn:hover{background:var(--superficie)}
+.btn-vivo{background:var(--vivo);color:#04121a;border-color:var(--vivo);font-weight:700}
+.btn-vivo:hover{background:#3ee0ff}
+
+/* --- Portada --- */
+.portada{padding:76px 0 0;overflow:hidden}
+.portada .rejilla{display:grid;grid-template-columns:minmax(0,540px) minmax(0,1fr);
+                  gap:44px;align-items:center}
+h1{font-size:clamp(27px,3.4vw,36px);line-height:1.12;letter-spacing:-0.03em;
+   font-weight:700;margin:38px 0 14px}
+.portada h1{font-size:clamp(32px,4.3vw,47px);line-height:1.06;
+   letter-spacing:-0.033em;margin:0 0 18px}
+main{padding-bottom:10px}
+.entradilla{font-size:18px;color:var(--tenue);margin:0 0 28px;max-width:46ch}
+.acciones{display:flex;gap:11px;flex-wrap:wrap;align-items:center}
+.bajo-boton{font-family:var(--mono);font-size:12.5px;color:var(--tenue);margin-top:16px}
+
+/* La captura desborda por la derecha a propósito: es lo único atrevido de la
+   página, y es el producto de verdad, no una maqueta dibujada con divs. */
+.captura-portada{position:relative}
+.captura-portada img{display:block;width:min(1000px,calc(50vw + 260px));
+  max-width:none;height:auto;
+  border:1px solid var(--borde);border-radius:var(--r-sup) 0 0 var(--r-sup);
+  border-right:0}
+
+/* --- Cifras. Sin cajas: espacio y una regla. --- */
+.cifras{display:grid;grid-template-columns:repeat(4,1fr);gap:32px;
+        border-top:1px solid var(--borde);margin-top:72px;padding:34px 0}
+.cifra b{display:block;font-family:var(--mono);font-size:26px;font-weight:400;
+         letter-spacing:-0.02em}
+.cifra span{display:block;font-size:13.5px;color:var(--tenue);margin-top:3px}
+
+/* --- Secciones --- */
+section{padding:60px 0;border-top:1px solid var(--borde)}
+section:first-of-type{border-top:0}
+h2{font-size:clamp(24px,3vw,31px);line-height:1.15;letter-spacing:-0.028em;
+   font-weight:700;margin:0 0 14px}
+h3{font-size:18px;letter-spacing:-0.018em;font-weight:700;margin:30px 0 8px}
+p{margin:0 0 16px}
+a{color:var(--texto);text-decoration:underline;text-decoration-color:var(--borde);
+  text-underline-offset:3px}
+a:hover{text-decoration-color:var(--tenue)}
+
+/* Máquina frente a persona: mono para lo que escribió un ordenador. */
+code,kbd,.mono{font-family:var(--mono);font-size:.895em}
+code{background:var(--superficie);border:1px solid var(--borde);
+     border-radius:5px;padding:1.5px 6px}
+pre{font-family:var(--mono);font-size:13.5px;line-height:1.75;
+    background:#05070c;border:1px solid var(--borde);border-radius:var(--r-sup);
+    padding:18px 20px;overflow-x:auto;margin:0 0 18px}
+pre code{background:none;border:0;padding:0;font-size:inherit}
+
+/* --- Capturas dentro del texto --- */
+figure{margin:26px 0}
+figure img{display:block;width:100%;border:1px solid var(--borde);
+           border-radius:var(--r-sup)}
+figcaption{font-size:13.5px;color:var(--tenue);margin-top:9px}
+
+/* --- Pasos. Numerados porque esto SÍ es una secuencia. --- */
+.pasos{counter-reset:paso;margin:24px 0 0;padding:0;list-style:none}
+.pasos li{counter-increment:paso;position:relative;padding-left:42px;
+          margin-bottom:26px}
+.pasos li::before{content:counter(paso);position:absolute;left:0;top:1px;
+  font-family:var(--mono);font-size:13px;color:var(--tenue);
+  border:1px solid var(--borde);border-radius:999px;width:27px;height:27px;
+  display:grid;place-items:center}
+.pasos h3{margin:0 0 6px;font-size:16.5px}
+.pasos p{margin:0 0 10px;color:var(--tenue);font-size:15.5px}
+
+/* --- La sección de lo que no funciona. Misma jerarquía que las demás. --- */
+.limites{border-top:1px solid var(--borde);margin-top:20px}
+.limites div{border-bottom:1px solid var(--borde);padding:16px 0;
+             display:grid;grid-template-columns:190px 1fr;gap:24px}
+.limites b{font-weight:500;font-size:15px}
+.limites p{margin:0;color:var(--tenue);font-size:15px}
+
+/* --- Piezas del sistema --- */
+.piezas{border-top:1px solid var(--borde);margin-top:18px}
+.piezas div{border-bottom:1px solid var(--borde);padding:14px 0;
+            display:grid;grid-template-columns:170px 1fr;gap:24px;align-items:baseline}
+.piezas b{font-family:var(--mono);font-weight:400;font-size:14.5px}
+.piezas span{color:var(--tenue);font-size:15px}
+
+/* --- Galería --- */
+.galeria{display:grid;grid-template-columns:repeat(2,1fr);gap:20px;margin-top:24px}
+.galeria a{display:block;text-decoration:none}
+.galeria img{display:block;width:100%;border:1px solid var(--borde);
+             border-radius:var(--r-sup)}
+.galeria span{display:block;font-size:13.5px;color:var(--tenue);margin-top:8px}
+
+/* --- Índices de documentación --- */
+.indice{border-top:1px solid var(--borde);margin-top:18px}
+.indice a{display:grid;grid-template-columns:210px 1fr;gap:24px;
+          border-bottom:1px solid var(--borde);padding:15px 0;
+          text-decoration:none;align-items:baseline}
+.indice a:hover{background:var(--superficie)}
+.indice b{font-weight:500;font-size:15.5px}
+.indice span{color:var(--tenue);font-size:14.5px}
+
+/* --- Aviso --- */
+.aviso{border:1px solid var(--borde);border-left:2px solid var(--vivo);
+       border-radius:0 var(--r-sup) var(--r-sup) 0;
+       background:var(--superficie);padding:16px 20px;margin:22px 0}
+.aviso p{margin:0;font-size:15.5px}
+
+footer{border-top:1px solid var(--borde);margin-top:70px;padding:26px 0 44px;
+       color:var(--tenue);font-size:13.5px}
+footer a{color:var(--tenue)}
+
+/* Tablas de la documentación */
+table{border-collapse:collapse;width:100%;margin:0 0 18px;font-size:15px}
+th,td{border-bottom:1px solid var(--borde);padding:9px 12px 9px 0;text-align:left}
+th{font-weight:500;color:var(--tenue);font-size:13.5px}
+
+/* Teclado visible: quien navega sin ratón tiene que ver dónde está. */
+a:focus-visible,.btn:focus-visible{outline:2px solid var(--vivo);outline-offset:3px;
+  border-radius:3px}
+
+@media (max-width:900px){
+  body{font-size:16px}
+  .cont{padding:0 20px}
+  .portada{padding:44px 0 0}
+  .portada .rejilla{grid-template-columns:1fr;gap:30px}
+  .captura-portada img{width:100%;max-width:100%;height:auto;
+                       border-right:1px solid var(--borde);
+                       border-radius:var(--r-sup)}
+  /* La marca en una línea: partida en dos deja la navegación torcida. */
+  .marca{white-space:nowrap}
+  .enl{white-space:nowrap}
+  .cifras{grid-template-columns:repeat(2,1fr);gap:22px;margin-top:46px}
+  .galeria{grid-template-columns:1fr}
+  .limites div,.piezas div,.indice a{grid-template-columns:1fr;gap:5px}
+  nav .cont{gap:18px;overflow-x:auto}
+}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 CSS
 
+# Dimensiones reales de una captura. Ponerlas a mano en el HTML es pedir que
+# se queden desfasadas: en cuanto se recorta una imagen, el navegador reserva
+# un hueco del tamaño equivocado y la página da un salto al cargar.
+dim() {  # dim <ruta-relativa-a-build/web>
+    python3 - "$WEB/$1" <<'PY' 2>/dev/null || echo ''
+import sys
+try:
+    from PIL import Image
+    w, h = Image.open(sys.argv[1]).size
+    print('width="%d" height="%d"' % (w, h))
+except Exception:
+    print('')
+PY
+}
+
 # --- Cabecera y pie compartidos ----------------------------------------------
-cabecera() {  # cabecera <titulo> <seccion-activa> <prefijo-de-ruta>
-    local t="$1" act="$2" pre="$3"
+cabecera() {  # cabecera <titulo> <seccion-activa> <prefijo> [suelto]
+    local t="$1" act="$2" pre="$3" suelto="${4:-}"
     cat <<HTML
 <!doctype html>
 <html lang="es"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>$t</title><link rel="stylesheet" href="${pre}estilo.css"></head><body>
+<meta name="color-scheme" content="dark">
+<meta name="description" content="MIKE OS: un sistema operativo construido desde el kernel hacia arriba. Sin systemd, con gestor de paquetes, shell y escritorio propios.">
+<meta property="og:title" content="$t">
+<meta property="og:description" content="Un sistema operativo construido desde el kernel hacia arriba.">
+<meta property="og:image" content="https://m1keos.duckdns.org/capturas/escritorio.png">
+<meta property="og:type" content="website">
+<title>$t</title>
+<link rel="icon" href="${pre}favicon.svg" type="image/svg+xml">
+<link rel="preload" href="${pre}tipos/geist-700.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="${pre}estilo.css"></head><body>
 <nav><div class="cont">
   <a class="marca" href="${pre}index.html">
-    <svg viewBox="0 0 24 24" fill="none" stroke="#e8ebf0" stroke-width="2"
-         stroke-linecap="round" stroke-linejoin="round"><path d="M5 6l6 6-6 6"/><path d="M13 18h7"/></svg>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 6l6 6-6 6"/><path d="M13 18h7"/></svg>
     MIKE OS</a>
   <a class="enl $([ "$act" = inicio ] && echo aqui)" href="${pre}index.html">Inicio</a>
-  <a class="enl $([ "$act" = descargas ] && echo aqui)" href="${pre}descargas.html">Descargar</a>
+  <a class="enl $([ "$act" = capturas ] && echo aqui)" href="${pre}capturas/index.html">Capturas</a>
   <a class="enl $([ "$act" = docs ] && echo aqui)" href="${pre}docs/index.html">Documentación</a>
   <a class="enl $([ "$act" = wiki ] && echo aqui)" href="${pre}wiki/index.html">Wiki</a>
+  <a class="enl derecha" href="https://github.com/${MIKEOS_REPO_GITHUB:-M1KE-27/m1keos}">Código</a>
+  <a class="btn $([ "$act" = descargas ] && echo aqui)" href="${pre}descargas.html">Descargar</a>
 </div></nav>
-<div class="cont">
 HTML
+    # Sin esto, las páginas interiores salían pegadas al borde izquierdo: la
+    # portada monta su propio contenedor y el resto se quedó sin ninguno.
+    [ "$suelto" = "suelto" ] || echo '<div class="cont"><main>'
 }
-pie() {
+
+# La cabecera y el pie, volcados a un archivo para que los generadores escritos
+# en Python (documentación y wiki) usen EXACTAMENTE los mismos. Antes cada uno
+# llevaba su propia copia del HTML de la navegación, y al tocar una el resto se
+# quedaba atrás: el índice de documentación seguía enseñando un menú de hace dos
+# versiones. Un solo sitio, y se acabó.
+for _sec in inicio capturas docs wiki descargas; do
+    cabecera "@TITULO@" "$_sec" "@PRE@" > "$WEB/.cabecera-$_sec.html"
+done
+pie > "$WEB/.pie.html"
+pie() {  # pie [suelto]
+    [ "${1:-}" = "suelto" ] || echo '</main></div>'
     cat <<HTML
-<footer>MIKE OS · servido desde un mini PC en casa · actualizado el $FECHA</footer>
-</div></body></html>
+<footer><div class="cont">
+MIKE OS $VERSION, licencia MIT. Servido desde un mini PC en casa.
+Actualizado el $FECHA.
+<a href="https://github.com/${MIKEOS_REPO_GITHUB:-M1KE-27/m1keos}">Código en GitHub</a>
+</div></footer>
+</body></html>
 HTML
 }
+
+# El icono, como SVG: son 200 bytes y la marca del sistema es exactamente esto.
+cat > "$WEB/favicon.svg" <<'SVG'
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+     stroke="#00d4ff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+<rect width="24" height="24" rx="5" fill="#090b10" stroke="none"/>
+<path d="M5 6l6 6-6 6"/><path d="M13 18h7"/></svg>
+SVG
 
 # --- Página de inicio ---------------------------------------------------------
-paso "Página de inicio"
+paso "Escribiendo la portada"
 {
-cabecera "MIKE OS" inicio ""
+cabecera "MIKE OS" inicio "" suelto
 cat <<HTML
-<header>
-  <div class="estado"><span class="punto"></span>En desarrollo · arranca en hardware UEFI</div>
-  <h1>Un sistema operativo hecho desde cero.</h1>
-  <p class="lema">Kernel Linux propio, init con runit, gestor de paquetes propio
-    y escritorio propio. Cero systemd.</p>
-</header>
+<div class="portada"><div class="cont"><div class="rejilla">
+  <div>
+    <h1>Escrito desde el kernel hacia arriba.</h1>
+    <p class="entradilla">MIKE OS es un sistema operativo completo. Kernel
+      propio, sin systemd, gestor de paquetes y escritorio escritos para él.</p>
+    <div class="acciones">
+      <a class="btn btn-vivo" href="$URL_ISO">Descargar $ETIQUETA_ISO</a>
+      <a class="btn" href="docs/instalacion.html">Cómo se instala</a>
+    </div>
+    <p class="bajo-boton">$ISO_TAM &nbsp;·&nbsp; x86_64 UEFI</p>
+  </div>
+  <div class="captura-portada">
+    <img src="capturas/bienvenida.png" $(dim capturas/bienvenida.png)
+         alt="El escritorio de MIKE OS con la ventana de bienvenida abierta">
+  </div>
+</div>
 
 <div class="cifras">
-  <div class="cifra"><b>0,59 s</b><span>en arrancar</span></div>
-  <div class="cifra"><b>50 MB</b><span>de RAM en reposo</span></div>
-  <div class="cifra"><b>0 %</b><span>systemd</span></div>
-  <div class="cifra"><b>$ISO_TAM</b><span>la imagen entera</span></div>
+  <div class="cifra"><b>0,59 s</b><span>del kernel a la consola</span></div>
+  <div class="cifra"><b>324 MB</b><span>de RAM con el escritorio</span></div>
+  <div class="cifra"><b>25 s</b><span>en compilar el sistema</span></div>
+  <div class="cifra"><b>0</b><span>líneas de systemd</span></div>
 </div>
+</div></div>
 
-<figure>
-  <img src="capturas/escritorio.png" alt="El escritorio de MIKE OS">
-  <figcaption>El escritorio: Hyprland con la barra de MIKE OS.</figcaption>
-</figure>
+<div class="cont">
 
-<h2>Sin gestor de arranque</h2>
-<p>El kernel se compila con <code>CONFIG_EFI_STUB</code>, así que es él mismo un
-  ejecutable UEFI: se copia en la partición EFI como
-  <code>EFI/BOOT/BOOTX64.EFI</code> y la firmware lo arranca directamente. No hay
-  GRUB que mantener ni que se pueda romper.</p>
+<section>
+  <div class="prosa">
+    <h2>Qué hay aquí dentro</h2>
+    <p>MIKE OS no es una distribución con otro tema encima. El kernel se
+      configura y se compila aquí, el init es runit, y el gestor de paquetes, la
+      shell, la terminal y el escritorio están escritos para este sistema.</p>
+  </div>
+  <div class="piezas">
+    <div><b>kernel $KVER</b><span>configurado a mano, con arranque UEFI propio y btrfs dentro</span></div>
+    <div><b>runit</b><span>el init. Arranca los servicios y los vigila; si uno se cae, vuelve</span></div>
+    <div><b>mpm</b><span>gestor de paquetes con instantáneas antes de cada cambio y vuelta atrás</span></div>
+    <div><b>mkshell</b><span>la shell del sistema</span></div>
+    <div><b>Hyprland + Quickshell</b><span>el compositor y una barra escrita en QML para esto</span></div>
+    <div><b>$N_PKG paquetes</b><span>en el repositorio propio</span></div>
+  </div>
+</section>
 
-<h2>Qué lleva dentro</h2>
-<div class="rejilla">
-  <div class="tarj"><h3>Kernel $KVER</h3>
-    <p>Compilado para este sistema. Soporte de hardware real, arranque UEFI y
-      la configuración afinada para portátil.</p></div>
-  <div class="tarj"><h3>mpm</h3>
-    <p>Gestor de paquetes propio: verificación SHA256, resolución de
-      dependencias e instantáneas de btrfs antes de instalar.</p></div>
-  <div class="tarj"><h3>Escritorio</h3>
-    <p>Barra y Centro de Control escritos para MIKE OS. Se configura todo sin
-      tocar un archivo.</p></div>
-  <div class="tarj"><h3>MKShell</h3>
-    <p>Shell propia en C, con tuberías, redirecciones y variables.</p></div>
+<section>
+  <div class="prosa">
+    <h2>Se instala desde una interfaz, no desde la terminal</h2>
+    <p>Hasta la versión anterior había que saber que existía una orden llamada
+      <code>m-install</code>. Ahora hay un instalador gráfico: detecta el disco
+      solo, te enseña qué hay dentro y te avisa de qué vas a borrar antes de
+      borrarlo.</p>
+  </div>
+
+  <figure>
+    <img src="capturas/instalador-disco.png" $(dim capturas/instalador-disco.png)
+         alt="El instalador enseñando el disco, las particiones y el aviso de lo que se va a borrar">
+    <figcaption>Detecta el disco, lista sus particiones con el sistema que hay en
+      cada una, y avisa en ámbar de lo que se va a perder. Si algo impediría que
+      el equipo arrancara despu&eacute;s, no deja continuar y explica por qué.</figcaption>
+  </figure>
+
+  <div class="prosa">
+    <h3>Instalar al lado de Windows</h3>
+    <p>Usa el espacio libre y no toca nada de lo que ya hay. La partición EFI que
+      encuentre se conserva tal cual, con el arranque de Windows dentro: eso es
+      lo que hace que Windows siga apareciendo en el menú en vez de
+      «desaparecer». Al terminar, GRUB lo añade solo.</p>
+
+    <h3>Alguien puede ayudarte desde su casa</h3>
+    <p>Si te atascas instalando, el paso de red enciende SSH, crea una cuenta
+      temporal de cuatro letras y te enseña la orden exacta y la contraseña para
+      dictársela por teléfono. Al desactivarlo, la cuenta se borra.</p>
+  </div>
+
+  <figure>
+    <img src="capturas/instalador-red.png" $(dim capturas/instalador-red.png)
+         alt="El paso de red del instalador, con la tarjeta de ayuda remota">
+    <figcaption>En inglés por defecto, con español a un clic.</figcaption>
+  </figure>
+</section>
+
+<section>
+  <div class="prosa">
+    <h2>Grabarlo y arrancar</h2>
+  </div>
+  <ol class="pasos">
+    <li>
+      <h3>Grabar la imagen en un USB</h3>
+      <p>Comprueba la letra del dispositivo antes de ejecutarlo: esto borra el
+        USB entero.</p>
+      <pre><code>sudo dd if=mikeos.iso of=/dev/sdX bs=4M status=progress oflag=sync</code></pre>
+    </li>
+    <li>
+      <h3>Desactivar Secure Boot</h3>
+      <p>El kernel no lleva la firma de Microsoft, así que la firmware se niega a
+        arrancarlo con Secure Boot activo. En la mayoría de equipos se desactiva
+        entrando en la configuración de la placa al encender.</p>
+    </li>
+    <li>
+      <h3>Probar, y luego instalar si convence</h3>
+      <p>El USB arranca a un escritorio completo que corre en memoria: no toca tu
+        disco. Cuando quieras instalarlo, el botón está en la ventana de
+        bienvenida.</p>
+    </li>
+  </ol>
+</section>
+
+<section>
+  <div class="prosa">
+    <h2>Lo que todavía no funciona</h2>
+    <p>Esto es una versión alpha y esta lista es parte de la documentación, no
+      una nota al pie. Si algo de aquí te bloquea, mejor saberlo ahora que con el
+      disco a medio formatear.</p>
+  </div>
+  <div class="limites">
+    <div><b>Secure Boot</b><p>Hay que desactivarlo. El kernel no está firmado por Microsoft y no lo va a estar pronto.</p></div>
+    <div><b>Sólo UEFI</b><p>No arranca por BIOS ni con CSM. En equipos anteriores a 2012 no va a funcionar.</p></div>
+    <div><b>Particionado manual</b><p>El instalador sabe borrar, instalar al lado y reemplazar. Para crear o redimensionar a mano, trae GParted con <code>mpm install gparted</code>.</p></div>
+    <div><b>Privilegios</b><p><code>m-sudo</code> da root a la cuenta sin pedir contraseña. La pantalla de bloqueo protege de miradas, no de alguien con tiempo y teclado.</p></div>
+    <div><b>Hardware real</b><p>Probado en QEMU con firmware UEFI de verdad. En portátiles físicos está sin probar: esta versión existe para eso.</p></div>
+  </div>
+</section>
+
+<section>
+  <div class="prosa"><h2>El escritorio</h2>
+  <p>La barra y el Centro de Control están escritos en QML para este sistema. Se
+    puede mover la barra a cualquier borde, cambiar su forma y elegir qué módulos
+    lleva. El fondo de pantalla puede teñir la paleta entera, terminal incluida.</p>
+  </div>
+  <div class="galeria">
+    <a href="capturas/centro-de-control.png"><img $(dim capturas/centro-de-control.png) src="capturas/centro-de-control.png" alt="El Centro de Control de MIKE OS" loading="lazy"><span>El Centro de Control</span></a>
+    <a href="capturas/bloqueo.png"><img $(dim capturas/bloqueo.png) src="capturas/bloqueo.png" alt="La pantalla de bloqueo" loading="lazy"><span>La pantalla de bloqueo</span></a>
+    <a href="capturas/terminal.png"><img $(dim capturas/terminal.png) src="capturas/terminal.png" alt="La terminal de MIKE OS" loading="lazy"><span>La terminal</span></a>
+    <a href="capturas/grub.png"><img $(dim capturas/grub.png) src="capturas/grub.png" alt="El menú de arranque de MIKE OS" loading="lazy"><span>El menú de arranque</span></a>
+  </div>
+  <p style="margin-top:22px"><a href="capturas/index.html">Ver todas las capturas</a></p>
+</section>
+
 </div>
-
-<h2>Actualizaciones</h2>
-<p>Las actualizaciones se piden, no se empujan. El repositorio ya viene
-  configurado, así que basta con:</p>
-<pre><span class="c"># cuando quieras la última versión</span>
-mpm update &amp;&amp; mpm upgrade</pre>
-<p class="tenue">El kernel también viaja por ahí, y al instalarse conserva el
-  anterior para poder volver si no arranca.
-  <a href="docs/actualizaciones.html">Cómo funciona →</a></p>
-
-<p style="margin-top:36px">
-  <a class="boton" href="descargas.html">Descargar</a>
-  <a class="boton sec" href="docs/index.html" style="margin-left:8px">Documentación</a>
-</p>
 HTML
-pie
+pie suelto
 } > "$WEB/index.html"
 
 # --- Descargas ----------------------------------------------------------------
@@ -261,7 +518,7 @@ cat <<HTML
   <tr><td>mikeos.iso</td><td>$ISO_TAM</td><td>$KVER</td></tr>
 </table>
 <p class="tenue">SHA256:<br><code style="font-size:11px;word-break:break-all">$ISO_SHA</code></p>
-<p><a class="boton" href="$URL_ISO">Descargar la imagen</a></p>
+<p style="margin:22px 0 8px"><a class="btn btn-vivo" href="$URL_ISO">Descargar mikeos.iso</a></p>
 <p class="tenue">La descarga la sirve GitHub y empieza al pulsar, sin página
 intermedia. Se hace así porque esta web vive en un mini PC de casa: su línea da
 unos 780 KB/s de subida, o sea casi cuatro minutos por descarga y de una en
@@ -283,7 +540,7 @@ sudo dd if=mikeos.iso of=/dev/sdX bs=4M status=progress oflag=sync</pre>
 <p>La imagen arranca en memoria: puedes mirarla, tocarlo todo y apagar sin que
   el disco se entere. Cuando quieras instalarla, abre una terminal con
   <code>SUPER/ALT + Return</code> y escribe <code>m-install</code>.</p>
-<p><a href="docs/instalacion.html">Guía de instalación completa →</a></p>
+<p><a href="docs/instalacion.html">Guía de instalación completa</a></p>
 HTML
 else
 cat <<HTML
@@ -348,24 +605,16 @@ TITULOS = {
 }
 
 def pagina(titulo, cuerpo, activa="docs", pre="../"):
-    return f'''<!doctype html>
-<html lang="es"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{titulo} · MIKE OS</title><link rel="stylesheet" href="{pre}estilo.css"></head><body>
-<nav><div class="cont">
-  <a class="marca" href="{pre}index.html">
-    <svg viewBox="0 0 24 24" fill="none" stroke="#e8ebf0" stroke-width="2"
-         stroke-linecap="round" stroke-linejoin="round"><path d="M5 6l6 6-6 6"/><path d="M13 18h7"/></svg>
-    MIKE OS</a>
-  <a class="enl" href="{pre}index.html">Inicio</a>
-  <a class="enl" href="{pre}descargas.html">Descargar</a>
-  <a class="enl {'aqui' if activa=='docs' else ''}" href="{pre}docs/index.html">Documentación</a>
-  <a class="enl {'aqui' if activa=='wiki' else ''}" href="{pre}wiki/index.html">Wiki</a>
-</div></nav>
-<div class="cont">
-{cuerpo}
-<footer>MIKE OS · <a href="{pre}index.html">Inicio</a></footer>
-</div></body></html>'''
+    """Monta la página con la MISMA cabecera y el mismo pie que el resto.
+
+    Se leen de los archivos que dejó el script de shell en vez de repetir aquí
+    el HTML de la navegación. Cuando había dos copias, tocar una dejaba la otra
+    atrás sin que nadie se enterara: el índice de documentación estuvo
+    enseñando un menú de dos versiones antes."""
+    cab = open(os.path.join(web, ".cabecera-%s.html" % activa)).read()
+    cab = cab.replace("@TITULO@", "%s · MIKE OS" % titulo).replace("@PRE@", pre)
+    pie_html = open(os.path.join(web, ".pie.html")).read().replace("@PRE@", pre)
+    return cab + cuerpo + pie_html
 
 generadas = []
 if os.path.isdir(docs):
@@ -382,20 +631,38 @@ if os.path.isdir(docs):
                    f"<header><h1>{titulo}</h1></header>\n<article>{cuerpo}</article>"))
         generadas.append((base, titulo))
 
+# Una sola línea por documento, con su descripción al lado. Antes cada uno
+# iba en una tarjeta con su borde y su sombra: nueve cajas idénticas en fila
+# que no decían nada que la lista no dijera igual de bien y con menos ruido.
+DESCRIPCIONES = {
+    "architecture": "Cómo encajan las piezas: kernel, init, servicios y escritorio.",
+    "benchmarks":   "Cuánto tarda en arrancar y cuánta memoria gasta, medido.",
+    "boot":         "Del firmware UEFI al escritorio, paso por paso.",
+    "desktop":      "Hyprland, la barra de Quickshell y el Centro de Control.",
+    "development":  "Compilar el sistema, probarlo en una máquina virtual y depurarlo.",
+    "kernel":       "Qué se activa en la configuración del kernel y por qué.",
+    "mcore":        "Las herramientas m-* que trae el sistema.",
+    "mkshell":      "La shell escrita para MIKE OS.",
+    "mpm":          "El gestor de paquetes, las instantáneas y la vuelta atrás.",
+    "networking":   "Cable, WiFi y qué hacer cuando no hay red.",
+    "recovery":     "Qué hacer cuando el equipo no arranca.",
+    "runit":        "El init y la supervisión de servicios.",
+    "ssh":          "Entrar desde otro equipo.",
+}
 enlaces = "\n".join(
-    f'<div class="tarj"><h3><a href="{b}.html">{t}</a></h3></div>' for b, t in generadas)
+    '<a href="%s.html"><b>%s</b><span>%s</span></a>'
+    % (b, t, DESCRIPCIONES.get(b, ""))
+    for b, t in generadas)
 indice = f'''<header><h1>Documentación</h1>
 <p class="lema">Cómo está hecho MIKE OS por dentro. Se genera desde el propio
 repositorio, así que no puede quedarse vieja.</p></header>
-<h2>Empezar</h2>
-<div class="rejilla">
-  <div class="tarj"><h3><a href="instalacion.html">Instalación</a></h3>
-    <p>Del USB al primer arranque.</p></div>
-  <div class="tarj"><h3><a href="actualizaciones.html">Actualizaciones</a></h3>
-    <p>Cómo llega a tu equipo lo que cambia.</p></div>
+<h2>Empezar por aquí</h2>
+<div class="indice">
+  <a href="instalacion.html"><b>Instalación</b><span>Del USB al primer arranque.</span></a>
+  <a href="actualizaciones.html"><b>Actualizaciones</b><span>Cómo llega a tu equipo lo que cambia.</span></a>
 </div>
 <h2>El sistema por dentro</h2>
-<div class="rejilla">
+<div class="indice">
 {enlaces}
 </div>'''
 open(os.path.join(web, "docs", "index.html"), "w").write(pagina("Documentación", indice))
@@ -596,17 +863,47 @@ verde "  wiki"
 # --- Capturas -----------------------------------------------------------------
 paso "Galería"
 {
-cabecera "Capturas · MIKE OS" inicio "../"
-echo '<header><h1>Capturas</h1><p class="lema">Sacadas del sistema recién construido, no de un montaje.</p></header>'
-for par in "escritorio:El escritorio, con la barra de MIKE OS" \
-           "bienvenida:La pantalla de inicio, la primera vez" \
+cabecera "Capturas · MIKE OS" capturas "../"
+cat <<'HTML'
+<header><h1>Capturas</h1>
+<p class="lema">Sacadas del sistema recién construido y en marcha, no de un
+montaje. Si el escritorio cambia, estas cambian con él en la siguiente
+compilación.</p></header>
+<h2>El escritorio</h2>
+HTML
+# La lista va aquí y no repartida por el script: añadir una captura es añadir
+# una línea. Formato  archivo:pie de foto
+for par in "escritorio:El escritorio con el fondo del sistema" \
+           "bienvenida:La ventana de bienvenida, la primera vez que arranca" \
            "centro-de-control:El Centro de Control" \
-           "ajustes-escritorio:Ajustes del escritorio" \
-           "terminal:La terminal"; do
+           "ajustes-barra:Ajustes de la barra: posición, forma y qué módulos lleva" \
+           "ajustes-bloqueo:Ajustes del bloqueo, con lo que aún no hace dicho a las claras" \
+           "terminal:La terminal" \
+           "bloqueo:La pantalla de bloqueo, con el fondo desenfocado detrás"; do
     n="${par%%:*}"; d="${par#*:}"
     [ -f "$WEB/capturas/$n.png" ] || continue
-    printf '<figure><img src="%s.png" alt="%s"><figcaption>%s</figcaption></figure>\n' "$n" "$d" "$d"
+    printf '<figure><img %s src="%s.png" alt="%s" loading="lazy"><figcaption>%s</figcaption></figure>\n' \
+        "$(dim capturas/$n.png)" "$n" "$d" "$d"
 done
+echo '<h2>El instalador</h2>'
+for par in "instalador-idioma:Empieza en inglés, con español a un clic" \
+           "instalador-red:El paso de red, con la ayuda remota por SSH" \
+           "instalador-disco:El disco: qué hay dentro y qué se va a borrar" \
+           "instalador-cuenta:Nombre del equipo y contraseña" \
+           "instalador-aspecto:El fondo se elige antes de instalar" \
+           "instalador-resumen:Lo último que se ve antes de que algo sea irreversible"; do
+    n="${par%%:*}"; d="${par#*:}"
+    [ -f "$WEB/capturas/$n.png" ] || continue
+    printf '<figure><img %s src="%s.png" alt="%s" loading="lazy"><figcaption>%s</figcaption></figure>\n' \
+        "$(dim capturas/$n.png)" "$n" "$d" "$d"
+done
+echo '<h2>El arranque</h2>'
+if [ -f "$WEB/capturas/grub.png" ]; then
+    printf '<figure><img %s src="grub.png" alt="%s" loading="lazy"><figcaption>%s</figcaption></figure>\n' \
+        "$(dim capturas/grub.png)" \
+        "El menú de arranque de MIKE OS" \
+        "El menú de GRUB con el tema del sistema. Si hay otro sistema operativo en el equipo, aparece aquí."
+fi
 pie
 } > "$WEB/capturas/index.html"
 verde "  galería"
@@ -623,6 +920,9 @@ rm -f "$WEB/descargas/mikeos.iso"
 
 echo
 verde "Web generada en $WEB"
+
+# Las plantillas de cabecera y pie son andamio del generador, no contenido.
+rm -f "$WEB"/.cabecera-*.html "$WEB/.pie.html"
 
 # --- Subir --------------------------------------------------------------------
 if [ "$SUBIR" -eq 1 ]; then

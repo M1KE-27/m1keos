@@ -592,7 +592,10 @@ ShellRoot {
     // valer: se vuelve a mirar en vez de arrastrar lo de antes.
     function refrescarDisco() {
         if (!discoSel) return
-        verDisco.command = ["m-particiones", "ver", discoSel.ruta]
+        // El idioma también aquí: los nombres de sistema («Arranque de
+        // Windows» / «Windows boot files») los escribe la misma herramienta.
+        verDisco.command = ["sh", "-c",
+            "MIKEOS_LANG=" + idioma + " m-particiones ver " + discoSel.ruta]
         verDisco.running = true
         verLibre.command = ["m-particiones", "libre", discoSel.ruta]
         verLibre.running = true
@@ -615,7 +618,7 @@ ShellRoot {
     // se encontraba discoSel a null y salía sin hacer nada. discoSel sólo
     // cambia cuando la selección ya se puede resolver.
     onDiscoSelChanged: refrescarDisco()
-    onIdiomaChanged: revisar()
+    onIdiomaChanged: refrescarDisco()
     onModoChanged: revisar()
     onParticionObjetivoChanged: revisar()
 

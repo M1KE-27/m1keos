@@ -1,28 +1,39 @@
 <!doctype html>
 <html lang="es"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Descargar · MIKE OS</title><link rel="stylesheet" href="estilo.css"></head><body>
+<meta name="color-scheme" content="dark">
+<meta name="description" content="MIKE OS: un sistema operativo construido desde el kernel hacia arriba. Sin systemd, con gestor de paquetes, shell y escritorio propios.">
+<meta property="og:title" content="Descargar · MIKE OS">
+<meta property="og:description" content="Un sistema operativo construido desde el kernel hacia arriba.">
+<meta property="og:image" content="https://m1keos.duckdns.org/capturas/escritorio.png">
+<meta property="og:type" content="website">
+<title>Descargar · MIKE OS</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="preload" href="tipos/geist-700.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="estilo.css"></head><body>
 <nav><div class="cont">
   <a class="marca" href="index.html">
-    <svg viewBox="0 0 24 24" fill="none" stroke="#e8ebf0" stroke-width="2"
-         stroke-linecap="round" stroke-linejoin="round"><path d="M5 6l6 6-6 6"/><path d="M13 18h7"/></svg>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 6l6 6-6 6"/><path d="M13 18h7"/></svg>
     MIKE OS</a>
   <a class="enl " href="index.html">Inicio</a>
-  <a class="enl aqui" href="descargas.html">Descargar</a>
+  <a class="enl " href="capturas/index.html">Capturas</a>
   <a class="enl " href="docs/index.html">Documentación</a>
   <a class="enl " href="wiki/index.html">Wiki</a>
+  <a class="enl derecha" href="https://github.com/M1KE-27/m1keos">Código</a>
+  <a class="btn aqui" href="descargas.html">Descargar</a>
 </div></nav>
-<div class="cont">
+<div class="cont"><main>
 <header><h1>Descargar</h1>
 <p class="lema">Una imagen que arranca en cualquier equipo con UEFI. Puedes
   probar el sistema sin instalar nada.</p></header>
 
 <table>
   <tr><th>Archivo</th><th>Tamaño</th><th>Kernel</th></tr>
-  <tr><td>mikeos.iso</td><td>175M</td><td>7.2.0-12252-g388b607d107c</td></tr>
+  <tr><td>mikeos.iso</td><td>307M</td><td>7.2.0-12252-g388b607d107c</td></tr>
 </table>
-<p class="tenue">SHA256:<br><code style="font-size:11px;word-break:break-all">95c9f024bcce263700586e588672cf44a266b6785e79f36c2d47f59451c377cd</code></p>
-<p><a class="boton" href="https://github.com/M1KE-27/m1keos/releases/download/v0.2.0/mikeos.iso">Descargar la imagen</a></p>
+<p class="tenue">SHA256:<br><code style="font-size:11px;word-break:break-all">b48b9b25b43ddcead300956e1a0d24451ae0a481527ed2db2a87db575e2935e4</code></p>
+<p style="margin:22px 0 8px"><a class="btn btn-vivo" href="https://github.com/M1KE-27/m1keos/releases/download/v0.3.0/mikeos.iso">Descargar mikeos.iso</a></p>
 <p class="tenue">La descarga la sirve GitHub y empieza al pulsar, sin página
 intermedia. Se hace así porque esta web vive en un mini PC de casa: su línea da
 unos 780 KB/s de subida, o sea casi cuatro minutos por descarga y de una en
@@ -44,6 +55,11 @@ sudo dd if=mikeos.iso of=/dev/sdX bs=4M status=progress oflag=sync</pre>
 <p>La imagen arranca en memoria: puedes mirarla, tocarlo todo y apagar sin que
   el disco se entere. Cuando quieras instalarla, abre una terminal con
   <code>SUPER/ALT + Return</code> y escribe <code>m-install</code>.</p>
-<p><a href="docs/instalacion.html">Guía de instalación completa →</a></p>
-<footer>MIKE OS · servido desde un mini PC en casa · actualizado el 12 de September de 2026</footer>
-</div></body></html>
+<p><a href="docs/instalacion.html">Guía de instalación completa</a></p>
+</main></div>
+<footer><div class="cont">
+MIKE OS 0.3.0, licencia MIT. Servido desde un mini PC en casa.
+Actualizado el 12 de September de 2026.
+<a href="https://github.com/M1KE-27/m1keos">Código en GitHub</a>
+</div></footer>
+</body></html>

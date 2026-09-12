@@ -1,82 +1,187 @@
+/* Autoalojadas: 60 KB que sirve el mismo mini PC. Enlazar Google Fonts sería
+   mandar a cada visitante a pedirle algo a un tercero sin necesidad. */
+@font-face{font-family:Geist;src:url(tipos/geist-400.woff2)format("woff2");font-weight:400;font-display:swap}
+@font-face{font-family:Geist;src:url(tipos/geist-500.woff2)format("woff2");font-weight:500;font-display:swap}
+@font-face{font-family:Geist;src:url(tipos/geist-700.woff2)format("woff2");font-weight:700;font-display:swap}
+@font-face{font-family:"JB Mono";src:url(tipos/jbmono-400.woff2)format("woff2");font-weight:400;font-display:swap}
+
 :root{
-  --fondo:#0b0d11; --superficie:#161a21; --superficie-alta:#1f242d;
-  --borde:#262c36; --texto:#e8ebf0; --tenue:#79818f; --acento:#00d4ff;
+  --lienzo:#090b10;
+  --superficie:#12161d;
+  --borde:#232a35;
+  --texto:#e8ebf0;
+  --tenue:#79818f;
+  --vivo:#00d4ff;
+
+  --sans:Geist,ui-sans-serif,system-ui,sans-serif;
+  --mono:"JB Mono",ui-monospace,SFMono-Regular,monospace;
+
+  /* Una sola escala de radios, documentada: reglas estructurales a 0,
+     superficies e imágenes a 10, cosas pulsables en cápsula. */
+  --r-sup:10px;
 }
+
 *{box-sizing:border-box}
-body{margin:0;background:var(--fondo);color:var(--texto);
-  font:15px/1.65 system-ui,-apple-system,"Segoe UI",sans-serif;
-  -webkit-font-smoothing:antialiased}
-.cont{max-width:900px;margin:0 auto;padding:0 24px}
-a{color:var(--acento);text-decoration:none}
-a:hover{text-decoration:underline}
-nav{border-bottom:1px solid var(--borde);position:sticky;top:0;
-  background:rgba(11,13,17,.92);backdrop-filter:blur(8px);z-index:10}
-nav .cont{display:flex;align-items:center;gap:24px;height:56px}
-nav .marca{display:flex;align-items:center;gap:10px;font-weight:700;
-  color:var(--texto);margin-right:auto}
-nav .marca svg{width:20px;height:20px}
-nav a.enl{color:var(--tenue);font-size:14px}
-nav a.enl:hover{color:var(--texto);text-decoration:none}
-nav a.enl.aqui{color:var(--texto)}
-header{padding:64px 0 40px}
-h1{font-size:clamp(30px,5.5vw,46px);margin:0 0 14px;letter-spacing:-1px;line-height:1.12}
-h2{font-size:13px;text-transform:uppercase;letter-spacing:1.2px;
-  color:var(--tenue);margin:44px 0 18px;font-weight:700}
-h3{font-size:16px;margin:28px 0 8px}
-.lema{color:var(--tenue);font-size:18px;max-width:52ch;margin:0}
-.estado{display:inline-block;border:1px solid var(--borde);border-radius:999px;
-  padding:4px 12px;font-size:12px;color:var(--tenue);margin-bottom:18px}
-.punto{display:inline-block;width:6px;height:6px;border-radius:50%;
-  background:var(--acento);margin-right:7px;vertical-align:1px}
-.cifras{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));
-  gap:1px;background:var(--borde);border:1px solid var(--borde);
-  border-radius:10px;overflow:hidden;margin:36px 0}
-.cifra{background:var(--superficie);padding:18px}
-.cifra b{display:block;font-size:22px;color:var(--acento);font-weight:700}
-.cifra span{color:var(--tenue);font-size:12px}
-pre{background:var(--superficie);border:1px solid var(--borde);border-radius:8px;
-  padding:15px 17px;overflow-x:auto;margin:14px 0;
-  font:13px/1.7 ui-monospace,"SF Mono",Menlo,monospace}
-pre .c{color:var(--tenue)}
-code{background:var(--superficie);border:1px solid var(--borde);border-radius:4px;
-  padding:1px 5px;font:13px ui-monospace,Menlo,monospace}
-pre code{background:none;border:none;padding:0}
-.rejilla{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px}
-.tarj{background:var(--superficie);border:1px solid var(--borde);
-  border-radius:10px;padding:18px}
-.tarj h3{margin:0 0 6px;font-size:15px}
-.tarj p{margin:0;color:var(--tenue);font-size:14px}
-.boton{display:inline-block;background:var(--acento);color:#05070c;
-  font-weight:700;padding:11px 22px;border-radius:8px;font-size:15px}
-.boton:hover{background:#33ddff;text-decoration:none}
-.boton.sec{background:var(--superficie-alta);color:var(--texto);
-  border:1px solid var(--borde)}
-.tenue{color:var(--tenue)}
-figure{margin:22px 0}
-figure img{width:100%;border:1px solid var(--borde);border-radius:10px;display:block}
-figcaption{color:var(--tenue);font-size:13px;margin-top:8px}
-table{width:100%;border-collapse:collapse;margin:16px 0;font-size:14px}
-th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--borde)}
-th{color:var(--tenue);font-size:12px;text-transform:uppercase;letter-spacing:.6px}
-.aviso{background:var(--superficie);border:1px solid var(--borde);
-  border-left:3px solid var(--acento);border-radius:6px;padding:14px 16px;margin:18px 0}
-.aviso p{margin:0;font-size:14px}
-footer{padding:40px 0 64px;margin-top:56px;border-top:1px solid var(--borde);
-  color:var(--tenue);font-size:13px}
-ul,ol{padding-left:22px}
-li{margin:5px 0}
-li > ul,li > ol{margin:5px 0}
-/* Dentro de un documento, los encabezados son jerarquía real, no etiquetas de
-   sección: h2 en mayúsculas pequeñas se come la estructura de un texto largo. */
-article h2{font-size:22px;text-transform:none;letter-spacing:-.3px;
-  color:var(--texto);margin:40px 0 12px;font-weight:700}
-article h3{font-size:17px;margin:26px 0 8px}
-article h4{font-size:15px;margin:22px 0 6px;color:var(--tenue)}
-blockquote{margin:16px 0;padding:2px 0 2px 16px;border-left:3px solid var(--borde);
-  color:var(--tenue)}
-blockquote p{margin:6px 0}
-hr{border:none;border-top:1px solid var(--borde);margin:32px 0}
-table code{font-size:12px}
-td strong{color:var(--texto)}
-/* Una tabla ancha desborda el móvil; que se desplace ella, no la página. */
-.tabla-ancha{overflow-x:auto}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0;background:var(--lienzo);color:var(--texto);
+  font-family:var(--sans);font-size:17px;line-height:1.65;
+  font-weight:400;letter-spacing:-0.003em;
+  -webkit-font-smoothing:antialiased;
+}
+::selection{background:var(--vivo);color:#04121a}
+
+.cont{max-width:1180px;margin:0 auto;padding:0 32px}
+.prosa{max-width:68ch}
+
+/* --- Navegación. Una línea, 64 px, sin excepciones. --- */
+nav{border-bottom:1px solid var(--borde);position:sticky;top:0;z-index:10;
+    background:rgba(9,11,16,.86);backdrop-filter:blur(14px)}
+nav .cont{display:flex;align-items:center;gap:28px;height:64px}
+.marca{display:flex;align-items:center;gap:9px;color:var(--texto);
+       text-decoration:none;font-weight:700;letter-spacing:-0.02em;margin-right:8px}
+.marca svg{width:17px;height:17px;flex:none}
+.enl{color:var(--tenue);text-decoration:none;font-size:14.5px;font-weight:500}
+.enl:hover{color:var(--texto)}
+.enl.aqui{color:var(--texto)}
+nav .derecha{margin-left:auto}
+
+/* --- Botones. Cápsula, y sólo el primario lleva el acento. --- */
+.btn{display:inline-block;padding:11px 20px;border-radius:999px;
+     font-size:14.5px;font-weight:500;text-decoration:none;
+     border:1px solid var(--borde);color:var(--texto);background:transparent}
+.btn:hover{background:var(--superficie)}
+.btn-vivo{background:var(--vivo);color:#04121a;border-color:var(--vivo);font-weight:700}
+.btn-vivo:hover{background:#3ee0ff}
+
+/* --- Portada --- */
+.portada{padding:76px 0 0;overflow:hidden}
+.portada .rejilla{display:grid;grid-template-columns:minmax(0,540px) minmax(0,1fr);
+                  gap:44px;align-items:center}
+h1{font-size:clamp(27px,3.4vw,36px);line-height:1.12;letter-spacing:-0.03em;
+   font-weight:700;margin:38px 0 14px}
+.portada h1{font-size:clamp(32px,4.3vw,47px);line-height:1.06;
+   letter-spacing:-0.033em;margin:0 0 18px}
+main{padding-bottom:10px}
+.entradilla{font-size:18px;color:var(--tenue);margin:0 0 28px;max-width:46ch}
+.acciones{display:flex;gap:11px;flex-wrap:wrap;align-items:center}
+.bajo-boton{font-family:var(--mono);font-size:12.5px;color:var(--tenue);margin-top:16px}
+
+/* La captura desborda por la derecha a propósito: es lo único atrevido de la
+   página, y es el producto de verdad, no una maqueta dibujada con divs. */
+.captura-portada{position:relative}
+.captura-portada img{display:block;width:min(1000px,calc(50vw + 260px));
+  max-width:none;height:auto;
+  border:1px solid var(--borde);border-radius:var(--r-sup) 0 0 var(--r-sup);
+  border-right:0}
+
+/* --- Cifras. Sin cajas: espacio y una regla. --- */
+.cifras{display:grid;grid-template-columns:repeat(4,1fr);gap:32px;
+        border-top:1px solid var(--borde);margin-top:72px;padding:34px 0}
+.cifra b{display:block;font-family:var(--mono);font-size:26px;font-weight:400;
+         letter-spacing:-0.02em}
+.cifra span{display:block;font-size:13.5px;color:var(--tenue);margin-top:3px}
+
+/* --- Secciones --- */
+section{padding:60px 0;border-top:1px solid var(--borde)}
+section:first-of-type{border-top:0}
+h2{font-size:clamp(24px,3vw,31px);line-height:1.15;letter-spacing:-0.028em;
+   font-weight:700;margin:0 0 14px}
+h3{font-size:18px;letter-spacing:-0.018em;font-weight:700;margin:30px 0 8px}
+p{margin:0 0 16px}
+a{color:var(--texto);text-decoration:underline;text-decoration-color:var(--borde);
+  text-underline-offset:3px}
+a:hover{text-decoration-color:var(--tenue)}
+
+/* Máquina frente a persona: mono para lo que escribió un ordenador. */
+code,kbd,.mono{font-family:var(--mono);font-size:.895em}
+code{background:var(--superficie);border:1px solid var(--borde);
+     border-radius:5px;padding:1.5px 6px}
+pre{font-family:var(--mono);font-size:13.5px;line-height:1.75;
+    background:#05070c;border:1px solid var(--borde);border-radius:var(--r-sup);
+    padding:18px 20px;overflow-x:auto;margin:0 0 18px}
+pre code{background:none;border:0;padding:0;font-size:inherit}
+
+/* --- Capturas dentro del texto --- */
+figure{margin:26px 0}
+figure img{display:block;width:100%;border:1px solid var(--borde);
+           border-radius:var(--r-sup)}
+figcaption{font-size:13.5px;color:var(--tenue);margin-top:9px}
+
+/* --- Pasos. Numerados porque esto SÍ es una secuencia. --- */
+.pasos{counter-reset:paso;margin:24px 0 0;padding:0;list-style:none}
+.pasos li{counter-increment:paso;position:relative;padding-left:42px;
+          margin-bottom:26px}
+.pasos li::before{content:counter(paso);position:absolute;left:0;top:1px;
+  font-family:var(--mono);font-size:13px;color:var(--tenue);
+  border:1px solid var(--borde);border-radius:999px;width:27px;height:27px;
+  display:grid;place-items:center}
+.pasos h3{margin:0 0 6px;font-size:16.5px}
+.pasos p{margin:0 0 10px;color:var(--tenue);font-size:15.5px}
+
+/* --- La sección de lo que no funciona. Misma jerarquía que las demás. --- */
+.limites{border-top:1px solid var(--borde);margin-top:20px}
+.limites div{border-bottom:1px solid var(--borde);padding:16px 0;
+             display:grid;grid-template-columns:190px 1fr;gap:24px}
+.limites b{font-weight:500;font-size:15px}
+.limites p{margin:0;color:var(--tenue);font-size:15px}
+
+/* --- Piezas del sistema --- */
+.piezas{border-top:1px solid var(--borde);margin-top:18px}
+.piezas div{border-bottom:1px solid var(--borde);padding:14px 0;
+            display:grid;grid-template-columns:170px 1fr;gap:24px;align-items:baseline}
+.piezas b{font-family:var(--mono);font-weight:400;font-size:14.5px}
+.piezas span{color:var(--tenue);font-size:15px}
+
+/* --- Galería --- */
+.galeria{display:grid;grid-template-columns:repeat(2,1fr);gap:20px;margin-top:24px}
+.galeria a{display:block;text-decoration:none}
+.galeria img{display:block;width:100%;border:1px solid var(--borde);
+             border-radius:var(--r-sup)}
+.galeria span{display:block;font-size:13.5px;color:var(--tenue);margin-top:8px}
+
+/* --- Índices de documentación --- */
+.indice{border-top:1px solid var(--borde);margin-top:18px}
+.indice a{display:grid;grid-template-columns:210px 1fr;gap:24px;
+          border-bottom:1px solid var(--borde);padding:15px 0;
+          text-decoration:none;align-items:baseline}
+.indice a:hover{background:var(--superficie)}
+.indice b{font-weight:500;font-size:15.5px}
+.indice span{color:var(--tenue);font-size:14.5px}
+
+/* --- Aviso --- */
+.aviso{border:1px solid var(--borde);border-left:2px solid var(--vivo);
+       border-radius:0 var(--r-sup) var(--r-sup) 0;
+       background:var(--superficie);padding:16px 20px;margin:22px 0}
+.aviso p{margin:0;font-size:15.5px}
+
+footer{border-top:1px solid var(--borde);margin-top:70px;padding:26px 0 44px;
+       color:var(--tenue);font-size:13.5px}
+footer a{color:var(--tenue)}
+
+/* Tablas de la documentación */
+table{border-collapse:collapse;width:100%;margin:0 0 18px;font-size:15px}
+th,td{border-bottom:1px solid var(--borde);padding:9px 12px 9px 0;text-align:left}
+th{font-weight:500;color:var(--tenue);font-size:13.5px}
+
+/* Teclado visible: quien navega sin ratón tiene que ver dónde está. */
+a:focus-visible,.btn:focus-visible{outline:2px solid var(--vivo);outline-offset:3px;
+  border-radius:3px}
+
+@media (max-width:900px){
+  body{font-size:16px}
+  .cont{padding:0 20px}
+  .portada{padding:44px 0 0}
+  .portada .rejilla{grid-template-columns:1fr;gap:30px}
+  .captura-portada img{width:100%;max-width:100%;height:auto;
+                       border-right:1px solid var(--borde);
+                       border-radius:var(--r-sup)}
+  /* La marca en una línea: partida en dos deja la navegación torcida. */
+  .marca{white-space:nowrap}
+  .enl{white-space:nowrap}
+  .cifras{grid-template-columns:repeat(2,1fr);gap:22px;margin-top:46px}
+  .galeria{grid-template-columns:1fr}
+  .limites div,.piezas div,.indice a{grid-template-columns:1fr;gap:5px}
+  nav .cont{gap:18px;overflow-x:auto}
+}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
