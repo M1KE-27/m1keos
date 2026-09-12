@@ -145,8 +145,15 @@ montar_en_vivo() {
     # Buscar el medio que lleva el sistema. Se recorren los bloques en vez de
     # confiar en un nombre fijo: el USB puede ser sda, sdb o nvme según el
     # equipo, y en una Surface no es el mismo que en un portátil cualquiera.
-    for _i in 1 2 3 4 5 6 7 8 9 10; do
-        for _d in /dev/sr* /dev/sd* /dev/nvme*n* /dev/vd* /dev/mmcblk*; do
+    # Treinta segundos, no diez. En un portátil real la controladora USB puede
+    # tardar bastante más que en una máquina virtual en enumerar el pendrive, y
+    # rendirse a los diez segundos es rendirse antes de tiempo. Se avisa por
+    # pantalla mientras tanto: una espera con explicación no es lo mismo que una
+    # pantalla negra.
+    _intentos=30
+    _i=0
+    while [ "$_i" -lt "$_intentos" ]; do
+        for _d in /dev/sr* /dev/sd* /dev/nvme*n* /dev/vd* /dev/mmcblk* /dev/dm-*; do
             [ -b "$_d" ] || continue
             mount -o ro "$_d" /mnt/medio 2>/dev/null || continue
             if [ -f /mnt/medio/mikeos/sistema.squashfs ]; then
@@ -156,12 +163,42 @@ montar_en_vivo() {
             umount /mnt/medio 2>/dev/null || true
         done
         [ -n "$_medio" ] && break
-        # El USB puede tardar en aparecer: se le dan unos segundos en vez de
-        # decidir a la primera que no está.
+        _i=$((_i + 1))
+        [ "$_i" = "5" ] && log "Buscando el medio de instalación..."
+        [ "$_i" = "15" ] && log "Sigo buscando el USB. Si tarda mucho más, algo va mal."
         sleep 1
     done
 
-    [ -n "$_medio" ] || { log "No encuentro el medio con el sistema"; return 1; }
+    if [ -z "$_medio" ]; then
+        # Esto tiene que verse. La versión anterior seguía adelante en silencio
+        # y acababa arrancando dentro del initramfs: sin escritorio y sin
+        # explicación, o sea una pantalla negra durante horas. Pasó en una
+        # Surface Laptop 4 con la imagen puesta con Ventoy.
+        echo
+        echo "=========================================================="
+        echo "  NO ENCUENTRO EL SISTEMA EN NINGÚN DISPOSITIVO"
+        echo "=========================================================="
+        echo
+        echo "  He mirado en todos los discos conectados y en ninguno está"
+        echo "  mikeos/sistema.squashfs, que es donde vive el sistema."
+        echo
+        echo "  Lo que he visto:"
+        for _d in /dev/sr* /dev/sd* /dev/nvme*n* /dev/vd* /dev/mmcblk*; do
+            [ -b "$_d" ] && echo "    $_d"
+        done
+        echo
+        echo "  La causa más habitual es haber copiado la ISO con Ventoy o"
+        echo "  con un programa que la descomprime. Esta imagen hay que"
+        echo "  escribirla TAL CUAL en el USB:"
+        echo
+        echo "    sudo dd if=mikeos.iso of=/dev/sdX bs=4M status=progress oflag=sync"
+        echo
+        echo "  Se abre una consola de rescate. Escribe  lsblk  para ver los"
+        echo "  discos, o  poweroff  para apagar."
+        echo "=========================================================="
+        echo
+        return 1
+    fi
     log "Sistema encontrado en $_medio"
 
     mount -t squashfs -o ro,loop /mnt/medio/mikeos/sistema.squashfs /mnt/sistema 2>/dev/null \
@@ -288,5 +325,20 @@ if [ -n "$ROOT_DEV" ] && [ "$ROOT_DEV" != "/dev/ram0" ] && wait_for_block "$ROOT
     fi
 fi
 
-# Arranque directo en memoria (initramfs)
-exec /sbin/runit
+# Nada ha funcionado: ni medio en vivo ni disco con sistema.
+#
+# Antes aquí se ejecutaba runit dentro del initramfs sin decir nada. El
+# initramfs no tiene /usr ni escritorio, así que el resultado era una pantalla
+# casi en negro, sin errores y sin forma de saber qué había pasado. Alguien
+# estuvo esperando horas delante de eso.
+#
+# Ahora se explica y se deja una consola con la que se puede investigar.
+echo
+echo "MIKE OS no ha podido arrancar ningún sistema."
+echo "Esto es la consola del arranque, no el sistema: aquí hay muy poco."
+echo
+echo "  lsblk           qué discos ve el equipo"
+echo "  cat /proc/cmdline   con qué parámetros arrancó"
+echo "  poweroff        apagar"
+echo
+exec /bin/sh -l

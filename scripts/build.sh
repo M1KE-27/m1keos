@@ -74,6 +74,19 @@ install_etc() {
 echo "=== [1/8] Preparando entorno de construcción de MIKE OS ==="
 mkdir -p "$BUILD_DIR" "$ROOTFS_DIR" "$ISO_DIR" "$PROJECT_ROOT/scripts" "$PROJECT_ROOT/docs" "$PROJECT_ROOT/tests"
 
+# El kernel se recompila si no está, y TAMBIÉN si el fragmento de opciones ha
+# cambiado desde la última vez. Antes sólo se miraba si el binario existía: se
+# podía editar .config, reconstruir el sistema entero y seguir arrancando el
+# kernel viejo sin que nada avisara. Así estuvo un fallo de consola gráfica sin
+# corregirse aunque la opción ya estaba puesta en el archivo.
+KERNEL_HUELLA="$PROJECT_ROOT/kernel/.mikeos-config-sha"
+KERNEL_SHA_AHORA="$(sha256sum "$KERNEL_CONFIG_FRAGMENT" 2>/dev/null | cut -d' ' -f1)"
+KERNEL_SHA_ANTES="$(cat "$KERNEL_HUELLA" 2>/dev/null || true)"
+if [ -f "$KERNEL_IMAGE" ] && [ "$KERNEL_SHA_AHORA" != "$KERNEL_SHA_ANTES" ]; then
+    echo "Las opciones del kernel han cambiado: hay que recompilarlo."
+    rm -f "$KERNEL_IMAGE"
+fi
+
 if [ ! -f "$KERNEL_IMAGE" ]; then
     echo "=== [1b/8] Clonando y compilando el kernel Linux ($KERNEL_COMMIT) ==="
     if [ ! -d "$PROJECT_ROOT/kernel/.git" ]; then
@@ -102,6 +115,7 @@ if [ ! -f "$KERNEL_IMAGE" ]; then
     make olddefconfig
     make -j"$(nproc)" bzImage
     cd "$PROJECT_ROOT"
+    printf '%s\n' "$KERNEL_SHA_AHORA" > "$KERNEL_HUELLA"
     [ -n "$KERNEL_BIND" ] && sudo umount "$KERNEL_BIND" 2>/dev/null || true
 fi
 
@@ -1310,13 +1324,29 @@ fakeroot -- env ROOTFS_DIR="$ROOTFS_DIR" ISO_DIR="$ISO_DIR" sh -c '
     # setuid no puede, y el bloqueo rechazaría hasta la contraseña correcta.
     chmod 4755 "$ROOTFS_DIR/usr/bin/m-autenticar"
     cd "$ROOTFS_DIR"
-    # /lib/firmware queda fuera del initramfs a propósito. El initramfs se
-    # carga ENTERO en memoria antes de que exista nada, así que cada mega ahí
-    # es un mega de RAM y de tiempo de arranque. Y no hace falta: los drivers
-    # piden su firmware cuando el disco raíz ya está montado, no antes.
-    # Meterlo dentro subía el initramfs de 26 MB a 142 MB, que en una máquina
-    # de 512 MB es la diferencia entre arrancar y no arrancar.
-    find . -not -path "./boot/*" -not -path "./var/lib/mpm/repo/*" -not -path "./usr/lib/*" -not -path "./lib64/*" -not -path "./usr/share/X11/*" -not -path "./usr/bin/Hyprland*" -not -path "./usr/bin/quickshell*" -not -path "./lib/firmware/*" -print0 \
+    # /lib/firmware queda fuera del initramfs, MENOS el de las tarjetas
+    # gráficas. El initramfs se carga entero en memoria antes de que exista
+    # nada, así que cada mega ahí es memoria y tiempo de arranque: meterlo todo
+    # lo subía de 26 MB a 142 MB, y en un equipo de 512 MB eso es la diferencia
+    # entre arrancar y no arrancar. Por eso la regla general es dejarlo fuera.
+    #
+    # Pero el de la GPU es distinto, y costó caro descubrirlo. amdgpu, i915 y
+    # compañía van compilados DENTRO del kernel (=y), así que arrancan mientras
+    # el kernel se inicializa: antes de que exista ninguna raíz que montar. Si
+    # su firmware no está en el initramfs, no lo encuentran, el driver no carga
+    # y el equipo se queda SIN NINGUNA IMAGEN. Ni escritorio, ni mensajes, ni
+    # un error: la pantalla se queda como la dejó GRUB.
+    #
+    # Le pasó a una Surface Laptop 4 (Ryzen 4000, gráfica Renoir): arrancaba
+    # bien pero a ciegas, y desde fuera parecía colgada. En una máquina virtual
+    # no se ve nunca, porque el driver de la GPU virtual no necesita firmware.
+    #
+    # Son unos 7 MB de los 9 que ocupa /lib/firmware. El resto (wifi,
+    # bluetooth, sonido) sí puede esperar a que la raíz esté montada: sin wifi
+    # se puede arreglar el equipo, sin pantalla no.
+    find . -not -path "./boot/*" -not -path "./var/lib/mpm/repo/*" -not -path "./usr/lib/*" -not -path "./lib64/*" -not -path "./usr/share/X11/*" -not -path "./usr/bin/Hyprland*" -not -path "./usr/bin/quickshell*" \
+         \( -path "./lib/firmware/amdgpu/*" -o -path "./lib/firmware/i915/*" \
+            -o -path "./lib/firmware/radeon/*" -o -not -path "./lib/firmware/*" \) -print0 \
         | LC_ALL=C sort -z \
         | cpio --null -o --format=newc 2>/dev/null \
         | gzip -9n > "$ISO_DIR/initramfs.cpio.gz"
