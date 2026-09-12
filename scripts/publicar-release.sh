@@ -38,12 +38,23 @@ gh auth status >/dev/null 2>&1 || { err "gh no está autenticado. Ejecuta: gh au
 # Una ISO más vieja que el último commit es una release que promete un código
 # que no lleva dentro.
 paso "Comprobando que la ISO corresponde al código"
-ULTIMO_COMMIT=$(git -C "$RAIZ" log -1 --format=%ct)
+# No vale comparar con el último commit a secas: un commit que sólo toca la
+# documentación o este mismo script no cambia nada de lo que va DENTRO de la
+# imagen, y exigir reconstruirla por eso es ruido que acaba enseñando a
+# ignorar el aviso.
+#
+# Se compara contra el último commit que tocó algo que sí entra en la imagen.
+RUTAS_DE_LA_IMAGEN="build/ .config scripts/build.sh scripts/build-repo.sh scripts/crear-iso.sh"
+# shellcheck disable=SC2086
+ULTIMO_COMMIT=$(git -C "$RAIZ" log -1 --format=%ct -- $RUTAS_DE_LA_IMAGEN)
+[ -n "$ULTIMO_COMMIT" ] || ULTIMO_COMMIT=0
 FECHA_ISO=$(stat -c %Y "$ISO")
 if [ "$FECHA_ISO" -lt "$ULTIMO_COMMIT" ]; then
-    err "la ISO es anterior al último commit."
+    err "la ISO es anterior al último cambio que afecta a la imagen."
     gris "  ISO:    $(date -d "@$FECHA_ISO" '+%F %T')"
-    gris "  commit: $(date -d "@$ULTIMO_COMMIT" '+%F %T')"
+    gris "  cambio: $(date -d "@$ULTIMO_COMMIT" '+%F %T')"
+    # shellcheck disable=SC2086
+    gris "  fue:    $(git -C "$RAIZ" log -1 --format=%s -- $RUTAS_DE_LA_IMAGEN)"
     gris "  Reconstruye:  ./scripts/build.sh && ./scripts/crear-iso.sh"
     exit 1
 fi
@@ -52,7 +63,7 @@ if [ -n "$(git -C "$RAIZ" status --porcelain)" ]; then
     git -C "$RAIZ" status --short | head -5 >&2
     exit 1
 fi
-verde "  la ISO es posterior al último commit y no hay cambios sueltos"
+verde "  la ISO lleva el código de ahora y no hay cambios sueltos"
 
 # --- Datos ------------------------------------------------------------------
 TAM=$(du -h "$ISO" | cut -f1)
