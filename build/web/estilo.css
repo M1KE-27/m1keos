@@ -22,6 +22,12 @@
 }
 
 *{box-sizing:border-box}
+/* Ninguna imagen desborda su sitio ni se deforma. Va aquí arriba y sin
+   excepciones: cada vez que una regla concreta ponía "max-width:none" para
+   conseguir un efecto, la imagen acababa recortada a algún ancho intermedio
+   que nadie había mirado. height:auto es obligatorio porque el atributo
+   height="900" del HTML hace de altura CSS en cuanto se toca el ancho. */
+img{display:block;max-width:100%;height:auto}
 html{-webkit-text-size-adjust:100%}
 body{
   margin:0;background:var(--lienzo);color:var(--texto);
@@ -55,25 +61,33 @@ nav .derecha{margin-left:auto}
 .btn-vivo:hover{background:#3ee0ff}
 
 /* --- Portada --- */
-.portada{padding:76px 0 0;overflow:hidden}
-.portada .rejilla{display:grid;grid-template-columns:minmax(0,540px) minmax(0,1fr);
-                  gap:44px;align-items:center}
+/* La captura va DEBAJO del texto, no al lado.
+   En dos columnas nunca tiene sitio: a 1150 px de ancho le tocaban 350, o sea
+   un 22% de escala, y encima desbordaba su celda y se veía sólo la mitad
+   izquierda. Una captura de un escritorio necesita ancho o no se entiende.
+   Debajo se lleva la página entera y se ve completa a cualquier tamaño. */
+.portada{padding:74px 0 0}
 h1{font-size:clamp(27px,3.4vw,36px);line-height:1.12;letter-spacing:-0.03em;
    font-weight:700;margin:38px 0 14px}
-.portada h1{font-size:clamp(32px,4.3vw,47px);line-height:1.06;
-   letter-spacing:-0.033em;margin:0 0 18px}
+.portada h1{font-size:clamp(32px,4.6vw,52px);line-height:1.05;
+   letter-spacing:-0.034em;margin:0 0 18px;max-width:16ch}
 main{padding-bottom:10px}
-.entradilla{font-size:18px;color:var(--tenue);margin:0 0 28px;max-width:46ch}
+.entradilla{font-size:18px;color:var(--tenue);margin:0 0 28px;max-width:52ch}
 .acciones{display:flex;gap:11px;flex-wrap:wrap;align-items:center}
 .bajo-boton{font-family:var(--mono);font-size:12.5px;color:var(--tenue);margin-top:16px}
 
-/* La captura desborda por la derecha a propósito: es lo único atrevido de la
-   página, y es el producto de verdad, no una maqueta dibujada con divs. */
-.captura-portada{position:relative}
-.captura-portada img{display:block;width:min(1000px,calc(50vw + 260px));
-  max-width:none;height:auto;
-  border:1px solid var(--borde);border-radius:var(--r-sup) 0 0 var(--r-sup);
-  border-right:0}
+.captura-portada{margin-top:46px}
+.captura-portada img{width:100%;
+  border:1px solid var(--borde);border-radius:var(--r-sup)}
+
+/* A partir de este ancho sobra sitio: la captura se sale hasta el borde
+   derecho de la ventana. Se sigue viendo ENTERA; lo único que cambia es
+   cuánto ocupa. El cálculo es el hueco que deja el contenedor centrado
+   (1180 px de ancho máximo más sus 32 de margen interior). */
+@media (min-width:1280px){
+  .captura-portada{margin-right:calc((100vw - 1180px) / -2 - 32px)}
+  .captura-portada img{border-radius:var(--r-sup) 0 0 var(--r-sup);border-right:0}
+}
 
 /* --- Cifras. Sin cajas: espacio y una regla. --- */
 .cifras{display:grid;grid-template-columns:repeat(4,1fr);gap:32px;
@@ -171,11 +185,8 @@ a:focus-visible,.btn:focus-visible{outline:2px solid var(--vivo);outline-offset:
 @media (max-width:900px){
   body{font-size:16px}
   .cont{padding:0 20px}
-  .portada{padding:44px 0 0}
-  .portada .rejilla{grid-template-columns:1fr;gap:30px}
-  .captura-portada img{width:100%;max-width:100%;height:auto;
-                       border-right:1px solid var(--borde);
-                       border-radius:var(--r-sup)}
+  .portada{padding:40px 0 0}
+  .captura-portada{margin-top:34px}
   /* La marca en una línea: partida en dos deja la navegación torcida. */
   .marca{white-space:nowrap}
   .enl{white-space:nowrap}
