@@ -36,11 +36,32 @@ fi
 chmod 666 /dev/dri/card* /dev/dri/renderD* /dev/input/event* /dev/tty* /dev/fb* 2>/dev/null || true
 
 # 3. Validación y Detección de DRM / KMS
+# ¿Qué hay detrás de esta tarjeta: una GPU o el framebuffer de la firmware?
+es_solo_framebuffer() {  # es_solo_framebuffer card0
+    _dev="$(basename "$(readlink -f "/sys/class/drm/$1/device" 2>/dev/null)" 2>/dev/null || echo "")"
+    case "$_dev" in
+        simple-framebuffer*|vesa-framebuffer*|efi-framebuffer*|platform-*framebuffer*) return 0 ;;
+    esac
+    return 1
+}
+
+# Se recorren todas las tarjetas y GANA UNA DE VERDAD si la hay.
+#
+# Antes se quedaba con la última que apareciera. En un equipo donde el driver
+# de la gráfica carga bien, conviven card0 (el framebuffer que dejó la
+# firmware) y card1 (la GPU): quedarse con la última acierta por suerte, y si
+# el orden se invierte se descarta la GPU buena y el escritorio se niega a
+# arrancar en un equipo perfectamente capaz. Ahora la elección es explícita.
 DRM_CARD=""
+DRM_CARD_RESPALDO=""
 for card in /sys/class/drm/card[0-9]*; do
     [ -d "$card" ] || continue
     card_name="$(basename "$card")"
     if echo "$card_name" | grep -qv -- "-"; then
+        if es_solo_framebuffer "$card_name"; then
+            [ -z "$DRM_CARD_RESPALDO" ] && DRM_CARD_RESPALDO="/dev/dri/$card_name"
+            continue
+        fi
         DRM_CARD="/dev/dri/$card_name"
         echo "DRM device detectado: $card_name"
         
@@ -63,6 +84,11 @@ for card in /sys/class/drm/card[0-9]*; do
         done
     fi
 done
+
+# Sin ninguna tarjeta de verdad, queda el framebuffer: no sirve para el
+# escritorio, pero el bloque de abajo tiene que poder nombrarlo para explicar
+# qué pasa en vez de soltar un "ERROR CRÍTICO" sin más.
+[ -z "$DRM_CARD" ] && DRM_CARD="$DRM_CARD_RESPALDO"
 
 if [ -z "$DRM_CARD" ] || [ ! -e "$DRM_CARD" ]; then
     echo "ERROR CRÍTICO: No se detectó ningún dispositivo /dev/dri/card* funcional." >&2
@@ -90,8 +116,7 @@ fi
 # Mejor una consola que funciona y explica lo que pasa, que un cuelgue.
 CARD_BASE="$(basename "$DRM_CARD")"
 DRM_DEV_NOMBRE="$(basename "$(readlink -f "/sys/class/drm/$CARD_BASE/device" 2>/dev/null)" 2>/dev/null || echo "")"
-case "$DRM_DEV_NOMBRE" in
-    simple-framebuffer*|vesa-framebuffer*|efi-framebuffer*|platform-*framebuffer*)
+if es_solo_framebuffer "$CARD_BASE"; then
         echo
         echo "=============================================================="
         echo "  NO HAY DRIVER DE TARJETA GRÁFICA"
@@ -101,22 +126,94 @@ case "$DRM_DEV_NOMBRE" in
         echo "  ($DRM_DEV_NOMBRE). Sirve para ver texto, pero no para mover un"
         echo "  escritorio: intentarlo cuelga el equipo entero."
         echo
-        echo "  El driver de tu gráfica no ha cargado. Casi siempre es una de"
-        echo "  estas tres:"
+
+        # Aquí va el PORQUÉ, no una lista de causas posibles.
+        #
+        # La versión anterior enumeraba tres sospechosos y mandaba a escribir
+        # "dmesg | grep firmware" a mano. Eso es pedirle el trabajo de
+        # diagnóstico a quien acaba de encontrarse una consola donde esperaba
+        # un escritorio, y encima obliga a una segunda foto para saber algo.
+        # El sistema ya tiene la respuesta delante: lo suyo es enseñarla.
+        echo "  Esto es lo que dijo el kernel sobre la gráfica:"
         echo
-        echo "    - Falta su firmware. Mira qué pide:   dmesg | grep -i firmware"
-        echo "    - Has arrancado con «nomodeset» o en modo seguro."
-        echo "    - La gráfica es más nueva que este kernel."
+        if dmesg 2>/dev/null | grep -iE "amdgpu|i915|nouveau|radeon|\[drm\]|firmware" \
+             | grep -viE "simple-framebuffer|simpledrm" | tail -14 | sed 's/^/    /' | grep -q .; then
+            dmesg 2>/dev/null | grep -iE "amdgpu|i915|nouveau|radeon|\[drm\]|firmware" \
+                | grep -viE "simple-framebuffer|simpledrm" | tail -14 | sed 's/^/    /'
+        else
+            echo "    (ni una línea: el driver no llegó ni a intentarlo)"
+        fi
+        echo
+        echo "  Tarjetas que ve el sistema:"
+        for _c in /sys/class/drm/card[0-9]*; do
+            [ -d "$_c" ] || continue
+            case "$(basename "$_c")" in *-*) continue ;; esac
+            printf '    %-8s -> %s\n' "$(basename "$_c")" \
+                "$(basename "$(readlink -f "$_c/device" 2>/dev/null)" 2>/dev/null)"
+        done
+        echo
+        # Las gráficas se leen de /sys y no de lspci: el lspci de busybox no
+        # sabe de clases ni de nombres, así que un "lspci | grep -i vga" no
+        # encuentra nada aunque la tarjeta esté ahí. La clase 0x03 del PCI es
+        # "controlador de pantalla", y eso sí está en /sys siempre.
+        echo "  Gráficas que hay en el equipo (PCI clase 0x03):"
+        _hay_gpu=""
+        for _pci in /sys/bus/pci/devices/*; do
+            [ -r "$_pci/class" ] || continue
+            case "$(cat "$_pci/class" 2>/dev/null)" in
+                0x03*) ;;
+                *) continue ;;
+            esac
+            _hay_gpu=1
+            _drv="$(basename "$(readlink -f "$_pci/driver" 2>/dev/null)" 2>/dev/null)"
+            [ -n "$_drv" ] && [ "$_drv" != "." ] || _drv="SIN DRIVER"
+            printf '    %s  %s:%s  driver: %s\n' "$(basename "$_pci")" \
+                "$(cat "$_pci/vendor" 2>/dev/null)" "$(cat "$_pci/device" 2>/dev/null)" "$_drv"
+        done
+        [ -n "$_hay_gpu" ] || echo "    (ninguna: el equipo no expone ningún PCI de clase 0x03)"
+        echo
+        # Todo esto, además, a un archivo. Leer de una pantalla para copiarlo a
+        # mano es como se pierden los diagnósticos.
+        {
+            echo "=== MIKE OS: la gráfica no arrancó ==="
+            date 2>/dev/null
+            cat /proc/version 2>/dev/null
+            echo "--- cmdline ---"; cat /proc/cmdline 2>/dev/null
+            echo "--- drm ---"; ls -l /sys/class/drm/ 2>/dev/null
+            echo "--- pci ---"
+            for _p in /sys/bus/pci/devices/*; do
+                printf '%s class=%s %s:%s driver=%s\n' "$(basename "$_p")" \
+                    "$(cat "$_p/class" 2>/dev/null)" "$(cat "$_p/vendor" 2>/dev/null)" \
+                    "$(cat "$_p/device" 2>/dev/null)" \
+                    "$(basename "$(readlink -f "$_p/driver" 2>/dev/null)" 2>/dev/null)"
+            done
+            echo "--- dmesg ---"; dmesg 2>/dev/null
+        } > /tmp/mikeos-grafica.txt 2>/dev/null
+        echo "  Todo esto, entero, está en:  /tmp/mikeos-grafica.txt"
         echo
         echo "  El sistema SÍ funciona: esto es una consola de verdad, con todas"
-        echo "  las herramientas. Puedes instalarlo desde aquí con  m-install"
+        echo "  las herramientas."
         echo
         echo "  Para contarlo:  https://github.com/M1KE-27/m1keos/issues"
         echo "=============================================================="
         echo
+
+        # Si se arrancó desde la entrada "Instalar" del menú, hay que
+        # instalar igualmente: que no haya escritorio no cambia lo que pidió
+        # la persona.
+        #
+        # Pero el instalador NO se lanza desde aquí. Esta sesión corre por una
+        # tubería ("| tee" en el servicio de consola) y sin terminal de
+        # control, así que cualquier intento de preguntar algo muere con
+        # "can't open /dev/tty: No such device or address" y la instalación se
+        # cancela sola justo en la confirmación. Se deja la señal y lo lanza
+        # el servicio de consola, que sí sabe entregar una terminal de verdad
+        # (es lo que hace con el intérprete de órdenes al salir de aquí).
+        echo "  Pediste instalar, así que sigo por aquí: el instalador de"
+        echo "  texto hace lo mismo que el gráfico, sólo que sin dibujos."
+        echo
         exit 1
-        ;;
-esac
+fi
 
 CONNECTED_COUNT=0
 for status_file in /sys/class/drm/card*-*/status; do

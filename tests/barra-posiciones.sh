@@ -58,6 +58,7 @@ cp "$VARS" "$TRABAJO/vars.fd"; chmod u+w "$TRABAJO/vars.fd"
 if [ -r /dev/kvm ] && [ -w /dev/kvm ]; then
     ACCEL=(-enable-kvm -cpu host)
 else
+    # shellcheck disable=SC2054  # "tcg,thread=multi" es un solo argumento de QEMU
     ACCEL=(-accel tcg,thread=multi -cpu max)
 fi
 

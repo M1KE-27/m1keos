@@ -47,6 +47,7 @@ MODO=disco
 if [ -r /dev/kvm ] && [ -w /dev/kvm ]; then
     ACCEL=(-enable-kvm -cpu host)
 else
+    # shellcheck disable=SC2054  # "tcg,thread=multi" es un solo argumento de QEMU
     ACCEL=(-accel tcg,thread=multi -cpu max)
 fi
 
@@ -110,16 +111,29 @@ if [ "$ARRANCO" -eq 1 ]; then
     tr -d '\0' < "$SERIE" | grep -aiE "Linux version|Command line|Freeing|runit|MIKE OS" | head -8 | sed 's/^/    /'
     # Que arranque el kernel no basta: hay que llegar a runit, que es cuando el
     # sistema está realmente en pie y no en un pánico bonito.
-    printf "Esperando a runit"
+    # Se pregunta al sistema, no al puerto serie.
+    #
+    # Esto buscaba la palabra "runit" en el registro del puerto serie, y eso
+    # dejó de valer el día que la consola del sistema pasó a ser la pantalla
+    # (console=tty0 al final de la línea de órdenes, que es lo correcto: en un
+    # portátil no hay puerto serie y todo lo que escribía el sistema se iba a
+    # un puerto que no existe). Desde entonces la prueba decía "no llega a
+    # runit" en arranques perfectamente buenos.
+    #
+    # Una prueba que falla cuando todo va bien es peor que no tenerla: enseña
+    # a no hacerle caso. Ahora se comprueba lo que de verdad importa, que es
+    # que el sistema conteste, y el rastro del serie sólo vale como atajo.
+    printf "Esperando a que el sistema conteste"
     LLEGO=0
     for _ in $(seq 1 40); do
+        if vm true; then LLEGO=1; break; fi
         if grep -qai "runit" "$SERIE" 2>/dev/null; then LLEGO=1; break; fi
         printf "."
         sleep 5
     done
     echo
     if [ "$LLEGO" -eq 1 ]; then
-        verde "Y el sistema llega a runit: arranca de verdad."
+        verde "Y el sistema contesta: arranca de verdad."
         RC=0
         # Llegar a runit no basta para un USB en vivo: lo que promete es que
         # puedes PROBAR el sistema, y eso significa escritorio. Durante semanas
@@ -143,7 +157,7 @@ if [ "$ARRANCO" -eq 1 ]; then
             RC=1
         fi
     else
-        rojo "El kernel arranca pero no llega a runit."
+        rojo "El kernel arranca pero el sistema nunca llega a contestar."
         tr -d '\0' < "$SERIE" | tail -12 | sed 's/^/    /'
         RC=1
     fi

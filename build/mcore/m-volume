@@ -1,6 +1,19 @@
 #!/bin/sh
 # Volumen en pasos de 5%, limitado siempre a 0..100.
 set -u
+
+# Dónde está el socket de PipeWire.
+#
+# wpctl lo busca en XDG_RUNTIME_DIR, y esa variable sólo existe dentro de la
+# sesión gráfica. Llamado desde cualquier otro sitio -- una conexión SSH, un
+# servicio, una prueba automática -- wpctl decía "Could not connect to
+# PipeWire" y esto salía con error, como si el equipo no tuviera tarjeta de
+# sonido. El sonido estaba perfectamente montado; lo que faltaba era saber
+# dónde mirar.
+if [ -z "${XDG_RUNTIME_DIR:-}" ]; then
+    XDG_RUNTIME_DIR="/run/user/$(id -u)"
+    export XDG_RUNTIME_DIR
+fi
 # "get" devuelve siempre el nivel actual (0-100) y, si está silenciado,
 # añade " mute" detrás: "0", "75", "75 mute".
 # Sin destino de audio no imprime nada y sale con error: quien pregunta debe

@@ -191,6 +191,11 @@ ShellRoot {
         }
     }
     Process { id: bloquearAhora; command: ["m-bloquear"] }
+    // Apagar y reiniciar. Se llaman por ruta completa a propósito: así se coge
+    // el /usr/bin/reboot de MIKE OS y no el applet de BusyBox, que bajo runit
+    // no hace nada y encima sale diciendo que todo fue bien (ver m-apagado).
+    Process { id: reiniciarEquipo; command: ["/usr/bin/reboot"] }
+    Process { id: apagarEquipo;    command: ["/usr/bin/poweroff"] }
     // Poner la contraseña es interactivo (se teclea dos veces), así que va en
     // una terminal de verdad en vez de en un cuadro del panel: reimplementar
     // aquí la doble comprobación sería repetir lo que passwd ya hace bien.
@@ -307,7 +312,7 @@ ShellRoot {
                     }
 
                     HoverHandler { id: encima }
-                    TapHandler { onTapped: Hyprland.dispatch("workspace " + modelData) }
+                    TapHandler { gesturePolicy: TapHandler.ReleaseWithinBounds; onTapped: Hyprland.dispatch("workspace " + modelData) }
                 }
             }
         }
@@ -496,7 +501,14 @@ ShellRoot {
                     font.pixelSize: root.fontSize + 2
                     Behavior on color { ColorAnimation { duration: 120 } }
                     HoverHandler { id: pulsable; cursorShape: Qt.PointingHandCursor }
-                    TapHandler { onTapped: root.pulsarBoton(modelData) }
+                    // El área sensible era el rectángulo del propio glifo: unos
+                    // 14 píxeles de alto. Con un ratón se acierta; con el dedo
+                    // en un touchpad, no. Se agranda sin mover nada de sitio.
+                    TapHandler {
+                        gesturePolicy: TapHandler.ReleaseWithinBounds
+                        margin: 10
+                        onTapped: root.pulsarBoton(modelData)
+                    }
                 }
             }
         }
@@ -823,6 +835,7 @@ ShellRoot {
 
             HoverHandler { id: raton; enabled: root.esBoton(isla.modulo) }
             TapHandler {
+                gesturePolicy: TapHandler.ReleaseWithinBounds
                 enabled: root.esBoton(isla.modulo)
                 onTapped: root.pulsarModulo(isla.modulo)
             }
@@ -1165,6 +1178,7 @@ ShellRoot {
             color: "#000000"
             opacity: 0.5
             TapHandler {
+                gesturePolicy: TapHandler.ReleaseWithinBounds
                 // Sólo cierra si el clic cae FUERA de la ventana. El fondo
                 // ocupa la pantalla entera, también por debajo del Centro de
                 // Control, así que antes recibía igualmente cada clic de
@@ -1268,7 +1282,7 @@ ShellRoot {
                                 }
 
                                 HoverHandler { id: sobre }
-                                TapHandler { onTapped: root.seccion = modelData.id }
+                                TapHandler { gesturePolicy: TapHandler.ReleaseWithinBounds; onTapped: root.seccion = modelData.id }
                             }
                         }
 
@@ -1313,7 +1327,12 @@ ShellRoot {
                                                                       : "volumen-bajo")
                                         tamano: 16
                                         color: root.volNivel < 0 ? Paleta.textoTenue : Paleta.texto
+                                        // Icono de 16x16: demasiado pequeño para
+                                        // un dedo. El margen lo agranda sin
+                                        // tocar el dibujo.
                                         TapHandler {
+                                            gesturePolicy: TapHandler.ReleaseWithinBounds
+                                            margin: 8
                                             enabled: root.volNivel >= 0
                                             onTapped: volMute.running = true
                                         }
@@ -1683,7 +1702,7 @@ ShellRoot {
                                                 color: modelData
                                                 border.width: settingsState.accentColor === modelData ? 2 : 0
                                                 border.color: Paleta.texto
-                                                TapHandler { onTapped: settingsState.accentColor = modelData }
+                                                TapHandler { gesturePolicy: TapHandler.ReleaseWithinBounds; margin: 6; onTapped: settingsState.accentColor = modelData }
                                             }
                                         }
                                     }
@@ -1727,7 +1746,27 @@ ShellRoot {
                                         CtlButton {
                                             text: root.estadoClave === "puesta" ? "Cambiar" : "Poner"
                                             small: true
-                                            onClicked: abrirClave.running = true
+                                            // Cerrar el panel ANTES de abrir la
+                                            // terminal.
+                                            //
+                                            // El Centro de Control es una
+                                            // superficie de capa a pantalla
+                                            // completa y sin máscara: mientras
+                                            // está abierta se traga todos los
+                                            // clics y todas las teclas de la
+                                            // pantalla entera. La terminal es
+                                            // una ventana normal, así que salía
+                                            // POR DEBAJO y no recibía nada:
+                                            // escribías la contraseña y no
+                                            // llegaba a ningún sitio. Los otros
+                                            // dos botones que abren ventanas
+                                            // (fondo de pantalla y bloquear) ya
+                                            // cerraban el panel antes; éste se
+                                            // quedó sin hacerlo.
+                                            onClicked: {
+                                                root.panelOpen = false
+                                                abrirClave.running = true
+                                            }
                                         }
                                     }
 
@@ -1736,6 +1775,34 @@ ShellRoot {
                                         text: "Bloquear"; small: true
                                         Layout.alignment: Qt.AlignRight
                                         onClicked: { root.panelOpen = false; bloquearAhora.running = true }
+                                    }
+
+                                    // Apagar y reiniciar.
+                                    //
+                                    // No existía NINGUNA forma de apagar el
+                                    // equipo desde el escritorio: ni aquí, ni
+                                    // en la barra, ni en ningún menú. La única
+                                    // salida era una terminal, y allí "reboot"
+                                    // tampoco funcionaba. Así que el sistema no
+                                    // se podía apagar bien de ninguna manera.
+                                    Etiqueta { texto: "Reiniciar el equipo" }
+                                    CtlButton {
+                                        text: "Reiniciar"; small: true
+                                        Layout.alignment: Qt.AlignRight
+                                        onClicked: {
+                                            root.panelOpen = false
+                                            reiniciarEquipo.running = true
+                                        }
+                                    }
+
+                                    Etiqueta { texto: "Apagar el equipo" }
+                                    CtlButton {
+                                        text: "Apagar"; small: true
+                                        Layout.alignment: Qt.AlignRight
+                                        onClicked: {
+                                            root.panelOpen = false
+                                            apagarEquipo.running = true
+                                        }
                                     }
                                 }
 
@@ -1879,6 +1946,19 @@ ShellRoot {
             root.seccion = "vistazo"
             root.panelOpen = true
             wifiList.refresh()
+        }
+
+        // Para poder PREGUNTARLE a la barra en qué estado está.
+        //
+        // Las pruebas comprobaban si el Centro de Control se había abierto
+        // comparando dos capturas de pantalla. No vale: la barra lleva un
+        // reloj, así que dos capturas separadas por un segundo SIEMPRE salen
+        // distintas y la comprobación decía que sí pasara lo que pasara.
+        // Recortar la zona del reloj tampoco bastó.
+        //
+        // Adivinar el estado mirando píxeles era el problema. Esto lo dice.
+        function estado(): string {
+            return (root.panelOpen ? "abierto" : "cerrado") + " " + root.seccion
         }
     }
 

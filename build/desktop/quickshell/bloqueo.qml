@@ -315,6 +315,7 @@ ShellRoot {
                                 }
                                 HoverHandler { id: abrirRaton; cursorShape: Qt.PointingHandCursor }
                                 TapHandler {
+                                    gesturePolicy: TapHandler.ReleaseWithinBounds
                                     onTapped: { bloqueo.locked = false; Qt.quit() }
                                 }
                             }
@@ -430,7 +431,7 @@ ShellRoot {
                                             font.bold: true
                                         }
                                         HoverHandler { id: entrarRaton; cursorShape: Qt.PointingHandCursor }
-                                        TapHandler { onTapped: raiz.intentar() }
+                                        TapHandler { gesturePolicy: TapHandler.ReleaseWithinBounds; onTapped: raiz.intentar() }
                                     }
 
                                     // Girando mientras m-autenticar trabaja.

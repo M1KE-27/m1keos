@@ -501,7 +501,12 @@ ShellRoot {
         }
     }
 
-    Process { id: reiniciar; command: ["m-sudo", "reboot"] }
+    // "reboot" a secas no reiniciaba: bajo runit es una orden que no hace nada
+    // y sale con código 0, así que el botón "Reiniciar ahora" se quedaba
+    // mirando. Ahora hay un /usr/bin/reboot propio que sí funciona (ver
+    // m-apagado), y se le llama por su nombre para que pase por la etapa de
+    // apagado que desmonta los discos.
+    Process { id: reiniciar; command: ["/usr/bin/reboot"] }
 
     // Qué hay dentro del disco elegido. Se relee cada vez que se cambia de
     // disco: enseñar las particiones del anterior sería la peor forma posible
@@ -842,7 +847,7 @@ ShellRoot {
                                         font.bold: raiz.idioma === modelData.cod
                                     }
                                     HoverHandler { cursorShape: Qt.PointingHandCursor }
-                                    TapHandler { onTapped: raiz.idioma = modelData.cod }
+                                    TapHandler { gesturePolicy: TapHandler.ReleaseWithinBounds; onTapped: raiz.idioma = modelData.cod }
                                 }
                             }
                         }
@@ -956,6 +961,7 @@ ShellRoot {
                                         }
                                         HoverHandler { cursorShape: Qt.PointingHandCursor }
                                         TapHandler {
+                                            gesturePolicy: TapHandler.ReleaseWithinBounds
                                             onTapped: { raiz.redElegida = modelData; raiz.errorRed = "" }
                                         }
                                     }
@@ -1239,7 +1245,7 @@ ShellRoot {
                                         Item { Layout.fillWidth: true }
                                     }
                                     HoverHandler { cursorShape: Qt.PointingHandCursor }
-                                    TapHandler { onTapped: raiz.discoIdx = index }
+                                    TapHandler { gesturePolicy: TapHandler.ReleaseWithinBounds; onTapped: raiz.discoIdx = index }
                                 }
                             }
                         }
@@ -1314,7 +1320,7 @@ ShellRoot {
                                         }
                                     }
                                     HoverHandler { cursorShape: Qt.PointingHandCursor }
-                                    TapHandler { onTapped: raiz.modo = modelData.id }
+                                    TapHandler { gesturePolicy: TapHandler.ReleaseWithinBounds; onTapped: raiz.modo = modelData.id }
                                 }
                             }
                         }
@@ -1377,6 +1383,7 @@ ShellRoot {
                                         cursorShape: Qt.PointingHandCursor
                                     }
                                     TapHandler {
+                                        gesturePolicy: TapHandler.ReleaseWithinBounds
                                         enabled: raiz.modo === "reemplazar"
                                         onTapped: raiz.particionObjetivo = modelData.ruta
                                     }
@@ -1545,7 +1552,7 @@ ShellRoot {
                                         }
                                     }
                                     HoverHandler { cursorShape: Qt.PointingHandCursor }
-                                    TapHandler { onTapped: raiz.fs = modelData.id }
+                                    TapHandler { gesturePolicy: TapHandler.ReleaseWithinBounds; onTapped: raiz.fs = modelData.id }
                                 }
                             }
                         }
@@ -1725,7 +1732,7 @@ ShellRoot {
                                         }
                                     }
                                     HoverHandler { cursorShape: Qt.PointingHandCursor }
-                                    TapHandler { onTapped: raiz.fondoElegido = modelData.ruta }
+                                    TapHandler { gesturePolicy: TapHandler.ReleaseWithinBounds; onTapped: raiz.fondoElegido = modelData.ruta }
                                 }
                             }
                         }
@@ -1773,7 +1780,7 @@ ShellRoot {
                                         Behavior on x { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
                                     }
                                     HoverHandler { cursorShape: Qt.PointingHandCursor }
-                                    TapHandler { onTapped: raiz.coloresDelFondo = !raiz.coloresDelFondo }
+                                    TapHandler { gesturePolicy: TapHandler.ReleaseWithinBounds; onTapped: raiz.coloresDelFondo = !raiz.coloresDelFondo }
                                 }
                             }
                         }

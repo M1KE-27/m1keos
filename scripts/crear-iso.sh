@@ -169,7 +169,7 @@ if command -v grub-mkstandalone >/dev/null 2>&1; then
     grub-mkstandalone \
         --format=x86_64-efi \
         --output="$TRABAJO/grubx64.efi" \
-        --modules="part_gpt part_msdos fat iso9660 normal linux echo all_video search search_label search_fs_file configfile gfxterm gfxmenu serial terminal test sleep halt png video video_fb font" \
+        --modules="part_gpt part_msdos fat iso9660 normal linux echo all_video search search_label search_fs_file configfile gfxterm gfxmenu serial terminal test sleep halt png video video_fb font smbios regexp" \
         "boot/grub/grub.cfg=$RAIZ/build/grub/grub.cfg.iso" \
         $(cd "$RAIZ/build/grub/tema" 2>/dev/null && for _t in *; do printf '%s ' "boot/grub/tema/$_t=$RAIZ/build/grub/tema/$_t"; done) 2>/dev/null \
         && gris "  grubx64.efi de $(du -h "$TRABAJO/grubx64.efi" | cut -f1)" \

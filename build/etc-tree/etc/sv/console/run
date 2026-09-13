@@ -2,6 +2,22 @@
 exec 2>&1
 cd /root
 
+# TERM: sin esto la consola es inusable, y de una forma que parece un sistema
+# roto y no un ajuste que falta.
+#
+# runit arranca los servicios con un entorno vacío, así que bash nacía SIN
+# TERM. readline entonces da por hecho que la terminal no sabe mover el cursor,
+# y a partir de ahí: el borrado no borra, Enter devuelve el cursor por encima
+# de lo escrito, y el propio prompt se sobrescribe. Escribir dos órdenes
+# seguidas se vuelve imposible. La base de datos de terminales (terminfo) SÍ
+# estaba instalada; lo que faltaba era decirle a bash cuál usar.
+#
+# "linux" es la terminal del kernel, que es exactamente lo que hay delante
+# cuando esto corre. Si alguien ya trae TERM (por SSH, por ejemplo), se
+# respeta el suyo.
+[ -n "${TERM:-}" ] || TERM=linux
+export TERM
+
 IS_GUI="no"
 if grep -qw 'mikeos_gui=1' /proc/cmdline 2>/dev/null || [ -f /etc/mikeos/desktop_enabled ]; then
     IS_GUI="yes"
@@ -73,10 +89,33 @@ if [ "$IS_GUI" = "yes" ]; then
     else
         /usr/bin/start-mike-desktop 2>&1 | tee /var/log/desktop_session.log
     fi
-    echo ">> [console] Sesión gráfica finalizada. Iniciando shell de consola..."
+    echo ">> [console] Sesión gráfica finalizada."
+
+    # Si se arrancó desde "Instalar MIKE OS en este equipo" y la sesión
+    # gráfica no llegó a levantarse (equipo sin driver de vídeo), se instala
+    # por texto. Aquí sí se puede: "setsid cttyhack" le da una terminal de
+    # control de verdad, que es lo que le falta a la sesión gráfica, y este
+    # servicio corre como root, que es lo que m-install necesita.
+    #
+    # Sin esto, elegir "Instalar" en un equipo sin gráfica terminaba en un
+    # intérprete de órdenes pelado: la persona pidió instalar y el sistema se
+    # encogía de hombros.
+    if grep -qw "mikeos_instalar=1" /proc/cmdline 2>/dev/null; then
+        echo ">> [console] Sin escritorio, así que instalo por texto."
+        # Sin "exec": si se cancela la instalación, se cae al intérprete de
+        # órdenes en vez de dejar el equipo sin nada delante.
+        setsid cttyhack /usr/bin/m-install
+    fi
+
+    echo ">> [console] Iniciando shell de consola..."
+    # La sesión gráfica puede haber dejado la terminal en un estado raro
+    # (sin eco, en modo crudo). "stty sane" la devuelve a lo normal antes de
+    # entregarla, para que el borrado y el Enter funcionen.
+    stty sane 2>/dev/null || true
     exec setsid cttyhack /bin/bash -l
 else
     echo ">> [console] Iniciando terminal interactiva en /dev/console..."
     exec </dev/console >/dev/console 2>&1
+    stty sane 2>/dev/null || true
     exec setsid cttyhack /bin/bash -l
 fi

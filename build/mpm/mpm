@@ -425,6 +425,19 @@ case "$CMD" in
         fi
 
         if [ -z "$PKG_FILE" ] || [ ! -f "$PKG_FILE" ]; then
+            # El resolutor de Arch vive en /usr/lib/mpm/. Si no está, no es
+            # que el paquete no exista: es que mpm se ha quedado sin el sitio
+            # donde hay 15.000 paquetes, y decir "no está en el repositorio"
+            # manda a buscar el fallo justo donde no está. Pasa al ejecutar
+            # mpm desde la consola de rescate del arranque, que no lleva
+            # /usr/lib.
+            if [ ! -x "$RESOLVER" ]; then
+                echo "ERROR: falta $RESOLVER, así que mpm no puede consultar los" >&2
+                echo "       repositorios de Arch y sólo ve los paquetes locales." >&2
+                echo "       Si estás en la consola de rescate del arranque, esto es" >&2
+                echo "       de esperar: ahí no está el sistema, sólo el arranque." >&2
+                exit 1
+            fi
             echo "ERROR: No se encontró el paquete '$PKG' en el repositorio." >&2
             exit 1
         fi

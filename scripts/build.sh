@@ -87,6 +87,56 @@ if [ -f "$KERNEL_IMAGE" ] && [ "$KERNEL_SHA_AHORA" != "$KERNEL_SHA_ANTES" ]; the
     rm -f "$KERNEL_IMAGE"
 fi
 
+# --- Firmware DENTRO del kernel ---------------------------------------------
+#
+# Esto es lo que hace que arranque el escritorio en una Surface Laptop 4.
+#
+# amdgpu va compilado dentro del kernel (=y), así que arranca mientras el
+# kernel se inicializa. En ese momento pide su firmware al sistema de archivos
+# y, en la Surface, se lo encontró ausente aunque estuviera perfectamente en el
+# initramfs:
+#
+#   amdgpu 0000:03:00.0: Direct firmware load for amdgpu/renoir_sdma.bin failed with error -2
+#   amdgpu 0000:03:00.0: early_init of IP block <sdma_v4_0> failed -19
+#   amdgpu 0000:03:00.0: Fatal error during GPU init
+#
+# Sin GPU, lo único que queda es el framebuffer de la firmware, y con eso no
+# hay escritorio: sólo una consola. Perseguir POR QUÉ el kernel no ve un
+# archivo que está ahí es perseguir una carrera entre el arranque del driver y
+# el montaje de la raíz, y esa carrera no se gana: se elimina.
+#
+# CONFIG_EXTRA_FIRMWARE mete estos archivos DENTRO del binario del kernel. A
+# partir de ahí amdgpu no tiene que leer nada de ningún disco, así que da igual
+# qué esté montado y cuándo. Son las familias de APU de portátil AMD que
+# existen: 5,5 MB en un kernel de 23. El resto del firmware sigue viajando como
+# archivos, que es lo correcto para lo que se carga más tarde (wifi, sonido).
+FW_EMPOTRADO_DIR="$PROJECT_ROOT/build/firmware-kernel"
+FW_EMPOTRADO=""
+if [ -d /lib/firmware/amdgpu ]; then
+    mkdir -p "$FW_EMPOTRADO_DIR/amdgpu"
+    for _fam in renoir green_sardine picasso raven raven2; do
+        for _f in /lib/firmware/amdgpu/${_fam}_*; do
+            [ -e "$_f" ] || continue
+            _base="$(basename "$_f")"
+            _base="${_base%.zst}"
+            if [ ! -f "$FW_EMPOTRADO_DIR/amdgpu/$_base" ]; then
+                case "$_f" in
+                    *.zst) zstd -dqf "$_f" -o "$FW_EMPOTRADO_DIR/amdgpu/$_base" 2>/dev/null || continue ;;
+                    *)     cp -a "$_f" "$FW_EMPOTRADO_DIR/amdgpu/$_base" 2>/dev/null || continue ;;
+                esac
+            fi
+            FW_EMPOTRADO="$FW_EMPOTRADO amdgpu/$_base"
+        done
+    done
+fi
+# La huella incluye la lista: si cambia el firmware que se empotra, hay que
+# recompilar el kernel aunque el fragmento de opciones no se haya tocado.
+PARCHES_SHA="$(cat "$PROJECT_ROOT"/build/kernel-patches/*.patch 2>/dev/null | sha256sum | cut -d' ' -f1)"
+KERNEL_SHA_AHORA="$(printf '%s%s%s' "$KERNEL_SHA_AHORA" "$FW_EMPOTRADO" "$PARCHES_SHA" | sha256sum | cut -d' ' -f1)"
+if [ -f "$KERNEL_IMAGE" ] && [ "$KERNEL_SHA_AHORA" != "$KERNEL_SHA_ANTES" ]; then
+    rm -f "$KERNEL_IMAGE"
+fi
+
 if [ ! -f "$KERNEL_IMAGE" ]; then
     echo "=== [1b/8] Clonando y compilando el kernel Linux ($KERNEL_COMMIT) ==="
     if [ ! -d "$PROJECT_ROOT/kernel/.git" ]; then
@@ -110,8 +160,49 @@ if [ ! -f "$KERNEL_IMAGE" ]; then
     esac
     cd "$KERNEL_SRC"
     git checkout -q "$KERNEL_COMMIT"
+
+    # Parches de hardware Surface (ver build/kernel-patches/LEEME.md).
+    #
+    # Se aplican sobre el árbol recién sacado, así que primero se deshace
+    # cualquier cosa que dejara una compilación anterior: aplicar dos veces el
+    # mismo parche falla, y el fallo parecería del parche y no del estado.
+    #
+    # Hacen falta las dos órdenes. "git checkout" devuelve los archivos que ya
+    # existían, pero varios de estos parches CREAN archivos nuevos
+    # (drivers/rtc/rtc-surface.c y compañía), y esos no los toca: se quedan, y
+    # el parche siguiente muere con "already exists in working directory".
+    # "git clean -fd" sin "-x" barre justo esos, y respeta lo ignorado, o sea
+    # que no se lleva por delante .config ni los objetos ya compilados.
+    git checkout -q -- . 2>/dev/null || true
+    git clean -qfd 2>/dev/null || true
+    if [ -d "$PROJECT_ROOT/build/kernel-patches" ]; then
+        for _parche in "$PROJECT_ROOT"/build/kernel-patches/*.patch; do
+            [ -f "$_parche" ] || continue
+            if git apply "$_parche"; then
+                echo "  parche aplicado: $(basename "$_parche")"
+            else
+                # Plantarse, no seguir. Un parche que no entra en silencio da
+                # un kernel que parece bueno y no lo es, y el fallo aparece
+                # semanas después en un portátil concreto.
+                echo "ERROR: no se pudo aplicar $(basename "$_parche")." >&2
+                echo "       El kernel ha cambiado y el parche necesita revisión." >&2
+                exit 1
+            fi
+        done
+    fi
+
     make defconfig
     ./scripts/kconfig/merge_config.sh -m .config "$KERNEL_CONFIG_FRAGMENT"
+    # La lista de firmware a empotrar se calcula arriba, así que no puede vivir
+    # en el fragmento: se añade aquí, después de mezclarlo.
+    if [ -n "$FW_EMPOTRADO" ]; then
+        _lista="$(echo "$FW_EMPOTRADO" | sed 's/^ *//')"
+        echo "Empotrando en el kernel: $(echo "$_lista" | wc -w) archivos de firmware de gráficas AMD."
+        {
+            echo "CONFIG_EXTRA_FIRMWARE=\"$_lista\""
+            echo "CONFIG_EXTRA_FIRMWARE_DIR=\"$FW_EMPOTRADO_DIR\""
+        } >> .config
+    fi
     make olddefconfig
     make -j"$(nproc)" bzImage
     cd "$PROJECT_ROOT"
@@ -935,6 +1026,17 @@ if [ -d "$FW_ORIGEN" ]; then
     #   picasso, raven          Ryzen 2000-3000 (Surface Laptop 3 AMD)
     #   renoir, green_sardine   Ryzen 4000-5000 (Surface Laptop 4 AMD)
     #   yellow_carp             Ryzen 6000 (Rembrandt)
+    #   vangogh, cezanne,       Ryzen 5000-7000 de portátil. Se añadieron
+    #   rembrandt, phoenix      después de que una Surface Laptop 4 arrancara
+    #                           sin escritorio: el firmware de SU generación sí
+    #                           estaba, pero acertar la familia exacta de cada
+    #                           portátil AMD a base de lista es perder siempre.
+    #                           Son 11 MB más y cubren todas las APU de
+    #                           portátil de los últimos cinco años.
+    #   dcn*, psp_1*            Los nombres nuevos del motor de pantalla y del
+    #                           procesador de seguridad. En las generaciones
+    #                           recientes el firmware ya no se llama por el
+    #                           nombre de la APU sino por el de su bloque.
     #   vega10, vega20          tarjetas dedicadas. El comentario de antes
     #                           decía que estaban incluidas y NO lo estaban:
     #                           la lista no las nombraba por ninguna parte.
@@ -943,21 +1045,29 @@ if [ -d "$FW_ORIGEN" ]; then
     #                           cualquier portátil Intel se queda a oscuras
     #                           igual que se quedó la Surface.
     #
-    # Lo de red sigue fuera a propósito y es un compromiso incómodo: iwlwifi
-    # son cientos de megas. Se instala con "mpm install firmware-extra"... para
+    # De iwlwifi entra SÓLO la familia "cc-a0", que es la que lleva la Surface
+    # Laptop 4 (lo pidió por su nombre: "Direct firmware load for
+    # iwlwifi-cc-a0-77.ucode failed"). Son 3 MB de los 239 que ocupa iwlwifi
+    # entero, así que ese equipo tiene wifi sin cargar con el resto. Y con
+    # ellos el Bluetooth de Intel (ibt-19/20), que también se quejaba.
+    #
+    # El resto de iwlwifi sigue fuera a propósito y es un compromiso incómodo: Se instala con "mpm install firmware-extra"... para
     # lo cual hace falta red. O sea que en un portátil con wifi Intel y sin
     # cable, la primera vez hay que tirar de móvil por USB. Está documentado en
     # m-drivers, que dice exactamente qué falta y cómo traerlo.
     FW_PATRONES="
-        amdgpu/picasso*   amdgpu/raven*     amdgpu/renoir*
-        amdgpu/green_sardine*   amdgpu/yellow_carp*
-        amdgpu/vega10*    amdgpu/vega20*
-        i915/*
-        ath10k/QCA6174/*  ath10k/QCA9377/*
-        qca/*usb*         qca/nvm*          qca/rampatch*
+        amdgpu/*
+        i915/*            xe/*
+        ath10k/*          ath11k/*          ath12k/*
+        qca/*             ath9k_htc/*
+        mediatek/mt76*    mediatek/WIFI_*
+        rtw88/*           rtw89/*           rtlwifi/*         rtl_nic/*
+        brcm/*
+        mrvl/*
+        intel/ibt-*       qca/*bt*
         amd-ucode/*       intel-ucode/*
-        rtw88/*
         regulatory.db*
+        rtl_bt/*
     "
     _fw_n=0
     for _pat in $FW_PATRONES; do
@@ -965,16 +1075,13 @@ if [ -d "$FW_ORIGEN" ]; then
             [ -e "$_f" ] || continue
             [ -d "$_f" ] && continue
             _rel="${_f#$FW_ORIGEN/}"
-            case "$_rel" in
-                *.zst)
-                    mkdir -p "$FW_DESTINO/$(dirname "${_rel%.zst}")"
-                    zstd -dqf "$_f" -o "$FW_DESTINO/${_rel%.zst}" 2>/dev/null || continue
-                    ;;
-                *)
-                    mkdir -p "$FW_DESTINO/$(dirname "$_rel")"
-                    cp -a "$_f" "$FW_DESTINO/$_rel" 2>/dev/null || continue
-                    ;;
-            esac
+            # Se copian TAL CUAL, comprimidos incluidos. El kernel lleva
+            # CONFIG_FW_LOADER_COMPRESS_ZSTD, así que sabe abrirlos él mismo.
+            # Antes se descomprimían "porque se cargan más rápido": eran unos
+            # milisegundos a cambio de triplicar el espacio, y ese espacio es
+            # exactamente lo que impedía cubrir más hardware.
+            mkdir -p "$FW_DESTINO/$(dirname "$_rel")"
+            cp -aL "$_f" "$FW_DESTINO/$_rel" 2>/dev/null || continue
             _fw_n=$((_fw_n + 1))
         done
     done
@@ -982,6 +1089,62 @@ if [ -d "$FW_ORIGEN" ]; then
     # tiene varias revisiones -- 239 MB en total para un portátil que lleva
     # Qualcomm. Va en el paquete firmware-extra, que se instala en un minuto
     # si hace falta.
+    # --- Intel Wi-Fi: las dos revisiones más nuevas de cada familia ---------
+    #
+    # iwlwifi entero son 44 familias por hasta diez revisiones cada una: 92 MB
+    # para cubrir hardware que ya nadie tiene. El kernel pide la revisión más
+    # alta que entienda y va bajando, así que con las dos últimas de cada
+    # familia se cubre cualquier kernel reciente en un tercio del espacio.
+    #
+    # Esto no se puede expresar con un patrón de archivos, de ahí el bloque
+    # aparte. La Wi-Fi de la Surface Laptop 4 (AX200, familia "cc-a0") sale de
+    # aquí.
+    if [ -d "$FW_ORIGEN/intel/iwlwifi" ]; then
+        mkdir -p "$FW_DESTINO/intel/iwlwifi"
+        _iwl=0
+        for _fam in $(ls "$FW_ORIGEN/intel/iwlwifi" 2>/dev/null \
+                      | sed -n 's/^\(iwlwifi-.*\)-[0-9][0-9]*\.ucode.*/\1/p' | sort -u); do
+            for _f in $(ls "$FW_ORIGEN/intel/iwlwifi/$_fam"-*.ucode* 2>/dev/null \
+                        | sed 's/.*-\([0-9][0-9]*\)\.ucode/\1 &/' | sort -rn | head -2 | cut -d' ' -f2-); do
+                [ -e "$_f" ] || continue
+                cp -aL "$_f" "$FW_DESTINO/intel/iwlwifi/$(basename "$_f")" 2>/dev/null || continue
+                _iwl=$((_iwl + 1))
+                _fw_n=$((_fw_n + 1))
+            done
+        done
+        # El kernel las pide por su nombre a secas, sin la carpeta.
+        for _f in "$FW_DESTINO/intel/iwlwifi"/*; do
+            [ -f "$_f" ] || continue
+            ln -sf "intel/iwlwifi/$(basename "$_f")" "$FW_DESTINO/$(basename "$_f")" 2>/dev/null || true
+        done
+        echo "  -> $_iwl archivos de Wi-Fi Intel (2 revisiones por familia)."
+    fi
+
+    # --- NVIDIA: lo pequeño sí, los blobs gigantes no ----------------------
+    #
+    # nouveau necesita un firmware por chip (4 MB en total, entra sin
+    # discusión) y, de Turing en adelante, además el "GSP": 112 MB que
+    # triplicarían el tamaño de la imagen para cubrir un caso en el que casi
+    # siempre hay una gráfica integrada moviendo la pantalla. Ese va aparte,
+    # con "mpm install linux-firmware-nvidia".
+    if [ -d "$FW_ORIGEN/nvidia" ]; then
+        _nv=0
+        for _d in "$FW_ORIGEN"/nvidia/*/; do
+            [ -d "$_d" ] || continue
+            case "$(basename "$_d")" in
+                ga102|tu102|[0-9]*) continue ;;   # los de GSP, fuera
+            esac
+            for _f in "$_d"*; do
+                [ -f "$_f" ] || continue
+                _rel="${_f#$FW_ORIGEN/}"
+                mkdir -p "$FW_DESTINO/$(dirname "$_rel")"
+                cp -aL "$_f" "$FW_DESTINO/$_rel" 2>/dev/null || continue
+                _nv=$((_nv + 1)); _fw_n=$((_fw_n + 1))
+            done
+        done
+        echo "  -> $_nv archivos de NVIDIA (sin los blobs GSP, que van aparte)."
+    fi
+
     echo "  -> $_fw_n archivos de firmware ($(du -sh "$FW_DESTINO" 2>/dev/null | cut -f1))."
 else
     echo "Aviso: el equipo de construcción no tiene /lib/firmware; la imagen"
@@ -1163,6 +1326,23 @@ cp "$BUILD_DIR/desktop/start-mike-desktop" "$ROOTFS_DIR/usr/bin/"
 cp "$BUILD_DIR/desktop/m-panel" "$ROOTFS_DIR/usr/bin/"
 cp "$BUILD_DIR/desktop/m-bloquear" "$ROOTFS_DIR/usr/bin/"
 cp "$BUILD_DIR/desktop/m-instalador" "$ROOTFS_DIR/usr/bin/"
+cp "$BUILD_DIR/desktop/m-arranque-instalar" "$ROOTFS_DIR/usr/bin/"
+cp "$BUILD_DIR/mcore/m-reintentar-drivers" "$ROOTFS_DIR/usr/bin/"
+chmod +x "$ROOTFS_DIR/usr/bin/m-reintentar-drivers"
+cp "$BUILD_DIR/mcore/m-discos-permisos" "$ROOTFS_DIR/usr/bin/"
+chmod +x "$ROOTFS_DIR/usr/bin/m-discos-permisos"
+
+# Apagar y reiniciar.
+#
+# Van en /usr/bin, que en el PATH está ANTES que /sbin, así que estos ganan a
+# los applets de BusyBox -- que bajo runit no hacían absolutamente nada (ver
+# m-apagado). No se toca /sbin: si alguien lo llama por ruta completa, sigue
+# encontrando lo de siempre.
+cp "$BUILD_DIR/mcore/m-apagado" "$ROOTFS_DIR/usr/bin/"
+chmod +x "$ROOTFS_DIR/usr/bin/m-apagado"
+for _acc in reboot poweroff halt shutdown; do
+    ln -sf m-apagado "$ROOTFS_DIR/usr/bin/$_acc"
+done
 cp "$BUILD_DIR/desktop/m-hw-profile" "$ROOTFS_DIR/usr/bin/"
 cp "$BUILD_DIR/desktop/m-apply-settings" "$ROOTFS_DIR/usr/bin/"
 cp "$BUILD_DIR/settings/m-settings" "$ROOTFS_DIR/usr/bin/"
@@ -1361,11 +1541,17 @@ fakeroot -- env ROOTFS_DIR="$ROOTFS_DIR" ISO_DIR="$ISO_DIR" sh -c '
     # bien pero a ciegas, y desde fuera parecía colgada. En una máquina virtual
     # no se ve nunca, porque el driver de la GPU virtual no necesita firmware.
     #
-    # Son unos 7 MB de los 9 que ocupa /lib/firmware. El resto (wifi,
-    # bluetooth, sonido) sí puede esperar a que la raíz esté montada: sin wifi
-    # se puede arreglar el equipo, sin pantalla no.
+    # Entra el de TODAS las gráficas (amdgpu, i915, xe, nvidia), no sólo el de
+    # AMD: el argumento vale igual para las demás.
+    #
+    # El resto -- wifi, bluetooth, sonido -- se queda fuera, y ahora eso ya no
+    # cuesta nada: m-reintentar-drivers vuelve a probar esos dispositivos en
+    # cuanto la raíz de verdad está montada, así que encuentran su firmware un
+    # segundo más tarde en vez de quedarse sin él para siempre. Antes ese
+    # segundo era la diferencia entre tener wifi y no tenerla.
     find . -not -path "./boot/*" -not -path "./var/lib/mpm/repo/*" -not -path "./usr/lib/*" -not -path "./lib64/*" -not -path "./usr/share/X11/*" -not -path "./usr/bin/Hyprland*" -not -path "./usr/bin/quickshell*" \
          \( -path "./lib/firmware/amdgpu/*" -o -path "./lib/firmware/i915/*" \
+            -o -path "./lib/firmware/xe/*" -o -path "./lib/firmware/nvidia/*" \
             -o -path "./lib/firmware/radeon/*" -o -not -path "./lib/firmware/*" \) -print0 \
         | LC_ALL=C sort -z \
         | cpio --null -o --format=newc 2>/dev/null \

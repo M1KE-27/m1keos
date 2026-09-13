@@ -27,6 +27,9 @@ Item {
         cursorShape: Qt.PointingHandCursor
     }
     TapHandler {
+        gesturePolicy: TapHandler.ReleaseWithinBounds
+        // 22x22 es poco para un dedo; el margen lo lleva a 38x38 reales.
+        margin: 8
         enabled: raiz.activable
         onTapped: raiz.activado()
     }

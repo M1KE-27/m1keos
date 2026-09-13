@@ -125,6 +125,86 @@ for arg in $(cat /proc/cmdline); do
     esac
 done
 
+# Tipos de sistema de archivos que se prueban, en el orden que compensa.
+#
+# Antes se llamaba a "mount" sin -t y se dejaba que busybox probara lo que
+# hubiera en /proc/filesystems. Eso tiene dos problemas: el orden es el de
+# registro del kernel (o sea, arbitrario) y cuando falla no queda ni rastro de
+# qué se intentó, así que un medio que no monta es indistinguible de un medio
+# que no está.
+montar_solo_lectura() {  # montar_solo_lectura <dispositivo> <punto>; imprime el tipo
+    _mdev="$1"
+    _mpunto="$2"
+
+    # blkid lee el superbloque y dice qué hay: acertar a la primera evita
+    # cinco intentos fallidos, y cada intento fallido son diez líneas de
+    # quejas del kernel por pantalla (los "Magic Mismatch" de F2FS, los
+    # "invalid boot record signature" de exFAT...).
+    _mtipo="$(blkid -o value -s TYPE "$_mdev" 2>/dev/null || true)"
+    case "$_mtipo" in
+        ntfs) _mtipo="ntfs3" ;;   # el driver se llama distinto que el formato
+    esac
+    if [ -n "$_mtipo" ] && mount -t "$_mtipo" -o ro "$_mdev" "$_mpunto" 2>/dev/null; then
+        echo "$_mtipo"
+        return 0
+    fi
+    for _t in iso9660 vfat exfat ntfs3 ext4 btrfs f2fs; do
+        [ "$_t" = "$_mtipo" ] && continue
+        if mount -t "$_t" -o ro "$_mdev" "$_mpunto" 2>/dev/null; then
+            echo "$_t"
+            return 0
+        fi
+    done
+    return 1
+}
+
+# ¿Este bloque está en un disco que se puede sacar del equipo?
+#
+# Se mira el disco entero al que pertenece: /sys/block/sda/removable vale para
+# sda y para sda1, pero /sys/block/sda1 no existe.
+es_extraible() {  # es_extraible /dev/sda1
+    _en="$(basename "$1")"
+    while [ -n "$_en" ] && [ ! -f "/sys/block/$_en/removable" ]; do
+        # Se le quita el sufijo de partición hasta dar con el disco: sda1 ->
+        # sda, nvme0n1p3 -> nvme0n1, mmcblk0p2 -> mmcblk0.
+        case "$_en" in
+            *[0-9]p[0-9]*) _en="${_en%p[0-9]*}" ;;
+            *[0-9])        _en="${_en%[0-9]}" ;;
+            *)             return 1 ;;
+        esac
+    done
+    [ -n "$_en" ] && [ "$(cat "/sys/block/$_en/removable" 2>/dev/null)" = "1" ]
+}
+
+# Todos los bloques donde puede estar el medio, LOS EXTRAÍBLES PRIMERO.
+#
+# El orden importa de verdad en el segundo camino de búsqueda, el que abre
+# archivos .iso: recorrer una partición de Windows de 500 GB buscando archivos
+# puede tardar minutos, y el USB que se está buscando casi siempre es lo
+# primero que se mira. Mirando antes lo que se puede sacar del equipo, el caso
+# normal termina en un segundo y el disco interno sólo se toca si de verdad no
+# quedaba otra.
+dispositivos_candidatos() {
+    for _pasada in extraibles fijos; do
+        for _d in /dev/sr* /dev/sd* /dev/nvme*n* /dev/vd* /dev/mmcblk* /dev/dm-* /dev/mapper/*; do
+            [ -b "$_d" ] || continue
+            # Un lector de CD vacío existe como dispositivo y no se puede
+            # leer. Intentarlo suelta un "Can't open blockdev" por cada tipo
+            # de sistema de archivos y por cada vuelta del bucle: 138 líneas
+            # en un arranque medido, tapando justo los mensajes que importan
+            # cuando algo va mal. El tamaño en /sys no sirve para detectarlo
+            # (una bandeja vacía sigue declarando el tamaño del lector); leer
+            # un sector, sí.
+            dd if="$_d" of=/dev/null bs=512 count=1 >/dev/null 2>&1 || continue
+            if es_extraible "$_d"; then
+                [ "$_pasada" = "extraibles" ] && echo "$_d"
+            else
+                [ "$_pasada" = "fijos" ] && echo "$_d"
+            fi
+        done
+    done
+}
+
 # --- Arranque en vivo ---------------------------------------------------
 #
 # El sistema completo viaja comprimido en el medio (mikeos/sistema.squashfs).
@@ -138,58 +218,114 @@ done
 # Antes de esto, el "modo en vivo" era quedarse dentro del initramfs, que
 # excluye /usr/lib, Hyprland y quickshell. O sea que el USB prometía "prueba el
 # sistema entero" y arrancaba en una terminal sin escritorio posible.
+#
+# El medio se busca de dos formas, y la segunda es tan importante como la
+# primera:
+#
+#   1. GRABADO: el USB se escribió con dd y la ISO ES el dispositivo. Se monta
+#      /dev/sda (o el que sea) y el sistema está dentro.
+#
+#   2. COMO ARCHIVO: el USB lleva Ventoy, o Easy2Boot, o simplemente alguien
+#      copió mikeos.iso a una partición. Entonces NINGÚN dispositivo es la
+#      ISO: la ISO es un archivo dentro de una partición exFAT/NTFS/FAT, y el
+#      gestor de arranque la ha abierto por su cuenta usando servicios de la
+#      firmware que dejan de existir en cuanto arranca Linux. Hay que
+#      encontrar ese archivo y montarlo por bucle.
+#
+#      Sin esto, arrancar desde Ventoy llegaba hasta aquí y moría: el menú de
+#      GRUB salía, el kernel cargaba, se veían todos los mensajes... y al
+#      llegar a buscar el sistema no había ningún dispositivo que fuera la
+#      ISO. Pasó varias veces en una Surface Laptop 4, y desde fuera parecía
+#      que la imagen estaba mal construida.
 montar_en_vivo() {
     _medio=""
-    mkdir -p /mnt/medio /mnt/sistema /mnt/cambios /mnt/root
+    _anfitrion=""
+    mkdir -p /mnt/medio /mnt/anfitrion /mnt/sistema /mnt/cambios /mnt/root
 
-    # Buscar el medio que lleva el sistema. Se recorren los bloques en vez de
-    # confiar en un nombre fijo: el USB puede ser sda, sdb o nvme según el
-    # equipo, y en una Surface no es el mismo que en un portátil cualquiera.
-    # Treinta segundos, no diez. En un portátil real la controladora USB puede
-    # tardar bastante más que en una máquina virtual en enumerar el pendrive, y
-    # rendirse a los diez segundos es rendirse antes de tiempo. Se avisa por
-    # pantalla mientras tanto: una espera con explicación no es lo mismo que una
-    # pantalla negra.
+    # Treinta segundos de margen. En un portátil real la controladora USB
+    # puede tardar bastante más que una máquina virtual en enumerar el
+    # pendrive, y rendirse pronto es rendirse antes de tiempo. Se avisa por
+    # pantalla mientras tanto: una espera con explicación no es una pantalla
+    # negra.
     _intentos=30
     _i=0
     while [ "$_i" -lt "$_intentos" ]; do
-        for _d in /dev/sr* /dev/sd* /dev/nvme*n* /dev/vd* /dev/mmcblk* /dev/dm-*; do
-            [ -b "$_d" ] || continue
-            mount -o ro "$_d" /mnt/medio 2>/dev/null || continue
+
+        # --- 1. El medio grabado tal cual -------------------------------
+        for _d in $(dispositivos_candidatos); do
+            _tipo="$(montar_solo_lectura "$_d" /mnt/medio)" || continue
             if [ -f /mnt/medio/mikeos/sistema.squashfs ]; then
                 _medio="$_d"
+                log "Sistema encontrado en $_d ($_tipo)"
                 break
             fi
             umount /mnt/medio 2>/dev/null || true
         done
         [ -n "$_medio" ] && break
+
+        # --- 2. La ISO como archivo dentro de una partición -------------
+        # Se hace en la segunda mitad de la espera: si el USB está grabado
+        # con dd, el camino de arriba ya ha funcionado y esto no llega a
+        # ejecutarse nunca. Recorrer particiones ajenas buscando archivos es
+        # lento, y no tiene sentido pagarlo en el caso normal.
+        if [ "$_i" -ge 3 ]; then
+            for _d in $(dispositivos_candidatos); do
+                # En un disco interno sólo se mira si ya se ha agotado casi
+                # toda la espera, y sólo dos niveles: un recorrido a fondo de
+                # una partición de Windows puede tardar más que todo el
+                # arranque, y el medio de instalación no está ahí.
+                _hondo=4
+                if ! es_extraible "$_d"; then
+                    [ "$_i" -lt 20 ] && continue
+                    _hondo=2
+                fi
+                _tipo="$(montar_solo_lectura "$_d" /mnt/anfitrion)" || continue
+                # Cuatro niveles en un USB: Ventoy deja las imágenes donde
+                # quiera su dueño, normalmente en la raíz o en una carpeta.
+                for _iso in $(find /mnt/anfitrion -maxdepth "$_hondo" -iname '*.iso' 2>/dev/null | head -40); do
+                    mount -t iso9660 -o ro,loop "$_iso" /mnt/medio 2>/dev/null || continue
+                    if [ -f /mnt/medio/mikeos/sistema.squashfs ]; then
+                        _medio="$_iso"
+                        _anfitrion="$_d"
+                        log "Sistema encontrado dentro de $(basename "$_iso") en $_d ($_tipo)"
+                        break
+                    fi
+                    umount /mnt/medio 2>/dev/null || true
+                done
+                [ -n "$_medio" ] && break
+                umount /mnt/anfitrion 2>/dev/null || true
+            done
+            [ -n "$_medio" ] && break
+        fi
+
         _i=$((_i + 1))
-        [ "$_i" = "5" ] && log "Buscando el medio de instalación..."
-        [ "$_i" = "15" ] && log "Sigo buscando el USB. Si tarda mucho más, algo va mal."
+        [ "$_i" = "5" ]  && log "Buscando el medio de instalación..."
+        [ "$_i" = "15" ] && log "Sigo buscando. Miro también dentro de las ISO que haya en los discos."
         sleep 1
     done
 
     if [ -z "$_medio" ]; then
-        # Esto tiene que verse. La versión anterior seguía adelante en silencio
-        # y acababa arrancando dentro del initramfs: sin escritorio y sin
-        # explicación, o sea una pantalla negra durante horas. Pasó en una
-        # Surface Laptop 4 con la imagen puesta con Ventoy.
+        # Esto tiene que verse. La versión anterior seguía adelante en
+        # silencio y acababa arrancando dentro del initramfs: sin escritorio y
+        # sin explicación, o sea una pantalla negra durante horas. Pasó en una
+        # Surface Laptop 4.
         echo
         echo "=========================================================="
         echo "  NO ENCUENTRO EL SISTEMA EN NINGÚN DISPOSITIVO"
         echo "=========================================================="
         echo
-        echo "  He mirado en todos los discos conectados y en ninguno está"
-        echo "  mikeos/sistema.squashfs, que es donde vive el sistema."
+        echo "  He mirado en todos los discos conectados, y también dentro"
+        echo "  de las ISO que hubiera guardadas en ellos, y en ninguno"
+        echo "  está mikeos/sistema.squashfs, que es donde vive el sistema."
         echo
-        echo "  Lo que he visto:"
-        for _d in /dev/sr* /dev/sd* /dev/nvme*n* /dev/vd* /dev/mmcblk*; do
-            [ -b "$_d" ] && echo "    $_d"
+        echo "  Esto es lo que he visto, y qué contenía cada cosa:"
+        for _d in $(dispositivos_candidatos); do
+            _et="$(blkid -o value -s TYPE "$_d" 2>/dev/null || echo '?')"
+            _el="$(blkid -o value -s LABEL "$_d" 2>/dev/null || true)"
+            printf '    %-18s %-10s %s\n' "$_d" "$_et" "$_el"
         done
         echo
-        echo "  La causa más habitual es haber copiado la ISO con Ventoy o"
-        echo "  con un programa que la descomprime. Esta imagen hay que"
-        echo "  escribirla TAL CUAL en el USB:"
+        echo "  Escribe la imagen TAL CUAL en el USB:"
         echo
         echo "    sudo dd if=mikeos.iso of=/dev/sdX bs=4M status=progress oflag=sync"
         echo
@@ -199,7 +335,6 @@ montar_en_vivo() {
         echo
         return 1
     fi
-    log "Sistema encontrado en $_medio"
 
     mount -t squashfs -o ro,loop /mnt/medio/mikeos/sistema.squashfs /mnt/sistema 2>/dev/null \
         || { log "No se pudo montar el sistema comprimido"; return 1; }
@@ -216,13 +351,21 @@ montar_en_vivo() {
 
     # El medio se queda montado dentro del sistema: el instalador lo necesita
     # para copiar, y así "m-install" funciona desde el propio USB.
-    # El medio se deja en /mnt/medio y NO en /run/medio. En /run duraba lo que
-    # tardaba el sistema en montar su propio tmpfs encima, que lo tapaba: la
-    # entrada seguía en /proc/mounts, pero la carpeta ya no existía para nadie.
-    # Eso dejaba al instalador sin poder leer el kernel del USB y la
-    # instalación terminaba sin arranque.
+    # Se deja en /mnt/medio y NO en /run/medio. En /run duraba lo que tardaba
+    # el sistema en montar su propio tmpfs encima, que lo tapaba: la entrada
+    # seguía en /proc/mounts, pero la carpeta ya no existía para nadie. Eso
+    # dejaba al instalador sin poder leer el kernel del USB y la instalación
+    # terminaba sin arranque.
     mkdir -p /mnt/root/mnt/medio
     mount --move /mnt/medio /mnt/root/mnt/medio 2>/dev/null || true
+    # Si la ISO era un archivo, la partición que lo contiene tiene que seguir
+    # montada: es el respaldo del dispositivo de bucle. Si se quedara sólo en
+    # el initramfs, switch_root la dejaría sin ninguna ruta desde la que
+    # desmontarla al apagar.
+    if [ -n "$_anfitrion" ]; then
+        mkdir -p /mnt/root/mnt/anfitrion
+        mount --move /mnt/anfitrion /mnt/root/mnt/anfitrion 2>/dev/null || true
+    fi
     return 0
 }
 
@@ -339,10 +482,28 @@ fi
 # Ahora se explica y se deja una consola con la que se puede investigar.
 echo
 echo "MIKE OS no ha podido arrancar ningún sistema."
-echo "Esto es la consola del arranque, no el sistema: aquí hay muy poco."
 echo
-echo "  lsblk           qué discos ve el equipo"
-echo "  cat /proc/cmdline   con qué parámetros arrancó"
-echo "  poweroff        apagar"
+echo "Esto NO es MIKE OS: es la consola del arranque, los pocos megas que se"
+echo "cargan en memoria antes de encontrar el sistema de verdad. Aquí sólo"
+echo "funcionan las órdenes de busybox. Todo lo que vive en /usr/lib -- mpm,"
+echo "lsblk, el escritorio -- está en el sistema, que es justo lo que no se"
+echo "ha podido montar, así que desde aquí no se puede instalar nada."
 echo
-exec /bin/sh -l
+echo "  blkid                 qué hay en cada disco (el bueno para mirar)"
+echo "  cat /proc/cmdline     con qué parámetros arrancó"
+echo "  poweroff              apagar"
+echo
+
+# cttyhack engancha la consola como terminal de control antes de entregar el
+# intérprete. Sin él, la consola de rescate arrancaba diciendo "can't access
+# tty; job control turned off": sin Ctrl+C, sin Ctrl+Z y sin poder parar nada
+# de lo que se lanzara desde ella. Justo en el momento en que más falta hace
+# poder trastear.
+# /init es el proceso 1, o sea que ya es líder de sesión: a cttyhack sólo le
+# falta reclamar la consola. Se comprueba que el applet está antes de
+# entregarle el control, porque un "exec" que falla se lleva por delante al
+# intérprete y eso sería cambiar una consola incómoda por ninguna consola.
+if [ -x /bin/cttyhack ] || busybox cttyhack --help >/dev/null 2>&1; then
+    exec cttyhack /bin/sh -l </dev/console >/dev/console 2>&1
+fi
+exec /bin/sh -l </dev/console >/dev/console 2>&1

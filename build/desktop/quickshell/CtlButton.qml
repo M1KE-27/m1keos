@@ -54,6 +54,13 @@ Rectangle {
         anchors.fill: parent
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
+        // Todo el panel derecho del Centro de Control vive dentro de un
+        // Flickable. Sin esto, cualquier pulsación que se desplace unos
+        // píxeles -- lo normal con un dedo en un touchpad -- se la queda el
+        // Flickable como desplazamiento y el clic no llega nunca. Con un ratón
+        // guionizado, que no se mueve ni un píxel, no pasaba jamás: de ahí que
+        // funcionara en QEMU y no en un portátil de verdad.
+        preventStealing: true
         onClicked: btn.clicked()
     }
 }

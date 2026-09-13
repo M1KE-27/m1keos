@@ -1,0 +1,71 @@
+#!/bin/sh
+# m-apagado - apagar y reiniciar de verdad.
+#
+# Se instala como /usr/bin/reboot, /usr/bin/poweroff, /usr/bin/halt y
+# /usr/bin/shutdown, que ganan a los de BusyBox por el orden del PATH.
+#
+# Por qué hace falta
+# ------------------
+# "reboot" no reiniciaba. Ni como root. Y salía con código 0, así que no había
+# ni un mensaje del que tirar.
+#
+# BusyBox está compilado sin CONFIG_FEATURE_CALL_TELINIT, así que su "reboot"
+# hace kill(1, SIGTERM) dando por hecho que el proceso 1 es el init de BusyBox.
+# Aquí el proceso 1 es runit, que BLOQUEA SIGTERM y no instala ningún manejador
+# (src/runit.c). Una señal bloqueada sin manejador se descarta: la orden no hace
+# absolutamente nada y se va tan contenta.
+#
+# Lo mismo con poweroff (SIGUSR2) y halt (SIGUSR1). Y afectaba también al botón
+# "Reiniciar ahora" del instalador, que llamaba a "m-sudo reboot".
+#
+# La orden correcta con runit es "runit-init", que estaba instalada en la imagen
+# y no la llamaba nadie: crea /etc/runit/stopit y manda SIGCONT al proceso 1,
+# que es la señal que runit SÍ escucha. A partir de ahí corre la etapa 3
+# (/etc/runit/3), que para los servicios, sincroniza y desmonta, y sólo después
+# se reinicia. O sea: un reinicio limpio, no un corte de corriente.
+#
+# "reboot -f" sí funcionaba, pero porque llama al syscall directamente saltándose
+# todo eso. Con la raíz en btrfs, apagar así deja el sistema de archivos a medias.
+set -u
+
+PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+export PATH
+
+QUE="$(basename "$0")"
+case "${1:-}" in
+    -h|--help) echo "Uso: $QUE            (también: reboot, poweroff, halt)"; exit 0 ;;
+esac
+
+case "$QUE" in
+    reboot|m-reiniciar)        ACCION=6 ; VERBO="Reiniciando" ;;
+    poweroff|halt|m-apagar)    ACCION=0 ; VERBO="Apagando" ;;
+    shutdown)
+        # "shutdown -r" reinicia; cualquier otra cosa, apaga. No se admiten
+        # retrasos: nadie los usa en un portátil y fingir que funcionan sería
+        # peor que no tenerlos.
+        ACCION=0 ; VERBO="Apagando"
+        for _a in "$@"; do
+            [ "$_a" = "-r" ] && { ACCION=6; VERBO="Reiniciando"; }
+        done
+        ;;
+    *)                         ACCION=0 ; VERBO="Apagando" ;;
+esac
+
+# Un apagado a medias con la raíz en btrfs puede costar el sistema de archivos,
+# así que lo que ya esté escrito, que llegue al disco antes de nada.
+sync
+
+echo "$VERBO MIKE OS..."
+
+if [ "$(id -u)" = "0" ]; then
+    exec runit-init "$ACCION"
+fi
+
+# Sin ser root hace falta m-sudo. Si no estuviera, se dice: quedarse callado
+# aquí es exactamente el fallo que esto viene a arreglar.
+if command -v m-sudo >/dev/null 2>&1; then
+    exec m-sudo runit-init "$ACCION"
+fi
+
+echo "$QUE: hace falta ser root y no encuentro m-sudo." >&2
+exit 1

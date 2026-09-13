@@ -5,12 +5,91 @@ CFG="${HOME:-/root}/.config/mike"
 mkdir -p "$CFG"
 RAM_MB="$(awk '/MemTotal:/ {print int($2/1024)}' /proc/meminfo 2>/dev/null || echo 512)"
 CPU_COUNT="$(grep -c '^processor' /proc/cpuinfo 2>/dev/null || echo 1)"
+# ¿Es esto una máquina virtual?
+#
+# Antes se buscaba "Microsoft" (entre otras) en /proc/cpuinfo. El procesador de
+# una Surface Laptop 4 se llama "AMD Ryzen 5 Microsoft Surface (R) Edition", o
+# sea que el portátil se detectaba como máquina virtual y se quedaba sin
+# desenfoque ni sombras en un equipo perfectamente capaz de moverlos.
+#
+# Ahora se mira sólo la identificación del EQUIPO (fabricante y modelo), nunca
+# el nombre del procesador, y se descarta antes cualquier cosa que se llame
+# Surface.
 VM=0
-grep -Eqi 'QEMU|KVM|VMware|VirtualBox|Microsoft|Xen|virtio' /sys/devices/virtual/dmi/id/product_name /proc/cpuinfo 2>/dev/null && VM=1
+_dmi_v="$(cat /sys/devices/virtual/dmi/id/sys_vendor 2>/dev/null || echo '')"
+_dmi_p="$(cat /sys/devices/virtual/dmi/id/product_name 2>/dev/null || echo '')"
+case "$_dmi_p" in
+    *Surface*) VM=0 ;;
+    *)
+        case "$_dmi_v$_dmi_p" in
+            *QEMU*|*KVM*|*VMware*|*VirtualBox*|*Xen*|*Bochs*|*Parallels*|*"Virtual Machine"*)
+                VM=1 ;;
+        esac
+        ;;
+esac
 
-cat > "$CFG/hyprland.local.conf" <<'EOF'
+# Resolución y escala de la pantalla, decididas AQUÍ y no por Hyprland.
+#
+# "preferred" suena a la respuesta obvia y no lo es. En QEMU, el primer modo
+# que declara la pantalla virtual es 640x503 -- un modo de relleno, no una
+# resolución que nadie quiera -- y detrás vienen 5120x2160 y 4096x2160. O sea
+# que "preferred" deja el escritorio en 640x503 y "highres" lo pone en
+# 5120x2160. Ninguna de las dos sirve.
+#
+# Por eso el archivo llevaba 1920x1080 clavado a fuego, con un comentario
+# encima que decía justo lo contrario. Funcionaba en la máquina virtual y
+# fallaba en cualquier panel que no fuera 16:9 -- una Surface Laptop 4 es
+# 2256x1504, en 3:2.
+#
+# La regla: el modo preferido manda SIEMPRE que sea creíble (1024 de ancho o
+# más). Si no lo es, se coge el mayor que no pase de 1920x1200, que es lo que
+# deja el escritorio usable en una pantalla virtual.
+ELEGIDO=preferred
+for _m in /sys/class/drm/card*-*/modes; do
+    [ -r "$_m" ] || continue
+    _estado="$(cat "$(dirname "$_m")/status" 2>/dev/null || echo '')"
+    [ "$_estado" = "connected" ] || continue
+    _pref="$(head -1 "$_m" 2>/dev/null)"
+    _ancho="${_pref%%x*}"
+    case "$_ancho" in ''|*[!0-9]*) continue ;; esac
+    if [ "$_ancho" -lt 1024 ]; then
+        _mejor="$(awk -F x '
+            $1 ~ /^[0-9]+$/ && $2 ~ /^[0-9]+$/ && $1 <= 1920 && $2 <= 1200 {
+                if ($1 * $2 > area) { area = $1 * $2; m = $0 }
+            }
+            END { if (m != "") print m }' "$_m")"
+        [ -n "$_mejor" ] && ELEGIDO="$_mejor"
+    fi
+    break
+done
+
+# Escala de la pantalla, decidida aquí y no por Hyprland.
+#
+# "auto" parece la respuesta y no lo es: Hyprland la deduce del tamaño físico
+# que declara el panel, y un monitor virtual declara cualquier cosa. En QEMU
+# eligió 2x y dejó el escritorio entero al doble de tamaño, con los botones
+# fuera de su sitio.
+#
+# Se mira lo único fiable que hay: cuántos píxeles de ancho tiene el modo
+# activo. Por encima de 2000 es un panel de alta densidad (la Surface Laptop 4
+# son 2256x1504 en 13,5 pulgadas) y a escala 1 la letra sale diminuta. 1,5
+# divide 2256 en 1504 exactos, así que no hay medios píxeles.
+ESCALA=1
+for _m in /sys/class/drm/card*-eDP-*/modes /sys/class/drm/card*-LVDS-*/modes; do
+    [ -r "$_m" ] || continue
+    _ancho="$(head -1 "$_m" 2>/dev/null | cut -dx -f1)"
+    case "$_ancho" in
+        ''|*[!0-9]*) continue ;;
+    esac
+    if   [ "$_ancho" -ge 3000 ]; then ESCALA=2
+    elif [ "$_ancho" -ge 2000 ]; then ESCALA=1.5
+    fi
+    break
+done
+
+cat > "$CFG/hyprland.local.conf" <<EOF
 # Generado por m-hw-profile; no editar a mano.
-monitor=,preferred,auto,1
+monitor=,$ELEGIDO,auto,$ESCALA
 EOF
 
 if [ "$VM" -eq 0 ] && [ "$RAM_MB" -ge 6144 ] && [ "$CPU_COUNT" -ge 4 ]; then
@@ -27,8 +106,27 @@ animations { enabled = true; }
 EOF
 fi
 
-# El dotfile principal usa una ruta absoluta para ser válido incluso cuando
-# Hyprland se inicia como root o desde una TTY sin expansión de '~'.
-if [ -d /etc/mikeos/desktop ] && [ -w /etc/mikeos/desktop ]; then
-    cp "$CFG/hyprland.local.conf" /etc/mikeos/desktop/hyprland.local.conf
+# El archivo que de verdad lee Hyprland está en /etc, con ruta absoluta, para
+# que valga también si la sesión arranca como root o desde una consola sin
+# expansión de '~'.
+#
+# La copia iba protegida por "[ -w /etc/mikeos/desktop ]" y esa carpeta
+# pertenece a root:root 755. O sea que para el usuario del escritorio la
+# condición era falsa SIEMPRE y la copia no se hacía nunca, en silencio.
+# Resultado: este guion calculaba bien la resolución, la escribía en el archivo
+# del usuario... y Hyprland seguía leyendo el de /etc con el valor de fábrica.
+# Un fallo perfecto: todo parece funcionar y nada surte efecto.
+#
+# Ahora se intenta directamente y, si no se puede, se hace con m-sudo, que para
+# eso está. Y si tampoco, se dice: quedarse callado es lo que lo escondió.
+if [ -d /etc/mikeos/desktop ]; then
+    if ! cp -f "$CFG/hyprland.local.conf" /etc/mikeos/desktop/hyprland.local.conf 2>/dev/null; then
+        if command -v m-sudo >/dev/null 2>&1; then
+            m-sudo cp -f "$CFG/hyprland.local.conf" \
+                /etc/mikeos/desktop/hyprland.local.conf 2>/dev/null \
+                || echo "m-hw-profile: no se pudo actualizar el perfil en /etc." >&2
+        else
+            echo "m-hw-profile: no se pudo actualizar el perfil en /etc." >&2
+        fi
+    fi
 fi

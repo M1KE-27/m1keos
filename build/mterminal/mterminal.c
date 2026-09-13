@@ -97,6 +97,39 @@ static char *tab_cwd(VteTerminal *terminal) {
  * significa el comportamiento de siempre: una sesión de login. */
 static char *exec_command = NULL;
 
+/* Los argumentos que vienen detrás de -e, cuando son varios.
+ *
+ * "-e" cogía UN solo argumento y le daba el resto a GTK. Con eso,
+ *
+ *     m-terminal -e sh -c "m-clave poner; ..."
+ *
+ * abría una shell pelada y le pasaba "-c" y el guion entero a GTK como
+ * opciones que no entiende. O sea: el botón de poner contraseña del Centro de
+ * Control no ejecutaba NADA, y desde fuera parecía que el botón no respondía.
+ * Igual el de GParted del instalador. La forma de un solo argumento
+ * ("-e 'vi archivo'") sí funcionaba, y por eso el fallo sobrevivió tanto: unos
+ * botones iban y otros no.
+ *
+ * Ahora -e se lleva TODO lo que venga detrás, como hacen xterm y compañía. */
+static char **exec_argv_directo = NULL;
+
+/* La pestaña cuyo comando ya terminó se va; si era la última, la ventana
+ * también. Se comprueba que el widget siga vivo porque también se llega aquí
+ * al cerrar a mano con Ctrl+Shift+W, y entonces la página ya no está. */
+static void hijo_terminado(VteTerminal *terminal, gint estado, gpointer datos) {
+    (void)estado;
+    MTerminal *app = datos;
+    if (!app || !app->notebook || !GTK_IS_WIDGET(app->notebook)) return;
+    gint pagina = gtk_notebook_page_num(GTK_NOTEBOOK(app->notebook),
+                                        GTK_WIDGET(terminal));
+    if (pagina < 0) return;
+    gtk_notebook_remove_page(GTK_NOTEBOOK(app->notebook), pagina);
+    gint quedan = gtk_notebook_get_n_pages(GTK_NOTEBOOK(app->notebook));
+    gtk_notebook_set_show_tabs(GTK_NOTEBOOK(app->notebook), quedan > 1);
+    if (quedan == 0 && app->window && GTK_IS_WIDGET(app->window))
+        gtk_widget_destroy(app->window);
+}
+
 static void terminal_spawn(VteTerminal *terminal, const char *cwd) {
     char *login_argv[] = { (char *)"/bin/bash", (char *)"-l", NULL };
     /* Se pasa por la shell para admitir un comando completo con argumentos
@@ -119,10 +152,18 @@ static void terminal_spawn(VteTerminal *terminal, const char *cwd) {
         "read -rsn1 _ </dev/tty", exec_command);
     char *exec_argv[] = { (char *)"/bin/bash", (char *)"-lc", exec_envuelto, NULL };
 
+    /* Con varios argumentos detrás de -e se ejecutan tal cual, sin pasar por
+     * una shell: así "sh -c '<guion>'" llega entero y sin que nadie le
+     * reinterprete las comillas. El envoltorio de "pulsa una tecla" sólo tiene
+     * sentido en la forma de un argumento, donde el texto ya es un guion. */
+    char **elegido = login_argv;
+    if (exec_argv_directo) elegido = exec_argv_directo;
+    else if (exec_command)  elegido = exec_argv;
+
     g_setenv("TERM", "xterm-256color", TRUE);
     g_setenv("COLORTERM", "truecolor", TRUE);
     vte_terminal_spawn_async(terminal, VTE_PTY_DEFAULT, cwd,
-                             exec_command ? exec_argv : login_argv, NULL,
+                             elegido, NULL,
                              G_SPAWN_SEARCH_PATH, NULL, NULL, NULL, -1,
                              NULL, NULL, NULL);
 }
@@ -170,6 +211,14 @@ static void add_tab(MTerminal *app, const char *cwd) {
     gint page = gtk_notebook_append_page(GTK_NOTEBOOK(app->notebook), GTK_WIDGET(terminal), label);
     gtk_notebook_set_tab_reorderable(GTK_NOTEBOOK(app->notebook), GTK_WIDGET(terminal), TRUE);
     g_signal_connect(terminal, "key-press-event", G_CALLBACK(key_press), app);
+    /* Cuando el comando de dentro termina, se cierra la pestaña.
+     *
+     * Esta señal no estaba conectada, y esa es toda la historia del
+     * "pulsa una tecla para cerrar esta ventana... y no se cierra": la tecla
+     * SÍ se leía, el shell SÍ terminaba, pero nadie escuchaba. La pestaña se
+     * quedaba con el texto muerto para siempre, que desde fuera es idéntico a
+     * que la tecla no hiciera nada. */
+    g_signal_connect(terminal, "child-exited", G_CALLBACK(hijo_terminado), app);
     gtk_notebook_set_show_tabs(GTK_NOTEBOOK(app->notebook),
                                gtk_notebook_get_n_pages(GTK_NOTEBOOK(app->notebook)) > 1);
     gtk_widget_show_all(GTK_WIDGET(app->notebook));
@@ -265,8 +314,17 @@ int main(int argc, char **argv) {
     for (int i = 1; i < argc; i++) {
         if ((strcmp(argv[i], "-e") == 0 || strcmp(argv[i], "--exec") == 0)
             && i + 1 < argc) {
-            exec_command = argv[i + 1];
-            i++;
+            if (i + 2 < argc) {
+                /* Varios argumentos: -e se lleva todo lo que queda, como en
+                 * xterm. Antes se quedaba sólo con el primero. */
+                exec_argv_directo = &argv[i + 1];
+                exec_command = argv[i + 1];
+            } else {
+                /* Uno solo: es un guion, y va envuelto para que al terminar
+                 * diga cómo fue y espere una tecla. */
+                exec_command = argv[i + 1];
+            }
+            i = argc;
         } else {
             argv[forward++] = argv[i];
         }
@@ -274,7 +332,19 @@ int main(int argc, char **argv) {
     argc = forward;
     argv[argc] = NULL;
 
-    GtkApplication *app = gtk_application_new("org.mikeos.MTerminal", G_APPLICATION_DEFAULT_FLAGS);
+    /* Con -e, cada invocación es su propio proceso.
+     *
+     * Con el comportamiento de instancia única de GTK, abrir una segunda
+     * terminal con -e mientras ya hay una abierta sólo mandaba "activate" a la
+     * primera, y el comando se perdía por el camino: el botón parecía no hacer
+     * nada, pero sólo si ya tenías una terminal delante. Un fallo que aparece y
+     * desaparece según lo que hubiera abierto es de los peores de diagnosticar.
+     *
+     * Sin -e (una terminal normal) se conserva la instancia única, que es lo
+     * que hace que las nuevas salgan como pestañas de la misma ventana. */
+    GApplicationFlags banderas = exec_command
+        ? G_APPLICATION_NON_UNIQUE : G_APPLICATION_DEFAULT_FLAGS;
+    GtkApplication *app = gtk_application_new("org.mikeos.MTerminal", banderas);
     g_signal_connect(app, "activate", G_CALLBACK(activate), NULL);
     int status = g_application_run(G_APPLICATION(app), argc, argv);
     g_object_unref(app);

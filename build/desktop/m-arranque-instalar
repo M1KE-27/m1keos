@@ -1,0 +1,30 @@
+#!/bin/sh
+# m-arranque-instalar - abre el instalador si se arrancó para eso.
+#
+# Lo llama Hyprland al iniciar la sesión. Si el kernel no trae la marca
+# "mikeos_instalar=1" -- o sea, en cualquier arranque normal -- no hace nada y
+# se quita de en medio.
+#
+# La marca la pone la entrada "Instalar MIKE OS en este equipo" del menú de
+# arranque. Antes esa entrada no existía y al instalador sólo se llegaba
+# arrancando "probar sin instalar", esperando al escritorio y encontrando el
+# botón dentro de la ventana de bienvenida. Eso hay que adivinarlo.
+set -u
+
+grep -qw "mikeos_instalar=1" /proc/cmdline 2>/dev/null || exit 0
+
+# Se espera a que la barra esté en pie. Abrir el instalador antes deja su
+# ventana por debajo del escritorio a medio montar, y parece que no ha salido.
+_i=0
+while [ "$_i" -lt 20 ]; do
+    pgrep -x quickshell >/dev/null 2>&1 && break
+    _i=$((_i + 1))
+    sleep 1
+done
+sleep 1
+
+# La bienvenida sobra si vienes a instalar: el instalador la tapa entera y
+# quedan dos ventanas peleándose por el foco.
+pkill -f m-welcome 2>/dev/null || true
+
+exec /usr/bin/m-instalador

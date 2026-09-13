@@ -40,6 +40,30 @@
 # ==============================================================================
 set -eu
 
+# De dónde se leen las respuestas. VA AQUÍ ARRIBA, y eso importa.
+#
+# Este bloque estaba cincuenta líneas MÁS ABAJO que la primera pregunta (la de
+# qué disco usar). Esa pregunta leía de un descriptor 3 que todavía no existía,
+# así que la lectura fallaba, la respuesta quedaba vacía y el instalador elegía
+# siempre el disco 1 sin decir nada. Con un solo disco no se notaba; con dos,
+# instalabas donde no querías.
+#
+# Por qué un descriptor y no /dev/tty en cada sitio: el nodo /dev/tty existe
+# SIEMPRE, lo que falla es abrirlo cuando el proceso no tiene terminal de
+# control. Comprobarlo con "[ -c /dev/tty ]" no sirve de nada. Se abre una vez,
+# se prueba de verdad, y si no hay terminal las preguntas se quedan en su valor
+# por defecto (que para la confirmación de borrado significa NO borrar).
+HAY_TERMINAL=0
+if ( exec 3</dev/tty ) 2>/dev/null; then
+    exec 3</dev/tty
+    HAY_TERMINAL=1
+elif [ -t 0 ]; then
+    exec 3<&0
+    HAY_TERMINAL=1
+else
+    exec 3</dev/null
+fi
+
 VERDE='\033[32m'; ROJO='\033[31m'; GRIS='\033[90m'; NEGRITA='\033[1m'; FIN='\033[0m'
 paso()  { printf "${NEGRITA}»${FIN} %s\n" "$*"; }
 ok()    { printf "  ${VERDE}✓${FIN} %s\n" "$*"; }
@@ -224,7 +248,7 @@ if [ -z "$DESTINO" ]; then
         _eleccion=""
         while [ -z "$_eleccion" ]; do
             printf "  Número [1]: " >&2
-            IFS= read -r _n </dev/tty || _n=""
+            IFS= read -r _n <&3 || _n=""
             [ -z "$_n" ] && _n=1
             case "$_n" in
                 ''|*[!0-9]*) echo "  Escribe un número." >&2; continue ;;
@@ -256,11 +280,29 @@ if grep -q "^$REAL" /proc/mounts 2>/dev/null || \
 fi
 
 # --- Preguntas ---------------------------------------------------------------
+#
+# De dónde se leen las respuestas.
+#
+# Antes cada pregunta hacía "read < /dev/tty" protegido con "[ -c /dev/tty ]".
+# Ese control no vale: el nodo /dev/tty existe SIEMPRE en devtmpfs, lo que
+# falla es abrirlo cuando el proceso no tiene terminal de control. Entonces
+# cada pregunta soltaba
+#
+#     can't open /dev/tty: No such device or address
+#
+# y seguía con el valor por defecto. En la confirmación de borrado eso
+# significaba "Cancelado" sin que nadie hubiera cancelado nada.
+#
+# Ahora se abre una vez, al principio, y se prueba de verdad: /dev/tty si se
+# puede, la entrada estándar si es una terminal, y nada si no hay ninguna de
+# las dos (ahí las preguntas se quedan en su valor por defecto, que para la
+# confirmación de borrado significa NO borrar: lo correcto).
+
 preguntar() {
     _p="$1"; _d="$2"; _r=""
-    if [ -c /dev/tty ]; then
+    if [ "$HAY_TERMINAL" = "1" ]; then
         printf "  %s [%s]: " "$_p" "$_d" >&2
-        IFS= read -r _r </dev/tty || _r=""
+        IFS= read -r _r <&3 || _r=""
     fi
     [ -n "$_r" ] && printf '%s' "$_r" || printf '%s' "$_d"
 }
@@ -331,13 +373,13 @@ while [ "$AUTOMATICO" != "1" ] && [ "$CLAVE" != "$CLAVE2" ]; do
     printf "  Contraseña: " >&2
     # stty -echo en vez de "read -s": read -s es de bash y aquí manda sh.
     stty -echo 2>/dev/null
-    IFS= read -r CLAVE </dev/tty || CLAVE=""
+    IFS= read -r CLAVE <&3 || CLAVE=""
     stty echo 2>/dev/null
     echo >&2
     if [ -z "$CLAVE" ]; then CLAVE2=""; break; fi
     printf "  Repítela: " >&2
     stty -echo 2>/dev/null
-    IFS= read -r CLAVE2 </dev/tty || CLAVE2=""
+    IFS= read -r CLAVE2 <&3 || CLAVE2=""
     stty echo 2>/dev/null
     echo >&2
     [ "$CLAVE" = "$CLAVE2" ] || echo "  No coinciden; otra vez." >&2
@@ -377,7 +419,7 @@ if [ "$AUTOMATICO" = "1" ]; then
     nota "confirmado por quien ha llamado a m-install (--si)"
 else
     printf "  Escribe ${NEGRITA}BORRAR${FIN} para continuar: "
-    IFS= read -r CONFIRMA </dev/tty || CONFIRMA=""
+    IFS= read -r CONFIRMA <&3 || CONFIRMA=""
     [ "$CONFIRMA" = "BORRAR" ] || { echo "  Cancelado."; exit 0; }
 fi
 echo

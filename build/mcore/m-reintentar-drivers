@@ -1,0 +1,74 @@
+#!/bin/sh
+# m-reintentar-drivers - vuelve a intentar los drivers que se quedaron sin
+# firmware durante el arranque.
+#
+# Por qué hace falta
+# ------------------
+# En MIKE OS TODOS los drivers van compilados dentro del kernel (=y). Eso es
+# bueno: no hay módulos que cargar, ni /lib/modules, ni initramfs obligatorio
+# para llegar al disco. Pero tiene una consecuencia que no se ve venir.
+#
+# Un driver integrado arranca mientras el kernel se inicializa, y en ese
+# momento el único sistema de archivos que existe es el initramfs. Si el driver
+# necesita firmware y ese firmware no está AHÍ DENTRO, la carga falla:
+#
+#     iwlwifi 0000:02:00.0: Direct firmware load for iwlwifi-cc-a0-77.ucode failed with error -2
+#     iwlwifi 0000:02:00.0: no suitable firmware found!
+#
+# Y como no es un módulo, no hay forma de "volver a cargarlo": el dispositivo
+# se queda sin driver para siempre. Le pasó a la Wi-Fi de una Surface Laptop 4
+# con el firmware perfectamente instalado en /lib/firmware, sólo que el sistema
+# aún no estaba montado cuando hizo falta.
+#
+# La salida fácil sería meter todo el firmware en el initramfs. Son cientos de
+# megas que habría que cargar enteros en memoria en cada arranque, en todos los
+# equipos, para que unos pocos archivos estén disponibles unos segundos antes.
+#
+# Lo que hace en su lugar
+# -----------------------
+# Esperar a que el sistema de verdad esté montado -- que es cuando /lib/firmware
+# existe entero -- y pedirle al kernel que vuelva a probar los dispositivos que
+# se quedaron sin driver. Escribir la dirección de un dispositivo en
+# "drivers_probe" hace que su bus busque otra vez quién sabe manejarlo, y esta
+# vez el firmware está donde tiene que estar.
+#
+# La gráfica es la excepción que confirma la regla: esa SÍ tiene que funcionar
+# desde el primer segundo (sin imagen no se puede ni leer un error), y por eso
+# su firmware va empotrado dentro del propio kernel. Ver scripts/build.sh.
+set -u
+
+PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
+export PATH
+
+# Sin firmware en el sistema no hay nada que reintentar: se saldría igual de
+# mal, sólo que más tarde.
+[ -d /lib/firmware ] || exit 0
+
+_reintentados=0
+for _dev in /sys/bus/pci/devices/*; do
+    [ -d "$_dev" ] || continue
+    # Con driver ya puesto no hay nada que hacer.
+    [ -e "$_dev/driver" ] && continue
+
+    _dir="$(basename "$_dev")"
+
+    # La gráfica no se toca. Si amdgpu falló, el escritorio ya se ha rendido y
+    # ha explicado por qué; reintentar aquí, con la sesión gráfica a medio
+    # montar, es pedir un cuelgue.
+    case "$(cat "$_dev/class" 2>/dev/null)" in
+        0x03*) continue ;;
+    esac
+
+    if printf '%s' "$_dir" > /sys/bus/pci/drivers_probe 2>/dev/null; then
+        _reintentados=$((_reintentados + 1))
+    fi
+done
+
+if [ "$_reintentados" -gt 0 ]; then
+    echo "[drivers] Reintentados $_reintentados dispositivos que se quedaron sin driver."
+    # Un momento para que los que ahora sí cargan terminen de registrarse antes
+    # de que arranque el resto del sistema y se ponga a buscar red.
+    sleep 1
+fi
+
+exit 0

@@ -77,6 +77,16 @@ if [ -f /etc/mikeos/system.conf ]; then
 fi
 
 # Banner oficial de bienvenida
+# Los drivers que se quedaron sin firmware durante el arranque. Va aquí, con
+# la raíz ya montada y antes de que nada intente usar la red, porque hasta este
+# punto /lib/firmware no existía. Ver m-reintentar-drivers.
+[ -x /usr/bin/m-reintentar-drivers ] && /usr/bin/m-reintentar-drivers
+
+# Permisos de los discos. Sin udev nadie los toca y nacen root:root 0660, así
+# que desde el escritorio no se podía abrir ni mirar una partición. Ver
+# m-discos-permisos.
+[ -x /usr/bin/m-discos-permisos ] && /usr/bin/m-discos-permisos
+
 echo ""
 echo "======================================================"
 echo "               Welcome to MIKE OS"

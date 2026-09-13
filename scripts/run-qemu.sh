@@ -184,7 +184,23 @@ if [ "$HEADLESS" -eq 0 ]; then
     esac
     # gl=on solo es válido con virtio-vga-gl; el resto de modelos no exponen
     # un contexto GL a QEMU y deben quedarse en gl=off.
-    [ "$VGA_MODEL" = none ] || DISPLAY_FLAGS+=("-display" "gtk,gl=${GL_SUFFIX},grab-on-hover=on,show-menubar=off" "-device" qemu-xhci "-device" usb-tablet)
+    # Qué clase de puntero se le da a la máquina.
+    #
+    # Por defecto, "usb-tablet": manda coordenadas absolutas y es lo cómodo
+    # para guionizar clics. El problema es que un tablet NO se parece en nada a
+    # un touchpad de portátil, y por eso el banco de pruebas daba por buenos
+    # botones que en un portátil no respondían: un clic guionizado no se mueve
+    # ni un píxel entre pulsar y soltar, y un dedo sí.
+    #
+    # Con MIKEOS_RATON=relativo se usa "usb-mouse", que manda movimientos
+    # relativos como un ratón o un touchpad de verdad. Es lo que usa
+    # tests/raton-real.sh.
+    if [ "${MIKEOS_RATON:-absoluto}" = "relativo" ]; then
+        PUNTERO=(-device usb-mouse)
+    else
+        PUNTERO=(-device usb-tablet)
+    fi
+    [ "$VGA_MODEL" = none ] || DISPLAY_FLAGS+=("-display" "gtk,gl=${GL_SUFFIX},grab-on-hover=on,show-menubar=off" "-device" qemu-xhci "${PUNTERO[@]}")
 fi
 
 if [ "$BOOT_MODE" = disk ] && [ ! -f "$DISK_IMG" ]; then

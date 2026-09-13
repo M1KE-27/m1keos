@@ -168,29 +168,37 @@ if [ -S "$QMP" ]; then
     clic 960 1000; sleep 2
     vm 'grim /tmp/humo-cerrado.png >/dev/null 2>&1'
 
+    # Se le PREGUNTA a la barra en qué estado está.
+    #
+    # Antes esto comparaba dos capturas de pantalla y daba por bueno "han
+    # salido distintas". No vale: la barra lleva un reloj, así que dos capturas
+    # separadas por un segundo son SIEMPRE distintas. O sea que estas dos
+    # comprobaciones pasaban en verde hiciera lo que hiciera el clic, y por eso
+    # no detectaron que en un portátil de verdad no se abría nada.
+    estado_cc() {
+        _i="$(vm 'quickshell list --all' | awk '/^Instance /{gsub(":","",$2);print $2;exit}')"
+        [ -n "$_i" ] || return 1
+        vm "quickshell ipc -i $_i call ajustes estado" | tr -d '\r'
+    }
+
     clic 1888 23; sleep 3
-    vm 'grim /tmp/humo-abierto.png >/dev/null 2>&1'
 
     printf '  %-46s' "el Centro de Control abre al pulsar su botón"
-    if [ -n "$(vm 'cmp -s /tmp/humo-cerrado.png /tmp/humo-abierto.png || echo distintas')" ]; then
-        echo "$(verde ✓)"; PASAN=$((PASAN + 1))
-    else
-        echo "$(rojo ✗)"; FALLAN=$((FALLAN + 1)); FALLOS+=("el panel no abre")
-    fi
+    case "$(estado_cc)" in
+        abierto*) echo "$(verde ✓)"; PASAN=$((PASAN + 1)) ;;
+        *) echo "$(rojo ✗)"; FALLAN=$((FALLAN + 1)); FALLOS+=("el panel no abre") ;;
+    esac
 
     # Y el fallo concreto que se arregló: al pulsar un apartado, el panel se
-    # cerraba entero. Si vuelve a pasar, esta captura será igual que la del
-    # escritorio a solas.
+    # cerraba entero.
     clic 570 385; sleep 3
-    vm 'grim /tmp/humo-seccion.png >/dev/null 2>&1'
 
     printf '  %-46s' "el panel sigue abierto al cambiar de apartado"
-    if [ -n "$(vm 'cmp -s /tmp/humo-cerrado.png /tmp/humo-seccion.png || echo distintas')" ]; then
-        echo "$(verde ✓)"; PASAN=$((PASAN + 1))
-    else
-        echo "$(rojo ✗)  $(gris "la pantalla volvió al escritorio: se cerró")"
-        FALLAN=$((FALLAN + 1)); FALLOS+=("el panel se cierra al cambiar de apartado")
-    fi
+    case "$(estado_cc)" in
+        abierto*) echo "$(verde ✓)"; PASAN=$((PASAN + 1)) ;;
+        *) echo "$(rojo ✗)  $(gris "la pantalla volvió al escritorio: se cerró")"
+           FALLAN=$((FALLAN + 1)); FALLOS+=("el panel se cierra al cambiar de apartado") ;;
+    esac
 
     # Cerrar el Centro de Control antes de tocar la barra: su ventana ocupa
     # la pantalla entera y se queda con el gesto de la rueda.

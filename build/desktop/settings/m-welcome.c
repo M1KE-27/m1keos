@@ -153,6 +153,11 @@ static gboolean en_vivo(void) {
     return vivo;
 }
 
+/* Pasar del aviso de versión de prueba a la bienvenida de siempre. */
+static void ir_a_bienvenida(GtkWidget *pila) {
+    gtk_stack_set_visible_child_name(GTK_STACK(pila), "bienvenida");
+}
+
 /* Instalar en el disco.
  *
  * Abre el instalador gráfico. La primera versión lanzaba m-install en una
@@ -293,6 +298,10 @@ int main(int argc, char **argv) {
         "  letter-spacing: 1px; }"
         "#key { color: #e8ebf0; font-family: monospace; font-weight: bold; font-size: 12px; }"
         "#desc { color: #79818f; font-size: 12px; }"
+        /* La pantalla de versión de prueba. Grande de verdad: es lo único que
+         * hay en ella, y su trabajo es que nadie pueda decir que no lo vio. */
+        "#pruebatitulo { color: #f2f5f9; font-size: 34px; font-weight: bold; }"
+        "#pruebatexto { color: #9aa3b0; font-size: 14px; }"
         /* background-image: none es obligatorio. Adwaita pinta los botones
          * con un degradado, y un degradado encima tapa el color de fondo:
          * el botón principal salía gris por mucho que se le pusiera el
@@ -353,8 +362,23 @@ int main(int argc, char **argv) {
     gtk_window_set_decorated(GTK_WINDOW(win), FALSE);
     g_signal_connect(win, "destroy", G_CALLBACK(on_close), NULL);
 
+    /* Dos pantallas, no una.
+     *
+     * Arrancado desde el USB, lo primero que se ve es un aviso a pantalla
+     * completa de que esto es una versión de prueba. No es un detalle de
+     * cortesía: quien arranca un USB en vivo se cree que está usando el
+     * sistema instalado, y luego apaga y se le ha ido todo. Decirlo pequeño,
+     * en una esquina, es no decirlo.
+     *
+     * Instalado, esa pantalla no aparece: ahí ya no es una prueba, y repetirlo
+     * en cada primer arranque sería mentir sobre lo que tiene delante. */
+    GtkWidget *pila = gtk_stack_new();
+    gtk_stack_set_transition_type(GTK_STACK(pila), GTK_STACK_TRANSITION_TYPE_SLIDE_LEFT);
+    gtk_stack_set_transition_duration(GTK_STACK(pila), 220);
+    gtk_container_add(GTK_CONTAINER(win), pila);
+
     GtkWidget *outer = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
-    gtk_container_add(GTK_CONTAINER(win), outer);
+    gtk_stack_add_named(GTK_STACK(pila), outer, "bienvenida");
 
     /* ---- Cabecera ---------------------------------------------------- */
     GtkWidget *cabecera = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
@@ -479,7 +503,58 @@ int main(int argc, char **argv) {
     g_signal_connect(btn, "clicked", G_CALLBACK(on_close), NULL);
     gtk_box_pack_end(GTK_BOX(pie), btn, FALSE, FALSE, 0);
 
-    gtk_widget_show_all(win);
+    /* --- La pantalla de "versión de prueba" ----------------------------- */
+    if (en_vivo()) {
+        GtkWidget *prueba = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+        gtk_stack_add_named(GTK_STACK(pila), prueba, "prueba");
+
+        GtkWidget *centro = gtk_box_new(GTK_ORIENTATION_VERTICAL, 18);
+        gtk_widget_set_valign(centro, GTK_ALIGN_CENTER);
+        gtk_widget_set_halign(centro, GTK_ALIGN_CENTER);
+        gtk_widget_set_margin_start(centro, 64);
+        gtk_widget_set_margin_end(centro, 64);
+        gtk_box_pack_start(GTK_BOX(prueba), centro, TRUE, TRUE, 0);
+
+        GtkWidget *t = gtk_label_new("Esto es una versión de prueba");
+        gtk_widget_set_name(t, "pruebatitulo");
+        gtk_box_pack_start(GTK_BOX(centro), t, FALSE, FALSE, 0);
+
+        GtkWidget *d = gtk_label_new(
+            "MIKE OS está corriendo entero en la memoria de este equipo.\n"
+            "Tu disco no se ha tocado y no se va a tocar solo.\n"
+            "\n"
+            "Puedes abrirlo todo, romper lo que quieras y probar sin miedo:\n"
+            "al apagar no queda nada y el equipo vuelve a estar como estaba.\n"
+            "Por lo mismo, lo que hagas aquí tampoco se guarda.\n"
+            "\n"
+            "Es una alpha. Hay cosas que fallan y hardware sin probar.\n"
+            "Si algo se rompe, cuéntalo: para eso está esta versión.");
+        gtk_label_set_justify(GTK_LABEL(d), GTK_JUSTIFY_CENTER);
+        gtk_widget_set_name(d, "pruebatexto");
+        gtk_box_pack_start(GTK_BOX(centro), d, FALSE, FALSE, 0);
+
+        GtkWidget *pie2 = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+        gtk_widget_set_name(pie2, "pie");
+        gtk_box_pack_start(GTK_BOX(prueba), pie2, FALSE, FALSE, 0);
+
+        GtkWidget *ver = gtk_label_new("MIKE OS — versión de prueba");
+        gtk_widget_set_name(ver, "customizetext");
+        gtk_widget_set_halign(ver, GTK_ALIGN_START);
+        gtk_box_pack_start(GTK_BOX(pie2), ver, TRUE, TRUE, 0);
+
+        GtkWidget *sig = gtk_button_new_with_label("Siguiente");
+        gtk_widget_set_name(sig, "gobtn");
+        g_signal_connect_swapped(sig, "clicked",
+                                 G_CALLBACK(ir_a_bienvenida), pila);
+        gtk_box_pack_end(GTK_BOX(pie2), sig, FALSE, FALSE, 0);
+
+        gtk_widget_show_all(win);
+        gtk_stack_set_visible_child_name(GTK_STACK(pila), "prueba");
+    } else {
+        gtk_widget_show_all(win);
+        gtk_stack_set_visible_child_name(GTK_STACK(pila), "bienvenida");
+    }
+
     gtk_main();
     return 0;
 }

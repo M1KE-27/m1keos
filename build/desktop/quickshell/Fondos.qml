@@ -65,7 +65,7 @@ PanelWindow {
         anchors.fill: parent
         color: "#000000"
         opacity: 0.55
-        TapHandler { onTapped: ventanaFondos.abierto = false }
+        TapHandler { gesturePolicy: TapHandler.ReleaseWithinBounds; onTapped: ventanaFondos.abierto = false }
     }
 
     Rectangle {
@@ -196,6 +196,7 @@ PanelWindow {
 
                         HoverHandler { id: ratonPropio }
                         TapHandler {
+                            gesturePolicy: TapHandler.ReleaseWithinBounds
                             onTapped: {
                                 ventanaFondos.estado = "Aplicando fondo..."
                                 volverAlPropio.running = true
@@ -284,6 +285,7 @@ PanelWindow {
 
                             HoverHandler { id: raton }
                             TapHandler {
+                                gesturePolicy: TapHandler.ReleaseWithinBounds
                                 onTapped: {
                                     ventanaFondos.estado = "Aplicando fondo..."
                                     aplicar.command = ["m-wallhaven", "set", modelData.url]

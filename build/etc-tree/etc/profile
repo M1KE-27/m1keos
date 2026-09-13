@@ -1,4 +1,13 @@
 export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+# Sin TERM, bash no sabe mover el cursor: el borrado no borra, Enter deja el
+# cursor por encima de lo escrito y el prompt se sobrescribe a sí mismo. Pasa
+# siempre que se llega aquí desde un servicio de runit, que arranca con el
+# entorno vacío. La red de seguridad va aquí además de en el servicio de
+# consola, porque a este archivo se llega desde cualquier intérprete de
+# órdenes de login y basta con que falte una vez para que la consola parezca
+# rota.
+[ -n "${TERM:-}" ] || export TERM=linux
 export EDITOR=vi
 export PS1='\[\e[36m\]\w\[\e[0m\] \[\e[90m\]❯\[\e[0m\] '
 alias ff=m-info

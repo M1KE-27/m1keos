@@ -1,0 +1,59 @@
+#!/bin/sh
+# m-discos-permisos - deja que el usuario del escritorio vea sus discos.
+#
+# Por qué hace falta
+# ------------------
+# Sin udev, los nodos de los discos los crea devtmpfs, y los crea root:root
+# 0660. En todo el sistema no había NADA que cambiara eso: no existía el grupo
+# "disk" y no había un solo chmod ni chgrp sobre /dev/sd*, /dev/nvme* ni
+# /dev/mmcblk*.
+#
+# Consecuencia: desde el escritorio (que corre como "mike") no se podía abrir
+# ningún disco. Y como BusyBox suelta privilegios para blkid, fdisk, mount y
+# umount aunque esté instalado con setuid, todos ellos se comían un permiso
+# denegado. Desde fuera se ve como "no puedo acceder al sistema ni a las
+# particiones": el sistema ve los discos, tú no.
+#
+# Qué hace
+# --------
+# Poner los nodos de bloque en root:disk 0660 y mantenerlos así mientras
+# aparecen discos nuevos (un USB que se enchufa después, por ejemplo). Es el
+# mismo patrón que ya se usaba para /dev/dri y /dev/snd en el servicio de
+# consola.
+#
+# 0660 y no 0666 a propósito: pertenecer al grupo "disk" es poder leer el disco
+# entero, contraseñas incluidas. Que lo tenga quien usa el equipo está bien;
+# que lo tenga cualquiera, no.
+set -u
+
+PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+export PATH
+
+aplicar() {
+    for _d in /dev/sd* /dev/nvme*n* /dev/vd* /dev/mmcblk* /dev/sr* /dev/loop* \
+              /dev/dm-* /dev/mapper/*; do
+        [ -b "$_d" ] || continue
+        chgrp disk "$_d" 2>/dev/null || true
+        chmod 0660 "$_d" 2>/dev/null || true
+    done
+}
+
+aplicar
+
+# Los discos USB tardan en enumerarse, y un pendrive puede enchufarse en
+# cualquier momento. Se repasa durante el primer minuto y luego cada diez
+# segundos: sin udev no hay quien avise, así que toca mirar.
+(
+    _i=0
+    while [ "$_i" -lt 12 ]; do
+        sleep 5
+        aplicar
+        _i=$((_i + 1))
+    done
+    while :; do
+        sleep 10
+        aplicar
+    done
+) >/dev/null 2>&1 &
+
+exit 0

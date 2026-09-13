@@ -68,3 +68,8 @@ build/web/
 
 # Dónde publica cada uno: es asunto suyo, no del repositorio.
 .publicar.conf
+
+# build/firmware-kernel/ son copias del firmware del equipo de construcción que
+# scripts/build.sh prepara para empotrarlas dentro del kernel. Se regeneran
+# solas y no son nuestras: no tienen por qué ocupar sitio en el repositorio.
+build/firmware-kernel/
