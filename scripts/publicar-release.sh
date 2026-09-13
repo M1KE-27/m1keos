@@ -43,18 +43,29 @@ paso "Comprobando que la ISO corresponde al código"
 # imagen, y exigir reconstruirla por eso es ruido que acaba enseñando a
 # ignorar el aviso.
 #
-# Se compara contra el último commit que tocó algo que sí entra en la imagen.
-RUTAS_DE_LA_IMAGEN="build/ .config scripts/build.sh scripts/build-repo.sh scripts/crear-iso.sh"
-# shellcheck disable=SC2086
-ULTIMO_COMMIT=$(git -C "$RAIZ" log -1 --format=%ct -- $RUTAS_DE_LA_IMAGEN)
-[ -n "$ULTIMO_COMMIT" ] || ULTIMO_COMMIT=0
+# Se compara contra el ARCHIVO más reciente de los que entran en la imagen, no
+# contra la fecha del último commit.
+#
+# Usar la fecha del commit no puede funcionar: primero se construye la imagen y
+# después se hace el commit, así que el commit es SIEMPRE más nuevo que la ISO
+# y el aviso saltaba siempre. Un aviso que salta siempre no avisa de nada:
+# enseña a saltárselo, que es justo lo contrario de para lo que está.
+#
+# La pregunta de verdad es si algún archivo que va DENTRO de la imagen se ha
+# tocado después de construirla. Eso lo contesta la fecha de los archivos.
+RUTAS_DE_LA_IMAGEN="build .config scripts/build.sh scripts/build-repo.sh scripts/crear-iso.sh"
 FECHA_ISO=$(stat -c %Y "$ISO")
-if [ "$FECHA_ISO" -lt "$ULTIMO_COMMIT" ]; then
-    err "la ISO es anterior al último cambio que afecta a la imagen."
-    gris "  ISO:    $(date -d "@$FECHA_ISO" '+%F %T')"
-    gris "  cambio: $(date -d "@$ULTIMO_COMMIT" '+%F %T')"
-    # shellcheck disable=SC2086
-    gris "  fue:    $(git -C "$RAIZ" log -1 --format=%s -- $RUTAS_DE_LA_IMAGEN)"
+# shellcheck disable=SC2086
+MAS_NUEVO=$(find $RUTAS_DE_LA_IMAGEN -newer "$ISO" -type f \
+                 -not -path "build/firmware-kernel/*" \
+                 -not -path "build/repo/*" -not -path "build/repo_pkgs/*" \
+                 -not -path "build/repo_mpm_tmp/*" \
+                 -not -path "*/busybox-*" -not -path "*/dropbear-*" \
+                 -not -path "*/runit-*" 2>/dev/null | head -3)
+if [ -n "$MAS_NUEVO" ]; then
+    err "hay archivos de la imagen más nuevos que la ISO."
+    gris "  ISO de $(date -d "@$FECHA_ISO" '+%F %T'), y después se tocó:"
+    printf '%s\n' "$MAS_NUEVO" | sed 's/^/    /' >&2
     gris "  Reconstruye:  ./scripts/build.sh && ./scripts/crear-iso.sh"
     exit 1
 fi
