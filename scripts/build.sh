@@ -593,7 +593,8 @@ build_dir = os.environ['MIKEOS_BUILD_DIR']
 # suelto que NO pasa por este resolutor, así que llegaban al sistema sin sus
 # bibliotecas: wpctl moría con "libwireplumber-0.5.so.0: cannot open shared
 # object file" y el volumen no se podía leer.
-bins = ['/usr/bin/Hyprland', '/usr/bin/Xwayland', '/usr/bin/start-hyprland', '/usr/bin/hyprctl', '/usr/bin/quickshell', '/usr/bin/fuzzel', '/usr/bin/seatd', '/usr/bin/seatd-launch', '/usr/bin/swaybg', '/usr/bin/bwrap', '/usr/bin/wpctl', '/usr/bin/pactl', '/usr/bin/amixer', '/usr/bin/grim', '/usr/bin/slurp', '/usr/bin/wl-copy', '/usr/bin/pipewire', '/usr/bin/pipewire-pulse', '/usr/bin/wireplumber', '/usr/bin/dbus-daemon', '/usr/bin/dbus-launch', '/usr/bin/dbus-run-session', '/usr/bin/zstd', '/usr/bin/unzstd', '/usr/bin/iwctl', '/usr/bin/bluetoothctl', f'{build_dir}/mterminal/m-terminal', f'{build_dir}/settings/m-settings', f'{build_dir}/settings/m-wallpapers', f'{build_dir}/settings/m-welcome',
+bins = ['/usr/bin/Hyprland', '/usr/bin/Xwayland', '/usr/bin/start-hyprland', '/usr/bin/hyprctl', '/usr/bin/quickshell', '/usr/bin/fuzzel', '/usr/bin/seatd', '/usr/bin/seatd-launch', '/usr/bin/swaybg', '/usr/bin/bwrap', '/usr/bin/wpctl', '/usr/bin/pactl', '/usr/bin/amixer', '/usr/bin/grim', '/usr/bin/slurp', '/usr/bin/wl-copy', '/usr/bin/pipewire', '/usr/bin/pipewire-pulse', '/usr/bin/wireplumber', '/usr/bin/dbus-daemon', '/usr/bin/dbus-launch', '/usr/bin/dbus-run-session', '/usr/bin/zstd', '/usr/bin/unzstd', '/usr/bin/iwctl', '/usr/bin/bluetoothctl',
+        '/usr/bin/fc-cache', '/usr/bin/fc-list', '/usr/bin/fc-match', f'{build_dir}/mterminal/m-terminal', f'{build_dir}/settings/m-settings', f'{build_dir}/settings/m-wallpapers', f'{build_dir}/settings/m-welcome',
     # Herramientas de disco. Hacen falta para que el instalador pueda crear
     # una instalación que arranque de verdad: tabla GPT (sfdisk), partición
     # EFI en FAT32 (mkfs.vfat) y raíz en btrfs (mkfs.btrfs, btrfs). BusyBox
@@ -817,15 +818,41 @@ if os.path.exists('/usr/share/fonts/liberation'):
     shutil.copytree('/usr/share/fonts/liberation', f"{rootfs}/usr/share/fonts/liberation", dirs_exist_ok=True)
 
 # Sin esto, cualquier app GTK (Firefox incluido) cae a glifos "tofu" para
-# emoji/iconos y a una fuente sans genérica en vez de la Cantarell que GNOME
-# y la mayoría de temas esperan. Deliberadamente NO se incluye Noto CJK
-# (300MB+) ni DejaVu completo (480MB) -- duplicarían el tamaño de la imagen
+# emoji/iconos y a una fuente sans genérica. Deliberadamente NO se incluye Noto
+# CJK (300MB+) ni DejaVu completo (480MB) -- duplicarían el tamaño de la imagen
 # para cobertura que la mayoría no necesita; están disponibles como receta
 # mpm bajo demanda si hace falta japonés/chino/coreano.
-for extra_font_dir in ('Adwaita', 'cantarell', 'twemoji'):
+for extra_font_dir in ('Adwaita', 'cantarell', 'twemoji', 'gnu-free'):
     src_font = f'/usr/share/fonts/{extra_font_dir}'
     if os.path.exists(src_font):
         shutil.copytree(src_font, f"{rootfs}/usr/share/fonts/{extra_font_dir}", dirs_exist_ok=True)
+
+# JetBrains Mono Nerd Font: la de la barra y la terminal.
+#
+# Hace falta por los símbolos. La barra dibuja sus iconos con glifos, y con las
+# fuentes que había (18 archivos, todas latinas) varios salían como un cuadrado
+# vacío -- entre ellos el de la captura de pantalla. Nerd Fonts trae ese
+# conjunto entero.
+#
+# Sólo Regular y Bold: el directorio completo son 272 MB de pesos que nadie
+# usa; estos dos son 5.
+os.makedirs(f"{rootfs}/usr/share/fonts/jetbrains", exist_ok=True)
+for peso in ('Regular', 'Bold'):
+    src_jb = f'/usr/share/fonts/TTF/JetBrainsMonoNerdFont-{peso}.ttf'
+    if os.path.exists(src_jb):
+        shutil.copy2(src_jb, f"{rootfs}/usr/share/fonts/jetbrains/")
+
+# fc-cache y el índice de fuentes, GENERADO AQUÍ.
+#
+# No estaba ninguno de los dos. Sin índice, cada aplicación tiene que recorrer
+# y analizar todas las fuentes al arrancar, y en un USB en vivo con la raíz de
+# sólo lectura ni siquiera puede guardarse el resultado: se repite cada vez. Ahí
+# es donde se torcía el texto de Firefox, porque las tablas de sustitución de
+# fontconfig resuelven contra un conjunto que todavía no se ha indexado.
+#
+# Se genera al construir la imagen, una vez, y viaja hecho.
+# (fc-cache, fc-list y fc-match se añaden a la lista "bins" de más arriba, que
+#  es la que resuelve sus bibliotecas; aquí ya sería tarde.)
 
 # Selective QML copy (only Quickshell, QtQuick, QtCore, QtQml, QtWaylandClient)
 for qml_mod in ['Quickshell', 'QtQuick', 'QtCore', 'QtQml', 'QtWaylandClient', 'Qt']:
@@ -1361,6 +1388,42 @@ cp "$BUILD_DIR/mcore/m-reintentar-drivers" "$ROOTFS_DIR/usr/bin/"
 chmod +x "$ROOTFS_DIR/usr/bin/m-reintentar-drivers"
 cp "$BUILD_DIR/mcore/m-discos-permisos" "$ROOTFS_DIR/usr/bin/"
 chmod +x "$ROOTFS_DIR/usr/bin/m-discos-permisos"
+# La configuración de iwd. Sin EnableNetworkConfiguration el wifi se asocia a
+# la red y se queda SIN DIRECCIÓN IP, porque nadie se la pide: el servicio de
+# red de MIKE OS no toca las interfaces inalámbricas a propósito (dos clientes
+# DHCP sobre la misma tarjeta se pelean por la misma concesión).
+if [ -d "$BUILD_DIR/../build/etc-tree/etc/iwd" ] || [ -d "$PROJECT_ROOT/build/etc-tree/etc/iwd" ]; then
+    mkdir -p "$ROOTFS_DIR/etc/iwd" "$ROOTFS_DIR/var/lib/iwd"
+    cp -a "$PROJECT_ROOT/build/etc-tree/etc/iwd/." "$ROOTFS_DIR/etc/iwd/"
+    chmod 700 "$ROOTFS_DIR/var/lib/iwd"
+fi
+
+cp "$BUILD_DIR/mcore/m-hardware" "$ROOTFS_DIR/usr/bin/"
+chmod +x "$ROOTFS_DIR/usr/bin/m-hardware"
+cp "$BUILD_DIR/mcore/resolvconf" "$ROOTFS_DIR/usr/bin/"
+chmod +x "$ROOTFS_DIR/usr/bin/resolvconf"
+ln -sf ../bin/resolvconf "$ROOTFS_DIR/usr/sbin/resolvconf"
+cp "$BUILD_DIR/desktop/m-salir-sesion" "$ROOTFS_DIR/usr/bin/"
+chmod +x "$ROOTFS_DIR/usr/bin/m-salir-sesion"
+
+# --- El tema de cursor -------------------------------------------------------
+#
+# La imagen no traía NINGUNO: /usr/share/icons ni existía, así que cada
+# aplicación usaba el cursor que le diera la gana. Se genera a partir de
+# Adwaita invirtiéndole el color, que conserva las 63 formas y sus puntos de
+# agarre. Ver build/cursor/generar-cursor.py.
+if [ -d /usr/share/icons/Adwaita/cursors ]; then
+    python3 "$PROJECT_ROOT/build/cursor/generar-cursor.py" \
+        /usr/share/icons/Adwaita \
+        "$ROOTFS_DIR/usr/share/icons/MikeOS-Cursor" || true
+    # "default" es el nombre que buscan XWayland y muchas aplicaciones cuando
+    # no se les dice otra cosa.
+    mkdir -p "$ROOTFS_DIR/usr/share/icons/default"
+    printf '[Icon Theme]\nName=Default\nComment=Cursor por defecto de MIKE OS\nInherits=MikeOS-Cursor\n' \
+        > "$ROOTFS_DIR/usr/share/icons/default/index.theme"
+else
+    echo "Aviso: sin Adwaita en el equipo de construcción, la imagen saldrá sin cursor."
+fi
 
 # Apagar y reiniciar.
 #
@@ -1537,6 +1600,24 @@ install_etc etc/runit/ctrlaltdel 755
 # ------------------------------------------------------------------------------
 # 8. Empaquetar Initramfs y Disco Persistente
 # ------------------------------------------------------------------------------
+# --- Índice de fuentes ---------------------------------------------------------
+#
+# Se genera AQUÍ, una vez, y viaja dentro de la imagen. Sin él, cada aplicación
+# recorre y analiza todas las fuentes al arrancar; y en el USB en vivo, con la
+# raíz montada de sólo lectura por debajo, ni siquiera puede guardar el
+# resultado, así que lo repite en cada ejecución. Ahí es donde se torcía el
+# texto de Firefox: las tablas de sustitución de fontconfig resolvían contra un
+# conjunto de fuentes que aún no estaba indexado.
+if command -v fc-cache >/dev/null 2>&1; then
+    echo "Generando el índice de fuentes..."
+    mkdir -p "$ROOTFS_DIR/var/cache/fontconfig"
+    FONTCONFIG_PATH="$ROOTFS_DIR/etc/fonts" \
+    FONTCONFIG_FILE="$ROOTFS_DIR/etc/fonts/fonts.conf" \
+        fc-cache -f -s -y "$ROOTFS_DIR" >/dev/null 2>&1 \
+        || fc-cache -f "$ROOTFS_DIR/usr/share/fonts" >/dev/null 2>&1 || true
+    echo "  -> $(find "$ROOTFS_DIR/var/cache/fontconfig" -type f 2>/dev/null | wc -l) archivos de índice."
+fi
+
 echo "=== [8/8] Generando imagen initramfs.cpio.gz y disco persistente mikeos.img ==="
 cd "$ROOTFS_DIR"
 # Orden estable (LC_ALL=C) y gzip -n (sin timestamp/nombre embebido) para que

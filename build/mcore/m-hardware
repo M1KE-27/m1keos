@@ -1,0 +1,197 @@
+#!/bin/sh
+# m-hardware - qué hay en este equipo y qué le falta a cada cosa.
+#
+# Por qué existe
+# --------------
+# Cuando algo no funciona, la pregunta siempre es la misma y nunca tenía
+# respuesta: ¿el dispositivo no está, no tiene driver, no tiene firmware, o lo
+# tiene todo y lo que falla es el servicio? Son cuatro averías distintas con
+# cuatro soluciones distintas, y desde fuera se ven exactamente igual: "no
+# funciona el wifi".
+#
+# Esto las separa. Recorre PCI y USB, y de cada dispositivo dice si tiene
+# driver, si pidió firmware y no lo encontró, y si el servicio que lo usa está
+# en pie.
+#
+#   m-hardware              el informe, para leerlo
+#   m-hardware --guardar    además lo deja en /var/log/mikeos-hardware.txt
+set -u
+
+PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
+export PATH
+
+VERDE='\033[32m'; ROJO='\033[31m'; AMAR='\033[33m'; GRIS='\033[90m'; FIN='\033[0m'
+[ -t 1 ] || { VERDE=''; ROJO=''; AMAR=''; GRIS=''; FIN=''; }
+
+titulo() { printf '\n%s\n' "$1"; printf '%s\n' "------------------------------------------------------------"; }
+
+# La clase PCI en palabras. Son los dos primeros dígitos del código.
+clase_pci() {
+    case "$1" in
+        0x01*) echo "almacenamiento" ;;
+        0x02*) echo "red" ;;
+        0x03*) echo "gráfica" ;;
+        0x04*) echo "sonido/vídeo" ;;
+        0x06*) echo "puente" ;;
+        0x0c03*) echo "USB" ;;
+        0x0c*) echo "bus serie" ;;
+        0x0d*) echo "inalámbrico" ;;
+        *) echo "otro" ;;
+    esac
+}
+
+# ¿Este dispositivo pidió un firmware que no estaba? El kernel lo dice con
+# "Direct firmware load for X failed with error -2".
+firmware_que_falta() {
+    dmesg 2>/dev/null | awk -v d="$1" '
+        $0 ~ d && /Direct firmware load/ {
+            if (match($0, /for [^ ]+/)) {
+                print substr($0, RSTART + 4, RLENGTH - 4)
+                exit
+            }
+        }'
+}
+
+informe() {
+    echo "============================================================"
+    echo " MIKE OS — qué ve este equipo"
+    echo "============================================================"
+    printf '%s\n' "$(date 2>/dev/null || echo '')"
+    echo "Equipo:  $(cat /sys/devices/virtual/dmi/id/sys_vendor 2>/dev/null || echo '?') $(cat /sys/devices/virtual/dmi/id/product_name 2>/dev/null || echo '')"
+    echo "Kernel:  $(uname -r)"
+    echo "Sistema: $(grep -m1 '^VERSION=' /etc/os-release 2>/dev/null | cut -d'"' -f2 || echo '?')"
+
+    titulo "Dispositivos PCI"
+    for _d in /sys/bus/pci/devices/*; do
+        [ -d "$_d" ] || continue
+        _id="$(basename "$_d")"
+        _cl="$(cat "$_d/class" 2>/dev/null || echo 0)"
+        case "$(clase_pci "$_cl")" in
+            puente|otro) continue ;;
+        esac
+        _drv="$(basename "$(readlink -f "$_d/driver" 2>/dev/null)" 2>/dev/null)"
+        _ven="$(cat "$_d/vendor" 2>/dev/null)"
+        _dev="$(cat "$_d/device" 2>/dev/null)"
+        _fw="$(firmware_que_falta "$_id")"
+        printf '  %-13s %-15s %s:%s\n' "$_id" "$(clase_pci "$_cl")" "$_ven" "$_dev"
+        if [ -z "$_drv" ] || [ "$_drv" = "." ]; then
+            if [ -n "$_fw" ]; then
+                printf "      ${ROJO}sin driver${FIN} — le falta el firmware ${AMAR}%s${FIN}\n" "$_fw"
+            else
+                printf "      ${ROJO}sin driver${FIN} — este kernel no lo reconoce\n"
+            fi
+        else
+            if [ -n "$_fw" ]; then
+                printf "      driver ${VERDE}%s${FIN}, pero le faltó el firmware ${AMAR}%s${FIN}\n" "$_drv" "$_fw"
+            else
+                printf "      driver ${VERDE}%s${FIN}\n" "$_drv"
+            fi
+        fi
+    done
+
+    titulo "Dispositivos USB"
+    for _d in /sys/bus/usb/devices/*:*; do
+        [ -d "$_d" ] || continue
+        _id="$(basename "$_d")"
+        _drv="$(basename "$(readlink -f "$_d/driver" 2>/dev/null)" 2>/dev/null)"
+        _padre="$(dirname "$_d")/$(echo "$_id" | cut -d: -f1)"
+        _nom="$(cat "$_padre/product" 2>/dev/null || echo '')"
+        [ -n "$_nom" ] || _nom="$(cat "$_padre/idVendor" 2>/dev/null):$(cat "$_padre/idProduct" 2>/dev/null)"
+        _fw="$(firmware_que_falta "$_id")"
+        printf '  %-16s %s\n' "$_id" "$_nom"
+        if [ -z "$_drv" ] || [ "$_drv" = "." ]; then
+            if [ -n "$_fw" ]; then
+                printf "      ${ROJO}sin driver${FIN} — le falta el firmware ${AMAR}%s${FIN}\n" "$_fw"
+            else
+                printf "      ${GRIS}sin driver (puede ser normal: los concentradores no llevan)${FIN}\n"
+            fi
+        else
+            printf "      driver ${VERDE}%s${FIN}%s\n" "$_drv" \
+                "$([ -n "$_fw" ] && printf ", pero le faltó %s" "$_fw")"
+        fi
+    done
+
+    titulo "Red"
+    _hay_red=0
+    for _n in /sys/class/net/*; do
+        [ -e "$_n" ] || continue
+        _if="$(basename "$_n")"
+        [ "$_if" = lo ] && continue
+        _hay_red=1
+        _estado="$(cat "$_n/operstate" 2>/dev/null || echo '?')"
+        _cable="$(cat "$_n/carrier" 2>/dev/null || echo 0)"
+        _ip="$(ip -o -4 addr show "$_if" 2>/dev/null | awk '{print $4; exit}')"
+        _tipo="cable"
+        { [ -d "$_n/wireless" ] || [ -e "$_n/phy80211" ]; } && _tipo="wifi"
+        printf '  %-12s %-6s estado=%-6s cable=%s ip=%s\n' \
+            "$_if" "$_tipo" "$_estado" "$_cable" "${_ip:-ninguna}"
+    done
+    [ "$_hay_red" = "0" ] && printf "  ${ROJO}No hay ninguna interfaz de red.${FIN}\n"
+    printf '  ruta por defecto: %s\n' "$(ip route 2>/dev/null | awk '/^default/{print $3; exit}' || echo 'ninguna')"
+    printf '  servidores DNS:   %s\n' "$(awk '/^nameserver/{printf "%s ", $2}' /etc/resolv.conf 2>/dev/null || echo 'ninguno')"
+
+    titulo "Sonido"
+    if [ -d /dev/snd ] && [ -n "$(ls -A /dev/snd 2>/dev/null)" ]; then
+        awk '/^[[:space:]]*[0-9]+[[:space:]]*\[/ { print "  " $0 }' /proc/asound/cards 2>/dev/null
+        printf '  permisos de /dev/snd: %s\n' "$(ls -ld /dev/snd/controlC0 2>/dev/null | awk '{print $1" "$3":"$4}' || echo '?')"
+        if command -v wpctl >/dev/null 2>&1; then
+            XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}" \
+                wpctl status 2>/dev/null | sed -n '/Sinks:/,+3p' | sed 's/^/  /' \
+                || printf "  ${AMAR}PipeWire no contesta${FIN}\n"
+        fi
+    else
+        printf "  ${ROJO}No hay ninguna tarjeta de sonido en /dev/snd.${FIN}\n"
+    fi
+
+    titulo "Pantalla"
+    for _c in /sys/class/drm/card[0-9]*; do
+        [ -d "$_c" ] || continue
+        case "$(basename "$_c")" in *-*) continue ;; esac
+        _dev="$(basename "$(readlink -f "$_c/device" 2>/dev/null)" 2>/dev/null)"
+        _drv="$(basename "$(readlink -f "$_c/device/driver" 2>/dev/null)" 2>/dev/null)"
+        printf '  %-8s %s (driver %s)\n' "$(basename "$_c")" "$_dev" "${_drv:-ninguno}"
+    done
+    for _m in /sys/class/drm/card*-*/modes; do
+        [ -r "$_m" ] || continue
+        [ "$(cat "$(dirname "$_m")/status" 2>/dev/null)" = "connected" ] || continue
+        printf '  %-20s %s\n' "$(basename "$(dirname "$_m")")" "$(head -1 "$_m" 2>/dev/null)"
+    done
+    printf '  brillo: %s\n' "$(ls /sys/class/backlight/ 2>/dev/null | tr '\n' ' ' || echo 'no se puede controlar')"
+
+    titulo "Servicios"
+    for _s in /var/service/*; do
+        [ -d "$_s" ] || continue
+        _n="$(basename "$_s")"
+        _e="$(sv status "$_s" 2>/dev/null | awk '{print $1}' | tr -d ':')"
+        case "${_e:-}" in
+            run) printf "  %-14s ${VERDE}en marcha${FIN}\n" "$_n" ;;
+            down) printf "  %-14s ${ROJO}parado${FIN}\n" "$_n" ;;
+            *) printf "  %-14s ${AMAR}%s${FIN}\n" "$_n" "${_e:-desconocido}" ;;
+        esac
+    done
+
+    titulo "Firmware que el kernel pidió y no encontró"
+    _faltan="$(dmesg 2>/dev/null | grep -o "Direct firmware load for [^ ]*" | sed 's/.*for //' | sort -u)"
+    if [ -n "$_faltan" ]; then
+        printf '%s\n' "$_faltan" | sed 's/^/  /'
+        echo ""
+        echo "  Si algo de esto es de un dispositivo que sí usas, prueba:"
+        echo "    mpm install linux-firmware"
+    else
+        printf "  ${VERDE}Ninguno.${FIN}\n"
+    fi
+    echo ""
+}
+
+if [ "${1:-}" = "--guardar" ]; then
+    _salida=/var/log/mikeos-hardware.txt
+    if informe > "$_salida" 2>/dev/null; then
+        echo "Informe guardado en $_salida"
+    else
+        _salida="${TMPDIR:-/tmp}/mikeos-hardware.txt"
+        informe > "$_salida" 2>/dev/null
+        echo "Informe guardado en $_salida"
+    fi
+else
+    informe
+fi

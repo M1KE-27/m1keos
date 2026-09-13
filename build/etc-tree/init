@@ -2,7 +2,18 @@
 # MIKE OS - PID 1 Universal Entrypoint
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
+# Cada etapa del arranque, dicha en voz alta.
+#
+# "Al elegir «Probar MIKE OS» aparece únicamente «Cargando MIKE OS»": entre el
+# menú y el escritorio hay medio minuto en el que el sistema está buscando el
+# medio, montándolo y arrancando servicios, y no se decía nada de eso. Un
+# arranque callado y uno colgado se ven igual.
 log() { echo "[init] $*"; }
+
+etapa() {
+    echo ""
+    echo "  ==> $*"
+}
 
 mount_once() {
     # mountpoint no siempre existe en initramfs mínimos; el segundo chequeo
@@ -247,6 +258,7 @@ montar_en_vivo() {
     # pendrive, y rendirse pronto es rendirse antes de tiempo. Se avisa por
     # pantalla mientras tanto: una espera con explicación no es una pantalla
     # negra.
+    etapa "Buscando el sistema en los discos conectados"
     _intentos=30
     _i=0
     while [ "$_i" -lt "$_intentos" ]; do
@@ -336,11 +348,13 @@ montar_en_vivo() {
         return 1
     fi
 
+    etapa "Abriendo el sistema comprimido"
     mount -t squashfs -o ro,loop /mnt/medio/mikeos/sistema.squashfs /mnt/sistema 2>/dev/null \
         || { log "No se pudo montar el sistema comprimido"; return 1; }
 
     # Los cambios en memoria. El 50 % es un tope, no una reserva: tmpfs sólo
     # ocupa lo que se escriba de verdad.
+    etapa "Preparando la capa de escritura en memoria"
     mount -t tmpfs -o size=50%,mode=0755 tmpfs /mnt/cambios 2>/dev/null || return 1
     mkdir -p /mnt/cambios/arriba /mnt/cambios/trabajo
 

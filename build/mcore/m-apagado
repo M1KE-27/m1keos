@@ -18,27 +18,48 @@
 # Lo mismo con poweroff (SIGUSR2) y halt (SIGUSR1). Y afectaba también al botón
 # "Reiniciar ahora" del instalador, que llamaba a "m-sudo reboot".
 #
-# La orden correcta con runit es "runit-init", que estaba instalada en la imagen
-# y no la llamaba nadie: crea /etc/runit/stopit y manda SIGCONT al proceso 1,
-# que es la señal que runit SÍ escucha. A partir de ahí corre la etapa 3
-# (/etc/runit/3), que para los servicios, sincroniza y desmonta, y sólo después
-# se reinicia. O sea: un reinicio limpio, no un corte de corriente.
+# La orden correcta con runit sería "runit-init", pero NO se usa, y esto es
+# importante: en el USB en vivo daba "Input/output error" y el equipo no se
+# apagaba de ninguna manera.
 #
-# "reboot -f" sí funcionaba, pero porque llama al syscall directamente saltándose
-# todo eso. Con la raíz en btrfs, apagar así deja el sistema de archivos a medias.
+# El binario está perfectamente (776 KB de ELF estático válido; lo he
+# comprobado hasta dentro del squashfs de la ISO). Lo que falla es LEERLO. En el
+# USB en vivo ese archivo vive en un squashfs, dentro de un archivo, dentro del
+# pendrive, y sólo se usa al apagar: es la primera vez que alguien lo lee, y
+# ocurre justo en el peor momento. Si además un intento anterior llegó a
+# ejecutar la etapa 3 -- que hace "umount -a -r" y desmonta el medio del que
+# cuelga todo -- la capa de abajo ya está muerta: lo que estaba en memoria sigue
+# funcionando (por eso m-sudo y bash llegan a imprimir el error) y lo que no se
+# haya leído nunca da EIO.
+#
+# Depender de leer 776 KB del USB para poder apagar es frágil por diseño. Y lo
+# que hace runit-init son tres líneas, que están aquí abajo: crear dos archivos
+# y mandar una señal. Ninguna lectura, ningún binario nuevo.
 set -u
 
 PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 export PATH
 
 QUE="$(basename "$0")"
-case "${1:-}" in
-    -h|--help) echo "Uso: $QUE            (también: reboot, poweroff, halt)"; exit 0 ;;
-esac
+
+# -f fuerza: se va directo al reinicio del kernel, sin parar servicios ni
+# desmontar. Lo usan Ctrl+Alt+Supr y los modos de prueba, y hasta ahora esta
+# orden lo IGNORABA: como /usr/bin va antes que /sbin en el PATH, el
+# "reboot -f" de toda la vida acababa aquí y se convertía en un apagado limpio
+# que en la etapa 1 no hace nada. O sea que rompí el Ctrl+Alt+Supr sin querer.
+FORZAR=0
+for _a in "$@"; do
+    case "$_a" in
+        -f|--force) FORZAR=1 ;;
+        -h|--help)
+            echo "Uso: $QUE [-f]     (también: reboot, poweroff, halt, shutdown -r)"
+            exit 0 ;;
+    esac
+done
 
 case "$QUE" in
-    reboot|m-reiniciar)        ACCION=6 ; VERBO="Reiniciando" ;;
-    poweroff|halt|m-apagar)    ACCION=0 ; VERBO="Apagando" ;;
+    reboot|m-reiniciar)     ACCION=6 ; VERBO="Reiniciando" ;;
+    poweroff|halt|m-apagar) ACCION=0 ; VERBO="Apagando" ;;
     shutdown)
         # "shutdown -r" reinicia; cualquier otra cosa, apaga. No se admiten
         # retrasos: nadie los usa en un portátil y fingir que funcionan sería
@@ -48,24 +69,77 @@ case "$QUE" in
             [ "$_a" = "-r" ] && { ACCION=6; VERBO="Reiniciando"; }
         done
         ;;
-    *)                         ACCION=0 ; VERBO="Apagando" ;;
+    *)                      ACCION=0 ; VERBO="Apagando" ;;
 esac
+
+# El camino de emergencia: la llamada al kernel, directa. Se usa con -f y como
+# último recurso si el apagado limpio no llega a ninguna parte.
+#
+# Se invoca BusyBox por su ruta completa a propósito: llamar a "reboot" aquí
+# volvería a entrar en este mismo guion, en bucle.
+forzar_ya() {
+    sync
+    if [ "$ACCION" = "6" ]; then
+        /bin/busybox reboot -f 2>/dev/null || /sbin/reboot -f 2>/dev/null
+    else
+        /bin/busybox poweroff -f 2>/dev/null || /sbin/poweroff -f 2>/dev/null
+    fi
+}
+
+if [ "$FORZAR" = "1" ]; then
+    forzar_ya
+    exit 0
+fi
 
 # Un apagado a medias con la raíz en btrfs puede costar el sistema de archivos,
 # así que lo que ya esté escrito, que llegue al disco antes de nada.
 sync
-
 echo "$VERBO MIKE OS..."
 
+# Lo que hacía runit-init, aquí y sin leer nada del disco.
+#
+# runit (el proceso 1) sólo actúa cuando recibe SIGCONT Y encuentra
+# /etc/runit/stopit con el bit de ejecución del dueño puesto. Si además existe
+# /etc/runit/reboot con ese bit, reinicia; si no, apaga. Está en
+# src/runit.c:242 y :306-330. Son dos archivos y una señal.
+avisar_al_proceso_1() {
+    mkdir -p /etc/runit 2>/dev/null || return 1
+    : > /etc/runit/stopit 2>/dev/null || return 1
+    chmod 0100 /etc/runit/stopit 2>/dev/null || return 1
+    if [ "$ACCION" = "6" ]; then
+        : > /etc/runit/reboot 2>/dev/null || return 1
+        chmod 0100 /etc/runit/reboot 2>/dev/null || return 1
+    else
+        chmod 0000 /etc/runit/reboot 2>/dev/null || true
+    fi
+    kill -CONT 1 2>/dev/null || return 1
+    return 0
+}
+
 if [ "$(id -u)" = "0" ]; then
-    exec runit-init "$ACCION"
+    avisar_al_proceso_1 || forzar_ya
+else
+    # Sin ser root no se puede escribir en /etc/runit ni señalar al proceso 1.
+    if command -v m-sudo >/dev/null 2>&1; then
+        m-sudo "$0" "$@" &
+    else
+        echo "$QUE: hace falta ser root y no encuentro m-sudo." >&2
+        exit 1
+    fi
 fi
 
-# Sin ser root hace falta m-sudo. Si no estuviera, se dice: quedarse callado
-# aquí es exactamente el fallo que esto viene a arreglar.
-if command -v m-sudo >/dev/null 2>&1; then
-    exec m-sudo runit-init "$ACCION"
+# Red de seguridad. Si a los 12 segundos seguimos aquí, el apagado limpio no ha
+# llegado a ninguna parte y es mejor un apagado brusco que un equipo que no se
+# apaga: al menos el "sync" de arriba ya bajó lo escrito al disco.
+_i=0
+while [ "$_i" -lt 12 ]; do
+    sleep 1
+    _i=$((_i + 1))
+done
+echo "$QUE: el apagado limpio no responde; se fuerza." >&2
+if [ "$(id -u)" = "0" ]; then
+    forzar_ya
+elif command -v m-sudo >/dev/null 2>&1; then
+    m-sudo "$0" -f
 fi
-
-echo "$QUE: hace falta ser root y no encuentro m-sudo." >&2
-exit 1
+exit 0

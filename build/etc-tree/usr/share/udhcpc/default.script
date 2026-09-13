@@ -1,19 +1,53 @@
 #!/bin/sh
-[ -z "$1" ] && exit 1
+# Lo que hace udhcpc cuando consigue (o pierde) una dirección.
+#
+# Antes sólo atendía "deconfig", "renew" y "bound". Faltaban "leasefail" y
+# "nak", que son justo los casos en los que hay que DECIR algo: sin ellos, una
+# red que no da dirección se veía exactamente igual que una que sí, y no había
+# forma de saber en qué punto fallaba.
+# udhcpc pasa los datos de la concesión en variables de entorno ($interface,
+# $ip, $mask, $router, $dns): por eso no se asignan aquí.
+# shellcheck disable=SC2154
+[ -z "${1:-}" ] && exit 1
+
+RESOLV=/etc/resolv.conf
+
 case "$1" in
     deconfig)
-        ip addr flush dev "$interface"
+        ip addr flush dev "$interface" 2>/dev/null || true
         ;;
+
     renew|bound)
-        ip addr add "$ip/$mask" dev "$interface"
-        if [ -n "$router" ]; then
-            ip route add default via "$router" dev "$interface"
-        fi
-        if [ -n "$dns" ]; then
-            echo "# Generado por udhcpc para MIKE OS" > /etc/resolv.conf
-            for d in $dns; do
-                echo "nameserver $d" >> /etc/resolv.conf
+        # Se limpia antes de añadir: al renovar con una dirección distinta, la
+        # vieja se quedaba puesta y la interfaz acababa con dos.
+        ip addr flush dev "$interface" 2>/dev/null || true
+        ip addr add "$ip/$mask" dev "$interface" 2>/dev/null || true
+
+        if [ -n "${router:-}" ]; then
+            # Igual con la ruta por defecto: sin borrarla antes, "add" falla en
+            # silencio y se queda la de la red anterior.
+            ip route del default dev "$interface" 2>/dev/null || true
+            for _r in $router; do
+                ip route add default via "$_r" dev "$interface" 2>/dev/null && break
             done
         fi
+
+        if [ -n "${dns:-}" ]; then
+            {
+                echo "# Escrito por udhcpc para MIKE OS ($interface)"
+                for _d in $dns; do echo "nameserver $_d"; done
+            } > "$RESOLV" 2>/dev/null || true
+        fi
+        echo "[red] $interface: $ip (puerta ${router:-ninguna}, dns ${dns:-ninguno})"
+        ;;
+
+    leasefail)
+        echo "[red] $interface: nadie contesta al DHCP. ¿Hay servidor en esta red?"
+        ;;
+
+    nak)
+        echo "[red] $interface: el servidor DHCP ha rechazado la dirección."
         ;;
 esac
+
+exit 0

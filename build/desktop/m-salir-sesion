@@ -1,0 +1,45 @@
+#!/bin/sh
+# m-salir-sesion - cerrar la sesión gráfica, pero preguntando antes.
+#
+# Antes esto era "exit" directo en SUPER+M, ALT+M y SUPER+F12: cerraba
+# Hyprland entero -- todas las ventanas, todo el trabajo sin guardar -- sin
+# preguntar nada. SUPER+M está una tecla al lado de SUPER+Q, que cierra UNA
+# ventana, y ALT+M es una combinación que usan las propias aplicaciones. Es
+# decir: se perdía la sesión por accidente.
+#
+# Ahora queda un solo atajo, difícil de pulsar sin querer, y con una pregunta
+# delante.
+set -u
+
+PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
+export PATH
+
+# Cuántas ventanas hay abiertas, para poder decir qué se va a perder.
+VENTANAS="$(hyprctl clients 2>/dev/null | grep -c '^Window ' || echo 0)"
+case "$VENTANAS" in ''|*[!0-9]*) VENTANAS=0 ;; esac
+
+if [ "$VENTANAS" -gt 0 ]; then
+    AVISO="Hay $VENTANAS ventana(s) abierta(s). Se cerrarán sin guardar."
+else
+    AVISO="No hay ninguna ventana abierta."
+fi
+
+# Se pregunta con el mismo diálogo que usa el resto del escritorio si está;
+# si no, se cancela. Cerrar la sesión sin preguntar es justo lo que se viene a
+# evitar: ante la duda, NO se cierra.
+if command -v m-preguntar >/dev/null 2>&1; then
+    m-preguntar "¿Cerrar la sesión?" "$AVISO" || exit 0
+elif command -v fuzzel >/dev/null 2>&1; then
+    RESPUESTA="$(printf 'No, seguir aquí\nSí, cerrar la sesión\n' \
+        | fuzzel --dmenu --lines=2 --prompt="¿Cerrar la sesión? $AVISO  " 2>/dev/null)"
+    case "$RESPUESTA" in
+        "Sí, cerrar la sesión") : ;;
+        *) exit 0 ;;
+    esac
+else
+    echo "m-salir-sesion: no hay con qué preguntar; no se cierra nada." >&2
+    echo "  Para salir a propósito: hyprctl dispatch exit" >&2
+    exit 1
+fi
+
+hyprctl dispatch exit

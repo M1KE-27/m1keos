@@ -379,7 +379,8 @@ for _gtk in gtk-3.0 gtk-4.0; do
 gtk-application-prefer-dark-theme=1
 gtk-theme-name=Adwaita-dark
 gtk-icon-theme-name=Adwaita
-gtk-font-name=Cantarell 11
+gtk-font-name=Adwaita Sans 11
+gtk-cursor-theme-name=MikeOS-Cursor
 gtk-cursor-theme-size=24
 INI
     # GTK 4 ignora gtk-theme-name para Adwaita, pero sí respeta estos

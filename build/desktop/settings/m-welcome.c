@@ -120,12 +120,58 @@ static GtkWidget *build_section(const Section *sec) {
  * m-drivers lee los identificadores que publica el propio hardware en
  * /sys/bus/pci, así que dice la marca y el modelo reales en vez de adivinar.
  * Aquí sólo se enseña: nada se instala hasta que alguien pulsa el botón. */
+/* La etiqueta que dice qué falta por instalar, para poder rehacerla. */
+static GtkWidget *etiqueta_drivers = NULL;
+
+/* Qué falta por instalar, preguntándoselo a m-drivers. Devuelve texto nuevo
+ * (hay que liberarlo) o NULL si no falta nada. */
+static char *texto_drivers(void) {
+    FILE *p = popen("m-drivers 2>/dev/null", "r");
+    if (!p) return NULL;
+    char linea[512];
+    char *resultado = NULL;
+    while (fgets(linea, sizeof(linea), p)) {
+        linea[strcspn(linea, "\n")] = 0;
+        if (g_str_has_prefix(linea, "Recomendado:")) {
+            const char *resto = linea + 12;
+            while (*resto == ' ') resto++;
+            if (*resto) resultado = g_strdup_printf("Faltan por instalar: %s", resto);
+            break;
+        }
+    }
+    pclose(p);
+    return resultado;
+}
+
+/* Al terminar de instalar los controladores, volver a mirar qué falta.
+ *
+ * Sin esto la lista se quedaba como estaba: instalabas los controladores, la
+ * terminal decía que todo había ido bien, y la ventana de bienvenida seguía
+ * diciendo que faltaban los mismos de antes. Parecía que no había servido de
+ * nada. */
+static void drivers_terminados(GPid pid, gint estado, gpointer datos) {
+    (void)estado; (void)datos;
+    g_spawn_close_pid(pid);
+    if (!etiqueta_drivers || !GTK_IS_LABEL(etiqueta_drivers)) return;
+    char *txt = texto_drivers();
+    gtk_label_set_text(GTK_LABEL(etiqueta_drivers), txt ? txt : "");
+    gtk_widget_set_visible(etiqueta_drivers, txt && *txt);
+    g_free(txt);
+}
+
 static void on_instalar_drivers(GtkWidget *w, gpointer data) {
     (void)w; (void)data;
     /* En una terminal a propósito: instalar controladores descarga cientos
      * de megabytes y quien lo lanza tiene derecho a ver el progreso y los
      * errores, no una barra opaca. */
-    g_spawn_command_line_async("/usr/bin/m-terminal -e \"m-drivers --instalar\"", NULL);
+    char *argv[] = { (char *)"/usr/bin/m-terminal", (char *)"-e",
+                     (char *)"m-drivers", (char *)"--instalar", NULL };
+    GPid pid = 0;
+    if (g_spawn_async(NULL, argv, NULL,
+                      G_SPAWN_DO_NOT_REAP_CHILD | G_SPAWN_SEARCH_PATH,
+                      NULL, NULL, &pid, NULL)) {
+        g_child_watch_add(pid, drivers_terminados, NULL);
+    }
 }
 
 /* ¿Estamos arrancados desde el USB en vivo, o desde un disco ya instalado?
@@ -243,6 +289,10 @@ static GtkWidget *build_hardware(void) {
         char *txt = g_strdup_printf("Faltan por instalar:%s", recomendado->str);
         GtkWidget *rec = gtk_label_new(txt);
         g_free(txt);
+        /* Se guarda para poder rehacerla cuando termine la instalación: antes
+         * seguía diciendo que faltaban los mismos aunque ya estuvieran
+         * puestos. */
+        etiqueta_drivers = rec;
         gtk_widget_set_name(rec, "customizetext");
         gtk_widget_set_halign(rec, GTK_ALIGN_START);
         gtk_label_set_line_wrap(GTK_LABEL(rec), TRUE);

@@ -10,7 +10,20 @@ echo ">> Deteniendo servicios supervisados..."
 for s in /var/service/*; do
     [ -d "$s" ] && sv down "$s" 2>/dev/null || true
 done
-echo ">> Unmounting filesystems..."
+echo ">> Desmontando sistemas de archivos..."
+# El medio del que cuelga el sistema en vivo se desmonta EL ÚLTIMO, y sólo
+# después de haber desmontado todo lo demás.
+#
+# "umount -a -r" a secas desmontaba también /mnt/medio, que es el ISO del que
+# cuelga el bucle que sostiene el squashfs que ES la raíz. Si el apagado se
+# quedaba a medias después de eso, el equipo seguía en pie pero sin poder
+# ejecutar NADA que no estuviera ya en memoria: cada binario nuevo daba
+# "Input/output error". Así se quedó un portátil sin poder ni reiniciarse.
+sync
+for _m in $(awk '$2 ~ /^\/(home|var|tmp|boot|mnt\/cambios|mnt\/sistema)/ {print $2}' \
+            /proc/mounts 2>/dev/null | sort -r); do
+    umount "$_m" 2>/dev/null || umount -r "$_m" 2>/dev/null || true
+done
 umount -a -r 2>/dev/null
 sync
-echo ">> System halted."
+echo ">> Sistema detenido."

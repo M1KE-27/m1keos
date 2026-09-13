@@ -16,6 +16,11 @@ export XDG_STATE_HOME="${HOME:-/root}/.local/state"
 export XDG_CACHE_HOME="${HOME:-/root}/.cache"
 export XDG_DATA_HOME="${HOME:-/root}/.local/share"
 export SEATD_SOCK="/run/seatd.sock"
+
+# El idioma de la sesión gráfica. Sin esto todo corre en locale "C" (no UTF-8)
+# y el texto con acentos se ve mal en GTK, Qt, Firefox y la barra. glibc 2.44
+# trae C.UTF-8 integrado: no hay que instalar datos de idioma.
+[ -n "${LANG:-}" ] || export LANG=C.UTF-8
 mkdir -p "$XDG_RUNTIME_DIR" "$XDG_STATE_HOME" "$XDG_CACHE_HOME" "$XDG_DATA_HOME" /run /var/log
 chmod 700 "$XDG_RUNTIME_DIR"
 
@@ -249,7 +254,14 @@ export HYPRLAND_NO_RT=1
 export HYPRLAND_NO_SD_NOTIFY=1
 export QT_QPA_PLATFORM="wayland;xcb"
 export GDK_BACKEND="wayland,x11,*"
-export XCURSOR_THEME=""
+# El tema del cursor.
+#
+# Aquí ponía XCURSOR_THEME="" -- la cadena VACÍA, que es peor que no ponerlo:
+# pisa cualquier valor por defecto con un nombre de tema que no existe. Y
+# además la imagen no traía NI UN tema de cursor (/usr/share/icons ni siquiera
+# existía), así que no había nada que elegir.
+export XCURSOR_THEME="${XCURSOR_THEME:-MikeOS-Cursor}"
+export XCURSOR_SIZE="${XCURSOR_SIZE:-24}"
 # Respetar la selección realizada desde el instalador/live USB.
 if [ -f /etc/mikeos/system.conf ]; then
     . /etc/mikeos/system.conf

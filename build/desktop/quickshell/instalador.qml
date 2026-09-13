@@ -310,6 +310,40 @@ ShellRoot {
 
     // Instalación
     property string registro: ""
+
+    // Progreso por etapas de verdad.
+    //
+    // Antes sólo había una barra indeterminada. Es honesta -- copiar el sistema
+    // tarda lo que tarde el disco -- pero no dice NADA: una instalación de
+    // cuatro minutos y una colgada se ven exactamente igual.
+    //
+    // m-install ya anuncia por dónde va con sus propias líneas ("Formateando",
+    // "Copiando el sistema"...). Aquí se leen y se convierten en "etapa N de
+    // M", que es información real sin inventarse un porcentaje.
+    readonly property var etapasInstalacion: [
+        { clave: "Creando la tabla de particiones", nombre: "Particionando el disco" },
+        { clave: "Preparando",                      nombre: "Preparando la partición" },
+        { clave: "Formateando",                     nombre: "Formateando" },
+        { clave: "Copiando el sistema",             nombre: "Copiando el sistema" },
+        { clave: "Preparando el arranque",          nombre: "Instalando el arranque" },
+        { clave: "Dejando la configuración",        nombre: "Ajustando la configuración" },
+        { clave: "Terminando de escribir",          nombre: "Terminando de escribir en el disco" }
+    ]
+    property int etapaActual: -1
+
+    function mirarEtapa(linea) {
+        for (var i = etapasInstalacion.length - 1; i >= 0; i--) {
+            if (linea.indexOf(etapasInstalacion[i].clave) !== -1) {
+                if (i > etapaActual) etapaActual = i
+                return
+            }
+        }
+    }
+
+    readonly property string etapaTexto: etapaActual < 0
+        ? "Preparando..."
+        : "Etapa " + (etapaActual + 1) + " de " + etapasInstalacion.length
+          + ": " + etapasInstalacion[etapaActual].nombre
     property bool instalando: false
     property bool termino: false
     property bool fallo: false
@@ -485,12 +519,16 @@ ShellRoot {
         stdout: SplitParser {
             onRead: (linea) => {
                 // Se limpian los colores de terminal: aquí no pintan nada.
-                raiz.registro += linea.replace(/\x1b\[[0-9;]*m/g, "") + "\n"
+                var _l = linea.replace(/\x1b\[[0-9;]*m/g, "")
+                raiz.registro += _l + "\n"
+                raiz.mirarEtapa(_l)
             }
         }
         stderr: SplitParser {
             onRead: (linea) => {
-                raiz.registro += linea.replace(/\x1b\[[0-9;]*m/g, "") + "\n"
+                var _l = linea.replace(/\x1b\[[0-9;]*m/g, "")
+                raiz.registro += _l + "\n"
+                raiz.mirarEtapa(_l)
             }
         }
         onExited: (codigo) => {
@@ -653,6 +691,7 @@ ShellRoot {
 
     function lanzarInstalacion() {
         registro = ""
+        etapaActual = -1
         fallo = false
         termino = false
         instalando = true
@@ -1916,6 +1955,14 @@ ShellRoot {
                             text: raiz.t("instalandoTexto")
                             color: Paleta.textoTenue
                             font.pixelSize: 14
+                        }
+                        // Por dónde va. Sale de lo que anuncia m-install, no de
+                        // un porcentaje inventado.
+                        Text {
+                            text: raiz.etapaTexto
+                            color: raiz.acento
+                            font.pixelSize: 15
+                            font.bold: true
                         }
 
                         // Barra indeterminada: no se sabe cuánto falta -- copiar

@@ -8,6 +8,21 @@ export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 # órdenes de login y basta con que falte una vez para que la consola parezca
 # rota.
 [ -n "${TERM:-}" ] || export TERM=linux
+
+# El idioma del sistema, y por qué no ponerlo rompía el texto en todas partes.
+#
+# No se exportaba LANG en NINGÚN sitio, y la imagen no trae datos de locale. Con
+# eso, glibc se queda en el locale "C", que NO es UTF-8: cada programa que pasa
+# el texto por mbstowcs o iconv interpreta mal cualquier carácter que no sea
+# ASCII. De ahí las letras raras en Firefox, los acentos rotos y las comillas
+# «» partidas -- en un sistema cuya interfaz está en español entero.
+#
+# glibc 2.35 y posteriores traen "C.UTF-8" INTEGRADO en la biblioteca: no hace
+# falta instalar ni generar nada, sólo pedirlo. Aquí hay 2.44.
+#
+# Si algún día se instalan los datos de es_ES, basta con cambiar esta línea.
+[ -n "${LANG:-}" ] || export LANG=C.UTF-8
+[ -n "${LC_COLLATE:-}" ] || export LC_COLLATE=C
 export EDITOR=vi
 export PS1='\[\e[36m\]\w\[\e[0m\] \[\e[90m\]❯\[\e[0m\] '
 alias ff=m-info

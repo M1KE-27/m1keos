@@ -1,38 +1,150 @@
 #!/bin/sh
+# Red: todas las interfaces, todo el rato, sin que nadie escriba una orden.
+#
+# Lo que había antes y por qué no podía funcionar
+# ----------------------------------------------
+# 1. Leía la variable "IFACE" y el archivo de configuración define
+#    "INTERFACE". O sea que /etc/mikeos/network.conf se ignoraba ENTERO: poner
+#    ahí el nombre de tu adaptador no hacía absolutamente nada. Lo mismo con
+#    la clave DNS, que no la leía nadie.
+#
+# 2. Cogía la PRIMERA interfaz que no fuera "lo" y se quedaba con ella para
+#    siempre. Si la primera era el wifi (o cualquier otra), el cable no se
+#    configuraba jamás.
+#
+# 3. Terminaba en "exec udhcpc -f", que no termina nunca. Como el proceso no
+#    moría, runit no lo reiniciaba, así que la lista de interfaces no se volvía
+#    a mirar en toda la sesión. Un adaptador USB que se enchufa después -- o que
+#    tarda dos segundos más en aparecer que el resto del arranque -- no existía
+#    para el sistema.
+#
+# 4. Sólo configuraba UNA interfaz. Nunca dos a la vez.
+#
+# Aquí no hay udev, así que nadie avisa de que ha aparecido una tarjeta nueva:
+# hay que mirar. Este servicio mira cada pocos segundos, levanta todo lo que
+# tenga cable conectado y lanza un cliente DHCP por interfaz, sin duplicarlos.
 exec 2>&1
+set -u
+
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+
+INTERVALO=4
+GUION_DHCP=/usr/share/udhcpc/default.script
+mkdir -p /run/mikeos-red
+
+# Configuración del usuario. Se admiten los DOS nombres: "INTERFACE" es el que
+# documenta el archivo e "IFACE" el que leía el código viejo. Que el archivo y
+# el código no se entendieran es justo el fallo que esto arregla, así que aquí
+# se aceptan los dos y no se vuelve a romper por un nombre.
+MODE=dhcp
+INTERFACE=auto
+IFACE=""
+STATIC_IP=""
+GATEWAY=""
+DNS=""
+[ -f /etc/mikeos/network.conf ] && . /etc/mikeos/network.conf
+[ -n "${IFACE:-}" ] && INTERFACE="$IFACE"
+
 ip link set lo up 2>/dev/null || true
-IFACE="auto"
 
-if [ -f /etc/mikeos/network.conf ]; then
-    . /etc/mikeos/network.conf
-fi
+# ¿Es una interfaz inalámbrica? Ésas las lleva iwd, que hace su propio DHCP:
+# meter aquí un segundo cliente sobre la misma interfaz es pelearse consigo
+# mismo por la misma concesión.
+es_wifi() {
+    [ -d "/sys/class/net/$1/wireless" ] || [ -e "/sys/class/net/$1/phy80211" ]
+}
 
-# Las interfaces modernas no tienen por qué llamarse eth0. Preferimos la
-# interfaz configurada y, si es "auto", la primera que no sea loopback.
-if [ "${IFACE:-auto}" = "auto" ] || [ -z "${IFACE:-}" ]; then
-    IFACE=""
-    for candidate in /sys/class/net/*; do
-        [ -e "$candidate" ] || continue
-        name="$(basename "$candidate")"
-        [ "$name" = lo ] && continue
-        IFACE="$name"
-        break
+# Las que hay ahora mismo, descubiertas cada vez. Nada de nombres fijos.
+interfaces() {
+    for _d in /sys/class/net/*; do
+        [ -e "$_d" ] || continue
+        _n="$(basename "$_d")"
+        [ "$_n" = lo ] && continue
+        case "$_n" in bond*|dummy*|sit*|tunl*|ip6tnl*|veth*|docker*|br-*) continue ;; esac
+        es_wifi "$_n" && continue
+        # Si el usuario ha elegido una concreta, sólo esa.
+        if [ "$INTERFACE" != "auto" ] && [ -n "$INTERFACE" ] && [ "$_n" != "$INTERFACE" ]; then
+            continue
+        fi
+        echo "$_n"
     done
-fi
+}
 
-if [ -z "$IFACE" ] || [ ! -e "/sys/class/net/$IFACE" ]; then
-    echo "[network] No se detectó adaptador Ethernet; esperando hardware..."
-    exec sleep 30
-fi
+# ¿Hay un cliente DHCP vivo para esta interfaz? Se comprueba por el archivo de
+# pid Y por que el proceso exista de verdad: un pid huérfano tras un apagado
+# brusco bloquearía la interfaz para siempre.
+dhcp_vivo() {
+    _pidf="/run/mikeos-red/$1.pid"
+    [ -f "$_pidf" ] || return 1
+    _pid="$(cat "$_pidf" 2>/dev/null)"
+    case "${_pid:-}" in ''|*[!0-9]*) return 1 ;; esac
+    [ -d "/proc/$_pid" ] || return 1
+    return 0
+}
 
-ip link set "$IFACE" up 2>/dev/null || true
-
-if [ "${MODE:-dhcp}" = "dhcp" ]; then
-    exec udhcpc -f -i "$IFACE" -s /usr/share/udhcpc/default.script
-else
-    if ip addr add "$STATIC_IP" dev "$IFACE" 2>/dev/null && ip route add default via "$GATEWAY" dev "$IFACE" 2>/dev/null; then
-        exec sleep 86400
+configurar_estatica() {
+    _if="$1"
+    [ -n "$STATIC_IP" ] || return 1
+    ip addr add "$STATIC_IP" dev "$_if" 2>/dev/null || true
+    [ -n "$GATEWAY" ] && ip route add default via "$GATEWAY" dev "$_if" 2>/dev/null || true
+    # La clave DNS del archivo de configuración, que antes no la leía nadie.
+    if [ -n "$DNS" ]; then
+        {
+            echo "# Escrito por el servicio de red de MIKE OS (configuración estática)"
+            for _d in $DNS; do echo "nameserver $_d"; done
+        } > /etc/resolv.conf 2>/dev/null || true
     fi
-    echo "[network] Configuración estática falló para $IFACE; reintentando en 10s..."
-    exec sleep 10
-fi
+    return 0
+}
+
+echo "[red] Vigilando interfaces cada ${INTERVALO}s (sin udev, hay que mirar)."
+ANUNCIADAS=""
+
+while :; do
+    _hay=0
+    for _if in $(interfaces); do
+        _hay=1
+
+        # Levantarla siempre: sin esto no hay ni enlace que detectar.
+        [ "$(cat "/sys/class/net/$_if/operstate" 2>/dev/null)" = "down" ] &&
+            ip link set "$_if" up 2>/dev/null || true
+        ip link set "$_if" up 2>/dev/null || true
+
+        case " $ANUNCIADAS " in
+            *" $_if "*) : ;;
+            *) echo "[red] $_if detectada."; ANUNCIADAS="$ANUNCIADAS $_if" ;;
+        esac
+
+        # Sin cable enchufado no se pide dirección: gastaría tiempo de arranque
+        # en una interfaz que no lleva a ninguna parte.
+        _carrier="$(cat "/sys/class/net/$_if/carrier" 2>/dev/null || echo 0)"
+        if [ "$_carrier" != "1" ]; then
+            if dhcp_vivo "$_if"; then
+                echo "[red] $_if se ha quedado sin cable; se suelta la dirección."
+                kill "$(cat "/run/mikeos-red/$_if.pid")" 2>/dev/null || true
+                rm -f "/run/mikeos-red/$_if.pid"
+                ip addr flush dev "$_if" 2>/dev/null || true
+            fi
+            continue
+        fi
+
+        dhcp_vivo "$_if" && continue
+
+        if [ "${MODE:-dhcp}" = "dhcp" ]; then
+            echo "[red] $_if tiene cable: pidiendo dirección por DHCP."
+            udhcpc -i "$_if" -p "/run/mikeos-red/$_if.pid" -s "$GUION_DHCP" \
+                   -t 6 -T 3 -A 12 -b >/dev/null 2>&1 &
+            # -b deja el cliente en segundo plano y siguiendo; el archivo de pid
+            # es lo que evita lanzar un segundo cliente sobre la misma interfaz
+            # en la siguiente vuelta.
+        else
+            configurar_estatica "$_if" && echo "[red] $_if configurada a mano."
+        fi
+    done
+
+    [ "$_hay" = "0" ] && [ -z "$ANUNCIADAS" ] &&
+        echo "[red] Todavía no hay ninguna interfaz de cable; sigo mirando."
+
+    sleep "$INTERVALO"
+done

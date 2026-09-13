@@ -45,6 +45,8 @@ export PATH
 [ -d /lib/firmware ] || exit 0
 
 _reintentados=0
+
+# PCI: la wifi, el sonido, las controladoras.
 for _dev in /sys/bus/pci/devices/*; do
     [ -d "$_dev" ] || continue
     # Con driver ya puesto no hay nada que hacer.
@@ -60,6 +62,25 @@ for _dev in /sys/bus/pci/devices/*; do
     esac
 
     if printf '%s' "$_dir" > /sys/bus/pci/drivers_probe 2>/dev/null; then
+        _reintentados=$((_reintentados + 1))
+    fi
+done
+
+# USB: el Bluetooth, los adaptadores de red, los cascos.
+#
+# Esto faltaba, y dejaba fuera justo lo que más lo necesita. El Bluetooth de
+# Intel es un dispositivo USB: su firmware tampoco está en el initramfs, así
+# que falla igual que la wifi al arrancar... pero como aquí sólo se recorría el
+# bus PCI, no se reintentaba nunca y se quedaba muerto todo el arranque. Lo
+# mismo con un adaptador de red USB.
+#
+# En USB el reintento se hace por INTERFAZ (los ":" en el nombre), que es a lo
+# que se enganchan los drivers; el dispositivo entero no se sondea.
+for _dev in /sys/bus/usb/devices/*:*; do
+    [ -d "$_dev" ] || continue
+    [ -e "$_dev/driver" ] && continue
+    _dir="$(basename "$_dev")"
+    if printf '%s' "$_dir" > /sys/bus/usb/drivers_probe 2>/dev/null; then
         _reintentados=$((_reintentados + 1))
     fi
 done

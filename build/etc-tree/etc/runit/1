@@ -87,6 +87,16 @@ fi
 # m-discos-permisos.
 [ -x /usr/bin/m-discos-permisos ] && /usr/bin/m-discos-permisos
 
+# El informe de hardware, generado solo y en segundo plano.
+#
+# Así existe siempre, sin que nadie tenga que acordarse de pedirlo: cuando algo
+# no funciona, el archivo ya está escrito con lo que se detectó, qué driver
+# cogió cada cosa y qué firmware pidió el kernel sin encontrarlo. Se espera un
+# poco para que dé tiempo a los dispositivos lentos a aparecer.
+if [ -x /usr/bin/m-hardware ]; then
+    ( sleep 20; /usr/bin/m-hardware --guardar >/dev/null 2>&1 ) &
+fi
+
 echo ""
 echo "======================================================"
 echo "               Welcome to MIKE OS"

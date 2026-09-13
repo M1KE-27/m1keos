@@ -699,7 +699,10 @@ ShellRoot {
 
     function iconoBoton(id) {
         switch (id) {
-            case "captura": return "⛶"
+            // U+F030, la cámara de Nerd Fonts. Antes aquí había ⛶ (U+26F6),
+            // que NO lo cubre ninguna fuente del sistema: salía un cuadrado
+            // vacío en la barra.
+            case "captura": return "\uf030"
             case "teclado": return root.kbActual === "es" ? "ES" : "US"
         }
         return "?"
@@ -1151,15 +1154,21 @@ ShellRoot {
         }
     }
 
+    // Los apartados del Centro de Control.
+    //
+    // "Interfaz", "Servicios" y "Avanzado" ESTABAN AQUÍ y no tenían dentro ni
+    // un solo control: un título y una frase diciendo que llegarían más
+    // adelante. Tres de los nueve apartados del panel eran una promesa rota
+    // cada vez que alguien los pulsaba.
+    //
+    // Se quedan fuera hasta que tengan algo dentro. Un menú que no ofrece lo
+    // que no existe es más honesto -- y más corto -- que uno que sí.
     readonly property var secciones: [
         { id: "vistazo",    nombre: "Vistazo",     icono: "vistazo" },
         { id: "sistema",    nombre: "Sistema",     icono: "sistema" },
         { id: "barra",      nombre: "Barra",       icono: "barra" },
         { id: "escritorio", nombre: "Escritorio",  icono: "escritorio" },
-        { id: "interfaz",   nombre: "Interfaz",    icono: "interfaz" },
         { id: "bloqueo",    nombre: "Bloqueo",     icono: "bloqueo" },
-        { id: "servicios",  nombre: "Servicios",   icono: "servicios" },
-        { id: "avanzado",   nombre: "Avanzado",    icono: "avanzado" },
         { id: "acercade",   nombre: "Acerca de",   icono: "info" }
     ]
 

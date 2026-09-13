@@ -1,0 +1,53 @@
+#!/bin/sh
+# resolvconf - el mínimo imprescindible para que iwd escriba los DNS.
+#
+# iwd sabe pedir la dirección por DHCP él mismo, pero para escribir los
+# servidores de nombres llama a "resolvconf". Sin ese programa, iwd se conecta
+# al wifi, obtiene IP... y deja /etc/resolv.conf como estaba, así que no se
+# resuelve ningún nombre y desde fuera parece que "el wifi no funciona".
+#
+# MIKE OS no lleva el resolvconf de Debian (que gestiona prioridades entre
+# varios proveedores y es un paquete entero). Aquí sólo hay una fuente de red a
+# la vez, así que basta con esto:
+#
+#   resolvconf -a <interfaz>    lee la configuración por la entrada estándar
+#   resolvconf -d <interfaz>    la retira
+#
+# Se guarda por interfaz en /run para poder recomponer el archivo cuando una se
+# va y otra se queda.
+set -u
+
+DIR=/run/resolvconf
+mkdir -p "$DIR" 2>/dev/null || true
+
+recomponer() {
+    {
+        echo "# Escrito por resolvconf a partir de lo que dice cada interfaz."
+        cat "$DIR"/* 2>/dev/null | grep -E '^(nameserver|search|domain) ' | awk '!visto[$0]++'
+        # Si no ha quedado ningún servidor, mejor unos públicos que ninguno:
+        # un sistema sin DNS parece un sistema sin internet.
+        if ! cat "$DIR"/* 2>/dev/null | grep -q '^nameserver '; then
+            echo "nameserver 1.1.1.1"
+            echo "nameserver 8.8.8.8"
+        fi
+    } > /etc/resolv.conf 2>/dev/null || true
+}
+
+case "${1:-}" in
+    -a)
+        [ -n "${2:-}" ] || exit 1
+        cat > "$DIR/$(echo "$2" | tr '/' '_')" 2>/dev/null || exit 1
+        recomponer
+        ;;
+    -d)
+        [ -n "${2:-}" ] || exit 1
+        rm -f "$DIR/$(echo "$2" | tr '/' '_')" 2>/dev/null || true
+        recomponer
+        ;;
+    -u) recomponer ;;
+    *)
+        echo "Uso: resolvconf -a|-d <interfaz>" >&2
+        exit 1
+        ;;
+esac
+exit 0

@@ -1,32 +1,116 @@
 #!/bin/sh
-# m-audio-setup - declara la tarjeta de sonido para PipeWire.
+# m-audio-setup - preparar el sonido antes de que arranque PipeWire.
 #
-# WirePlumber descubre las tarjetas a través de udev, y MIKE OS usa
-# libudev-zero, un sustituto mínimo que no le da esa información: el resultado
-# era un sistema con tarjeta detectada por el kernel pero sin ninguna salida de
-# audio. En vez de arrastrar un udev completo sólo por esto, se declara la
-# tarjeta directamente en la configuración de PipeWire.
+# Lo que hacía antes, y por qué era el problema
+# ---------------------------------------------
+# Escribía una configuración de PipeWire declarando UNA salida clavada a
+# "hw:N", donde N era la PRIMERA tarjeta de /proc/asound/cards. Y sin número de
+# dispositivo, así que siempre el dispositivo 0.
 #
-# No se escribe una tarjeta fija: se lee la primera de /proc/asound/cards, así
-# que funciona igual en la máquina virtual que en un portátil con Realtek o
-# una tarjeta USB, mientras haya alguna.
+# En una Surface Laptop 4 la primera tarjeta suele ser el códec HDMI de la
+# gráfica, no los altavoces. O sea que el sistema declaraba a mano una salida
+# sobre un HDMI sin nada enchufado, y a partir de ahí no había sonido por
+# ninguna parte: ni por los altavoces ni por los cascos.
+#
+# Peor: declarar una salida a mano es decirle a PipeWire "no busques, ya te lo
+# doy yo". Y PipeWire, con WirePlumber, sabe descubrir las tarjetas, elegir la
+# que tiene altavoces, cambiar sola cuando enchufas cascos y dar nombres
+# legibles. Todo eso estaba desactivado por una suposición.
+#
+# Lo que hace ahora: quitarse de en medio y comprobar que están las piezas.
 set -u
+
+PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
+export PATH
 
 CFG_DIR="${HOME:-/root}/.config/pipewire/pipewire.conf.d"
 CFG="$CFG_DIR/10-alsa.conf"
 
-# Primera tarjeta: la línea de /proc/asound/cards empieza por su índice.
-TARJETA="$(awk '/^[[:space:]]*[0-9]+[[:space:]]*\[/ { gsub(/[^0-9]/, "", $1); print $1; exit }' /proc/asound/cards 2>/dev/null)"
-
-if [ -z "$TARJETA" ]; then
-    # Sin tarjeta no se escribe nada: dejar una declaración apuntando a un
-    # dispositivo inexistente sólo llenaría los registros de errores.
+# Borrar la configuración que dejaron las versiones anteriores. Si no, el
+# equipo sigue con la salida clavada al HDMI aunque el programa ya no la
+# escriba, y el fallo sobrevive a la actualización.
+if [ -f "$CFG" ]; then
     rm -f "$CFG" 2>/dev/null || true
-    echo "m-audio-setup: no hay ninguna tarjeta de sonido." >&2
+    echo "m-audio-setup: retirada la salida fija que forzaban las versiones viejas."
+fi
+
+# Esperar a que haya tarjeta. El códec de un portátil se registra unos segundos
+# después del arranque, y declarar la salida antes es declararla sobre nada.
+# Doce segundos de margen; en cuanto aparece, se sigue.
+_i=0
+while [ "$_i" -lt 24 ]; do
+    [ -d /dev/snd ] && [ -n "$(ls -A /dev/snd 2>/dev/null)" ] && break
+    sleep 0.5
+    _i=$((_i + 1))
+done
+
+if [ ! -d /dev/snd ] || [ -z "$(ls -A /dev/snd 2>/dev/null)" ]; then
+    echo "m-audio-setup: no ha aparecido ninguna tarjeta de sonido." >&2
     exit 1
 fi
 
-# Nombre legible de la tarjeta, para que aparezca así en los mezcladores.
+# Que los nodos se puedan abrir. Sin udev nadie les pone el grupo, y una
+# tarjeta que aparezca tarde se queda fuera del bucle del servicio de consola.
+if [ ! -r /dev/snd/controlC0 ] 2>/dev/null; then
+    if command -v m-sudo >/dev/null 2>&1; then
+        m-sudo chgrp -R audio /dev/snd 2>/dev/null || true
+        m-sudo chmod -R g+rw /dev/snd 2>/dev/null || true
+    fi
+fi
+
+# --- Elegir la salida ---------------------------------------------------------
+#
+# Por qué hay que elegirla a mano, y no dejar que PipeWire descubra
+# --------------------------------------------------------------------
+# WirePlumber enumera las tarjetas de sonido a través de udev, y MIKE OS no
+# lleva udev (usa libudev-zero, que no enumera). Comprobado: PipeWire y
+# WirePlumber arrancan, se hablan entre ellos, y la lista de dispositivos sale
+# VACÍA. Así que aquí hay que declararle la salida.
+#
+# Y hay que elegirla BIEN, que es lo que fallaba antes: se cogía la primera
+# tarjeta de /proc/asound/cards, sin mirar nada más. En una Surface Laptop 4 la
+# primera suele ser el códec HDMI de la gráfica, así que el sistema declaraba
+# una salida sobre un HDMI con nada enchufado y no había sonido por ningún
+# lado.
+#
+# Ahora se recorren las tarjetas buscando una que de verdad tenga un
+# dispositivo de REPRODUCCIÓN (los "pcmNp" de /proc/asound), y se dejan para el
+# final las que se llaman HDMI: sirven, pero sólo si no hay altavoces.
+elegir_salida() {
+    _mejor=""
+    _respaldo=""
+    for _c in /proc/asound/card[0-9]*; do
+        [ -d "$_c" ] || continue
+        _num="$(basename "$_c" | sed 's/^card//')"
+        _id="$(cat "$_c/id" 2>/dev/null || echo "")"
+        # Sin dispositivo de reproducción no hay nada que declarar.
+        for _pcm in "$_c"/pcm*p; do
+            [ -d "$_pcm" ] || continue
+            _dev="$(basename "$_pcm" | sed 's/^pcm//; s/p$//')"
+            case "$_id" in
+                *HDMI*|*hdmi*|*DP*)
+                    [ -z "$_respaldo" ] && _respaldo="$_num,$_dev"
+                    ;;
+                *)
+                    [ -z "$_mejor" ] && _mejor="$_num,$_dev"
+                    ;;
+            esac
+            break
+        done
+    done
+    [ -n "$_mejor" ] && { echo "$_mejor"; return 0; }
+    [ -n "$_respaldo" ] && { echo "$_respaldo"; return 0; }
+    return 1
+}
+
+SALIDA="$(elegir_salida)" || {
+    echo "m-audio-setup: hay tarjetas pero ninguna con salida de sonido." >&2
+    awk '/^[[:space:]]*[0-9]+[[:space:]]*\[/ { print "  " $0 }' /proc/asound/cards 2>/dev/null
+    exit 1
+}
+TARJETA="${SALIDA%,*}"
+DISPOSITIVO="${SALIDA#*,}"
+
 NOMBRE="$(awk -v c="$TARJETA" '
     $0 ~ "^[[:space:]]*" c "[[:space:]]*\\[" {
         if (match($0, /\]:.*/)) {
@@ -39,9 +123,11 @@ NOMBRE="$(awk -v c="$TARJETA" '
 [ -n "$NOMBRE" ] || NOMBRE="Salida de audio"
 
 mkdir -p "$CFG_DIR"
-cat > "$CFG" <<EOF
+cat > "$CFG" <<FIN
 # Generado por m-audio-setup. No editar a mano: se reescribe en cada arranque
 # con la tarjeta que haya en ese momento.
+#
+# Hace falta porque sin udev WirePlumber no encuentra las tarjetas solo.
 context.objects = [
   { factory = adapter
     args = {
@@ -49,12 +135,24 @@ context.objects = [
       node.name        = "salida-alsa"
       node.description = "$NOMBRE"
       media.class      = "Audio/Sink"
+      api.alsa.path    = "hw:$TARJETA,$DISPOSITIVO"
+      audio.channels   = 2
+      audio.position   = [ FL FR ]
+    }
+  }
+  { factory = adapter
+    args = {
+      factory.name     = api.alsa.pcm.source
+      node.name        = "entrada-alsa"
+      node.description = "Micrófono"
+      media.class      = "Audio/Source"
       api.alsa.path    = "hw:$TARJETA"
       audio.channels   = 2
       audio.position   = [ FL FR ]
     }
   }
 ]
-EOF
+FIN
 
-echo "m-audio-setup: tarjeta hw:$TARJETA ($NOMBRE)."
+echo "m-audio-setup: salida en hw:$TARJETA,$DISPOSITIVO ($NOMBRE)."
+exit 0

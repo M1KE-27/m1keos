@@ -151,7 +151,11 @@ while [ "$Y" -le "$FIN" ]; do
     Y=$(( Y + 12 ))
 done
 
-for SEC in vistazo sistema barra escritorio interfaz bloqueo servicios avanzado acercade; do
+# Los apartados que DEBE haber. "interfaz", "servicios" y "avanzado" se
+# retiraron del menú porque no tenían dentro ni un control: eran un título y
+# una frase diciendo que llegarían más adelante. Si vuelven, tendrán que volver
+# también a esta lista, con algo dentro que probar.
+for SEC in vistazo sistema barra escritorio bloqueo acercade; do
     printf '  %-44s' "el apartado «$SEC» se puede abrir"
     case " $ALCANZADOS " in
         *" $SEC "*) echo "$(verde ✓)"; PASAN=$((PASAN + 1)) ;;

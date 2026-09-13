@@ -23,13 +23,27 @@ export PATH
 # Qué controlador usar. Los de la gráfica (amdgpu, intel, nvidia) mandan sobre
 # los de ACPI: acpi_video0 existe en muchos equipos donde no hace nada, y
 # escribir ahí da la falsa impresión de que funcionó.
+# Qué controlador usar.
+#
+# Ojo con el detalle que hacía que las teclas de brillo no funcionaran NUNCA:
+# aquí se buscaba con "-w", o sea "¿puede escribir esto el usuario que ejecuta
+# el programa?". Sin udev, /sys/class/backlight/*/brightness pertenece a root
+# con permisos 0644, y el escritorio corre como "mike". Así que la respuesta
+# era NO siempre, la lista salía vacía, y el programa se rendía diciendo "este
+# equipo no deja controlar el brillo por software" en un portátil que sí deja.
+#
+# Lo doloroso es que el escalado con m-sudo para escribir ya estaba escrito
+# cincuenta líneas más abajo, en un código al que no se llegaba jamás.
+#
+# Lo correcto es preguntar si el archivo EXISTE Y SE PUEDE LEER. Escribir ya es
+# otro problema, y ése tiene su solución más abajo.
 controlador() {
     for _pref in amdgpu_bl1 amdgpu_bl0 intel_backlight nvidia_wmi_ec_backlight \
                  nv_backlight apple_backlight; do
-        [ -w "/sys/class/backlight/$_pref/brightness" ] && { echo "$_pref"; return; }
+        [ -r "/sys/class/backlight/$_pref/brightness" ] && { echo "$_pref"; return; }
     done
     for _c in /sys/class/backlight/*; do
-        [ -w "$_c/brightness" ] && { basename "$_c"; return; }
+        [ -r "$_c/brightness" ] && { basename "$_c"; return; }
     done
 }
 

@@ -18,6 +18,13 @@ cd /root
 [ -n "${TERM:-}" ] || TERM=linux
 export TERM
 
+# El idioma. runit arranca los servicios con el entorno vacío, así que sin esto
+# la sesión gráfica entera corre en locale "C", que no es UTF-8: acentos y
+# comillas rotos en la barra, en el instalador y en el navegador. glibc 2.44
+# trae C.UTF-8 integrado, no hace falta instalar nada.
+[ -n "${LANG:-}" ] || LANG=C.UTF-8
+export LANG
+
 IS_GUI="no"
 if grep -qw 'mikeos_gui=1' /proc/cmdline 2>/dev/null || [ -f /etc/mikeos/desktop_enabled ]; then
     IS_GUI="yes"
@@ -72,10 +79,29 @@ if [ "$IS_GUI" = "yes" ]; then
     # Sonido: sin udev, los nodos de /dev/snd nacen root:root 600 y ni
     # WirePlumber ni nadie del escritorio puede abrir la tarjeta. El grupo
     # audio ya existe y el usuario pertenece a él; sólo falta aplicarlo.
-    if [ -d /dev/snd ]; then
-        chgrp -R audio /dev/snd 2>/dev/null || true
-        chmod -R g+rw /dev/snd 2>/dev/null || true
-    fi
+    # Sonido: los nodos de /dev/snd los crea el driver al cargarse, y el códec
+    # de una Surface tarda en registrarse.
+    #
+    # Esto era una sola comprobación sin reintento: si /dev/snd todavía no
+    # existía en este instante, el bloque entero se saltaba y los nodos se
+    # quedaban root:root 0600 PARA SIEMPRE. WirePlumber no veía ninguna salida
+    # y el volumen decía "no hay ninguna salida de audio conectada" en un
+    # equipo con altavoces perfectamente montados.
+    #
+    # Veinte líneas más arriba, /dev/dri ya resuelve esta misma carrera con un
+    # bucle de reintento y un comentario que la explica. El sonido se había
+    # quedado con la versión de un solo intento.
+    (
+        _i=0
+        while [ "$_i" -lt 60 ]; do
+            if [ -d /dev/snd ] && [ -n "$(ls -A /dev/snd 2>/dev/null)" ]; then
+                chgrp -R audio /dev/snd 2>/dev/null || true
+                chmod -R g+rw /dev/snd 2>/dev/null || true
+            fi
+            sleep 0.5
+            _i=$((_i + 1))
+        done
+    ) &
     # La sesión gráfica nunca corre como root: mike pertenece a wheel y
     # conserva acceso administrativo mediante m-sudo.
     if id mike >/dev/null 2>&1; then
@@ -84,8 +110,37 @@ if [ "$IS_GUI" = "yes" ]; then
         chmod 700 /run/user/1000
         # Forzar un entorno de sesión completo evita que BusyBox su herede
         # HOME/SHELL de root en algunas imágenes o instalaciones antiguas.
-        su mike -s /bin/sh -c 'export HOME=/home/mike USER=mike LOGNAME=mike SHELL=/bin/bash; exec /usr/bin/start-mike-desktop' \
-            2>&1 | tee /var/log/desktop_session.log
+        # El escritorio, y si se cae, VUELVE.
+        #
+        # Antes esto se ejecutaba una sola vez: cuando Hyprland terminaba -- por
+        # un fallo, o porque alguien pulsó sin querer el atajo de salir -- el
+        # servicio seguía adelante y entregaba una consola de root en tty1. Y
+        # como el servicio "exec"aba una shell, runit lo veía vivo y tampoco lo
+        # reiniciaba. Es decir: la sesión gráfica no volvía hasta reiniciar el
+        # equipo entero.
+        #
+        # Se reintenta hasta tres veces seguidas. Si se cae tres veces en menos
+        # de un minuto, el problema no se arregla insistiendo: ahí sí toca dar
+        # una consola y decir por qué.
+        _intentos=0
+        while [ "$_intentos" -lt 3 ]; do
+            _desde="$(date +%s 2>/dev/null || echo 0)"
+            su mike -s /bin/sh -c 'export HOME=/home/mike USER=mike LOGNAME=mike SHELL=/bin/bash; exec /usr/bin/start-mike-desktop' \
+                2>&1 | tee -a /var/log/desktop_session.log
+            _hasta="$(date +%s 2>/dev/null || echo 0)"
+            # Si duró un rato, el contador se reinicia: una sesión de dos horas
+            # que se cierra no es lo mismo que una que no llega a arrancar.
+            if [ $(( _hasta - _desde )) -gt 60 ]; then
+                _intentos=0
+            else
+                _intentos=$((_intentos + 1))
+            fi
+            [ "$_intentos" -ge 3 ] && break
+            echo ">> [console] La sesión gráfica terminó. Volviendo a arrancarla..."
+            sleep 2
+        done
+        [ "$_intentos" -ge 3 ] && \
+            echo ">> [console] Se ha caído tres veces seguidas. El registro está en /var/log/desktop_session.log"
     else
         /usr/bin/start-mike-desktop 2>&1 | tee /var/log/desktop_session.log
     fi

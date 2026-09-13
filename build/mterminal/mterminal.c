@@ -14,6 +14,19 @@
 typedef struct {
     GtkWidget *window;
     GtkWidget *notebook;
+    /* La ventana se está cerrando.
+     *
+     * Hace falta porque al cerrar una ventana GTK destruye después sus hijos,
+     * los intérpretes de cada pestaña mueren, y eso dispara "child-exited"
+     * -- que entra en hijo_terminado() y usa esta misma estructura. Antes se
+     * liberaba en cuanto la ventana emitía "destroy", así que ese manejador
+     * leía memoria ya liberada y el proceso se caía.
+     *
+     * Y como todas las terminales viven en UN SOLO proceso, caerse ahí se
+     * llevaba por delante TODAS las ventanas abiertas a la vez, con una
+     * cascada de errores de GTK. Eso es el "cierro una y se cierran las cinco
+     * con errores raros". */
+    gboolean cerrando;
 } MTerminal;
 
 static gboolean key_press(GtkWidget *widget, GdkEventKey *event, gpointer user_data);
@@ -119,7 +132,11 @@ static char **exec_argv_directo = NULL;
 static void hijo_terminado(VteTerminal *terminal, gint estado, gpointer datos) {
     (void)estado;
     MTerminal *app = datos;
-    if (!app || !app->notebook || !GTK_IS_WIDGET(app->notebook)) return;
+    /* Si la ventana ya se está cerrando, no hay nada que hacer aquí y la
+     * estructura puede estar a punto de desaparecer: se sale antes de tocar
+     * nada. Ver el comentario de "cerrando" en la estructura. */
+    if (!app || app->cerrando) return;
+    if (!app->notebook || !GTK_IS_WIDGET(app->notebook)) return;
     gint pagina = gtk_notebook_page_num(GTK_NOTEBOOK(app->notebook),
                                         GTK_WIDGET(terminal));
     if (pagina < 0) return;
@@ -287,6 +304,23 @@ static gboolean key_press(GtkWidget *widget, GdkEventKey *event, gpointer user_d
     return FALSE;
 }
 
+/* Liberar la estructura de una ventana ya cerrada, en cuanto el bucle de
+ * eventos se quede sin nada urgente. */
+static gboolean liberar_mas_tarde(gpointer datos) {
+    g_free(datos);
+    return G_SOURCE_REMOVE;
+}
+
+static void ventana_destruida(GtkWidget *w, gpointer datos) {
+    (void)w;
+    MTerminal *app = datos;
+    if (!app) return;
+    app->cerrando = TRUE;
+    app->notebook = NULL;
+    app->window = NULL;
+    g_idle_add(liberar_mas_tarde, app);
+}
+
 static void activate(GtkApplication *gtk_app, gpointer user_data) {
     (void)user_data;
     MTerminal *app = g_new0(MTerminal, 1);
@@ -301,7 +335,14 @@ static void activate(GtkApplication *gtk_app, gpointer user_data) {
     gtk_window_set_default_size(GTK_WINDOW(app->window), 1120, 700);
     gtk_window_set_position(GTK_WINDOW(app->window), GTK_WIN_POS_CENTER);
     g_signal_connect(app->window, "key-press-event", G_CALLBACK(key_press), app);
-    g_signal_connect_swapped(app->window, "destroy", G_CALLBACK(g_free), app);
+    /* Al cerrarse la ventana se MARCA, y la estructura se libera más tarde,
+     * cuando el bucle de eventos ya no tiene nada pendiente que la use.
+     *
+     * Antes esto era un g_free directo: la estructura desaparecía mientras GTK
+     * todavía estaba destruyendo las pestañas, cuyos intérpretes al morir
+     * disparan "child-exited" sobre esta misma estructura. Un proceso caído
+     * ahí se lleva TODAS las ventanas de terminal, porque comparten proceso. */
+    g_signal_connect(app->window, "destroy", G_CALLBACK(ventana_destruida), app);
     add_tab(app, initial_cwd());
     gtk_widget_show_all(app->window);
 }
@@ -342,8 +383,16 @@ int main(int argc, char **argv) {
      *
      * Sin -e (una terminal normal) se conserva la instancia única, que es lo
      * que hace que las nuevas salgan como pestañas de la misma ventana. */
-    GApplicationFlags banderas = exec_command
-        ? G_APPLICATION_NON_UNIQUE : G_APPLICATION_DEFAULT_FLAGS;
+    /* SIEMPRE su propio proceso.
+     *
+     * Con instancia única, cinco terminales eran cinco ventanas dentro de UN
+     * solo proceso. Cualquier fallo en una se llevaba las cinco, y no hay forma
+     * de hacer que un programa sea infalible: lo que hay que evitar es que un
+     * fallo se propague a lo que no tiene nada que ver.
+     *
+     * Se pierden las pestañas compartidas entre ventanas, que nadie usaba.
+     * Ctrl+Shift+T sigue abriendo pestañas dentro de su propia ventana. */
+    GApplicationFlags banderas = G_APPLICATION_NON_UNIQUE;
     GtkApplication *app = gtk_application_new("org.mikeos.MTerminal", banderas);
     g_signal_connect(app, "activate", G_CALLBACK(activate), NULL);
     int status = g_application_run(G_APPLICATION(app), argc, argv);
