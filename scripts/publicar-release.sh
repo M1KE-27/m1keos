@@ -64,6 +64,8 @@ FECHA_ISO=$(stat -c %Y "$ISO")
 MAS_NUEVO=$(find $RUTAS_DE_LA_IMAGEN -newer "$ISO" -type f \
                  -not -path "build/firmware-kernel/*" \
                  -not -name "qmldir" \
+                 -not -path "build/web/*" \
+                 -not -path "build/cursor/*" \
                  -not -path "build/repo/*" -not -path "build/repo_pkgs/*" \
                  -not -path "build/repo_mpm_tmp/*" \
                  -not -path "*/busybox-*" -not -path "*/dropbear-*" \
