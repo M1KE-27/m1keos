@@ -1,0 +1,39 @@
+#!/bin/sh
+# Vigila la alimentación y ajusta el perfil de energía.
+#
+# Sin udev nadie avisa de que se ha enchufado o desenchufado el cargador, así
+# que hay que mirar. Cada cinco segundos cuesta nada y es lo que hace que al
+# desenchufar el portátil pase a ahorro sin que nadie toque nada.
+exec 2>&1
+set -u
+
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+
+[ -x /usr/bin/m-energia ] || exec sleep 3600
+
+ANTERIOR=""
+while :; do
+    AHORA="desconocido"
+    for _a in /sys/class/power_supply/*/online; do
+        [ -r "$_a" ] || continue
+        [ "$(cat "$(dirname "$_a")/type" 2>/dev/null)" = "Mains" ] || continue
+        AHORA="$(cat "$_a" 2>/dev/null)"
+        break
+    done
+
+    if [ "$AHORA" != "$ANTERIOR" ]; then
+        # El mensaje dice el perfil ELEGIDO, no uno supuesto: si alguien ha
+        # puesto "máximo" a mano, el registro no puede seguir anunciando
+        # "modo de ahorro" cada vez que se desenchufa el cargador.
+        PERFIL="$(m-energia perfil 2>/dev/null || echo auto)"
+        case "$AHORA" in
+            1) echo "[energía] Con cargador. Perfil: $PERFIL." ;;
+            0) echo "[energía] Con batería. Perfil: $PERFIL." ;;
+            *) echo "[energía] Sin información de alimentación. Perfil: $PERFIL." ;;
+        esac
+        m-energia servicio >/dev/null 2>&1 || true
+        ANTERIOR="$AHORA"
+    fi
+    sleep 5
+done

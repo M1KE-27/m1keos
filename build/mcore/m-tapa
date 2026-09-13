@@ -10,11 +10,21 @@
 #   1. Bloquea la sesión, para que abrirla pida la contraseña.
 #   2. Apaga la pantalla, que es lo que de verdad ahorra batería.
 #
-# Lo que NO hace, y es a propósito: suspender. Suspender y despertar bien
-# necesita ajustes de energía y firmware que este sistema aún no tiene
-# probados, y un equipo que suspende pero no despierta es peor que uno que no
-# suspende: pierdes el trabajo y encima parece que se ha roto. Cuando eso esté
-# probado en hardware de verdad, se cambia aquí y en hyprland.conf.
+# Y suspender, SI SE PIDE. Ya no se decide aquí: lo elige quien usa el equipo
+# desde el Centro de Control, y se guarda en ~/.config/mike/tapa.
+#
+#   pantalla    bloquear y apagar la pantalla   (lo de siempre, y el valor
+#               por defecto: funciona en todos los equipos)
+#   suspender   dormir de verdad
+#   hibernar    volcar la memoria al disco y apagarse
+#   nada        no hacer nada
+#
+# Por qué no es "suspender" por defecto: suspender y despertar depende del
+# firmware del equipo, y uno que suspende pero no despierta es peor que uno
+# que no suspende -- pierdes el trabajo y encima parece que se ha roto. Así
+# que se ofrece, se avisa, y lo elige quien puede probarlo en su portátil.
+# Además, m-energia sólo ofrece en el menú lo que /sys/power/state dice que
+# este equipo soporta de verdad.
 #
 #   m-tapa cerrar     bloquea y apaga la pantalla
 #   m-tapa abrir      enciende la pantalla
@@ -46,11 +56,31 @@ case "${1:-}" in
             # Hay monitor externo: se deja todo como está.
             exit 0
         fi
-        # Primero bloquear y luego apagar: al revés, la pantalla se enciende
-        # otra vez al aparecer la ventana de bloqueo.
+        _que="$(m-energia tapa 2>/dev/null || echo pantalla)"
+        [ "$_que" = "nada" ] && exit 0
+
+        # Bloquear SIEMPRE antes de nada más, sea cual sea la opción: si la
+        # tapa se cierra y el equipo se duerme sin bloquear, cualquiera que la
+        # abra entra directo.
         command -v m-bloquear >/dev/null 2>&1 && setsid m-bloquear >/dev/null 2>&1 &
         sleep 1
-        hyprctl dispatch dpms off >/dev/null 2>&1 || true
+
+        case "$_que" in
+            suspender|hibernar)
+                # Apagar la pantalla antes de dormir: si el despertar tarda,
+                # al menos no se queda encendida dentro de la mochila.
+                hyprctl dispatch dpms off >/dev/null 2>&1 || true
+                if ! m-energia "$_que" >/dev/null 2>&1; then
+                    # No se pudo dormir. No se deja el equipo encendido y a
+                    # oscuras sin explicación: se vuelve al comportamiento que
+                    # siempre funciona.
+                    echo "m-tapa: este equipo no pudo $_que; pantalla apagada." >&2
+                fi
+                ;;
+            *)
+                hyprctl dispatch dpms off >/dev/null 2>&1 || true
+                ;;
+        esac
         ;;
 
     abrir)

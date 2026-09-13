@@ -1,27 +1,45 @@
 <!doctype html>
-<html lang="es"><head><meta charset="utf-8">
+<html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="color-scheme" content="dark">
-<meta name="description" content="MIKE OS: un sistema operativo construido desde el kernel hacia arriba. Sin systemd, con gestor de paquetes, shell y escritorio propios.">
+<meta name="color-scheme" content="light dark">
+<meta name="description" content="MIKE OS: an operating system built from the kernel up. No systemd, with its own package manager, shell and desktop.">
 <meta property="og:title" content="Herramientas mcore · MIKE OS">
-<meta property="og:description" content="Un sistema operativo construido desde el kernel hacia arriba.">
+<meta property="og:description" content="An operating system built from the kernel up.">
 <meta property="og:image" content="https://m1keos.duckdns.org/capturas/escritorio.png">
 <meta property="og:type" content="website">
+<link rel="alternate" hreflang="es" href="../index.html">
 <title>Herramientas mcore · MIKE OS</title>
 <link rel="icon" href="../favicon.svg" type="image/svg+xml">
 <link rel="preload" href="../tipos/geist-700.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="../estilo.css"></head><body>
+<link rel="stylesheet" href="../estilo.css">
+<script>
+/* El tema elegido se aplica ANTES de pintar nada.
+   Si esto fuera al final del cuerpo, quien tenga elegido el tema oscuro vería
+   un fogonazo blanco en cada carga: el navegador pinta con el tema por defecto
+   y lo corrige después. Son cuatro líneas y van aquí por eso. */
+try{var _t=localStorage.getItem("mikeos-tema");
+    if(_t)document.documentElement.setAttribute("data-tema",_t);}catch(e){}
+</script>
+</head><body>
 <nav><div class="cont">
-  <a class="marca" href="../index.html">
+  <a class="marca" href="../en/index.html">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
          stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 6l6 6-6 6"/><path d="M13 18h7"/></svg>
     MIKE OS</a>
-  <a class="enl " href="../index.html">Inicio</a>
-  <a class="enl " href="../capturas/index.html">Capturas</a>
-  <a class="enl aqui" href="../docs/index.html">Documentación</a>
+  <a class="enl " href="../en/index.html">Home</a>
+  <a class="enl " href="../capturas/index.html">Screenshots</a>
+  <a class="enl aqui" href="../docs/index.html">Docs</a>
   <a class="enl " href="../wiki/index.html">Wiki</a>
-  <a class="enl derecha" href="https://github.com/M1KE-27/m1keos">Código</a>
-  <a class="btn " href="../descargas.html">Descargar</a>
+  <a class="enl derecha" href="https://github.com/M1KE-27/m1keos">Source</a>
+  <a class="enl idioma" href="../index.html" hreflang="es" lang="es">Ver en español</a>
+  <button class="tema" type="button" aria-label="Switch theme" title="Switch theme">
+    <svg class="sol" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+         stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/>
+      <path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.2 5.2l1.5 1.5M17.3 17.3l1.5 1.5M18.8 5.2l-1.5 1.5M6.7 17.3l-1.5 1.5"/></svg>
+    <svg class="luna" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.5A8.5 8.5 0 019.5 4a8.5 8.5 0 1010.5 10.5z"/></svg>
+  </button>
+  <a class="btn " href="../en/downloads.html">Download</a>
 </div></nav>
 <div class="cont"><main>
 <header><h1>Herramientas mcore</h1></header>
@@ -88,11 +106,154 @@
 <td style="text-align: left;">Automated disk partitioning, format, and installer.</td>
 <td style="text-align: left;"><code>m-install /dev/sdb</code></td>
 </tr>
+<tr>
+<td style="text-align: left;"><code>m-energia</code></td>
+<td style="text-align: left;">Perfiles de energía (máximo, equilibrado, ahorro, automático), suspender e hibernar, y qué hace la tapa.</td>
+<td style="text-align: left;"><code>m-energia maximo</code></td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>m-drivers</code></td>
+<td style="text-align: left;">Analiza TODO el equipo y dice en qué estado está cada componente y qué le falta.</td>
+<td style="text-align: left;"><code>m-drivers</code></td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>m-hardware</code></td>
+<td style="text-align: left;">El informe largo: cada dispositivo PCI y USB con su driver, su firmware y su servicio.</td>
+<td style="text-align: left;"><code>m-hardware</code></td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>m-reintentar-drivers</code></td>
+<td style="text-align: left;">Vuelve a probar los dispositivos que arrancaron sin driver o sin firmware.</td>
+<td style="text-align: left;">(lo llama el arranque)</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>m-tapa</code></td>
+<td style="text-align: left;">Qué hacer al cerrar y abrir la tapa del portátil.</td>
+<td style="text-align: left;"><code>m-tapa cerrar</code></td>
+</tr>
 </tbody>
-</table></div></article></main></div>
+</table></div>
+<hr>
+<h2 id="energia-m-energia">Energía — <code>m-energia</code></h2>
+<p>No había nada de gestión de energía: el kernel arrancaba con sus valores de
+fábrica, pensados para un servidor enchufado a la pared. En un portátil eso son
+horas de batería tiradas; en un sobremesa, rendimiento dejado sin usar.</p>
+<p>Cuatro perfiles:</p>
+<div class="tabla-ancha"><table>
+<thead>
+<tr>
+<th style="text-align: left;">Perfil</th>
+<th style="text-align: left;">Qué hace</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><code>maximo</code></td>
+<td style="text-align: left;">El procesador no baja de frecuencia y <strong>nada</strong> se duerme: ni USB, ni PCI Express, ni el audio. Lo más rápido que da el equipo.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>rendimiento</code></td>
+<td style="text-align: left;">Frecuencia bajo demanda, disco siempre despierto. El punto medio.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>ahorro</code></td>
+<td style="text-align: left;">Todo lo que puede dormirse, duerme; las escrituras se agrupan.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>auto</code></td>
+<td style="text-align: left;"><strong>Sobremesa</strong> (sin batería): máximo, sin tener que pedirlo. <strong>Portátil</strong>: equilibrado con cargador, ahorro con batería.</td>
+</tr>
+</tbody>
+</table></div>
+<p>La elección se guarda en <code>/etc/mikeos/energia</code> — en <code>/etc</code> y no en el <code>$HOME</code>
+de nadie, porque quien la escribe es la persona que usa el escritorio y quien
+la lee es el servicio de runit, que corre como root.</p>
+<p>Suspender e hibernar sólo se ofrecen si el equipo los publica de verdad en
+<code>/sys/power/state</code>, e hibernar además exige swap del tamaño de la RAM. Un menú
+que ofrece hibernar donde no cabe la memoria promete que el portátil se
+despierta cuando en realidad se va a apagar con el trabajo dentro.</p>
+<p>Qué hace la tapa se guarda en <code>/etc/mikeos/tapa</code> (<code>pantalla</code>, <code>suspender</code>,
+<code>hibernar</code>, <code>nada</code>) y se elige en el Centro de Control. La sesión se bloquea
+siempre al cerrar, sea cual sea la opción.</p>
+<hr>
+<h2 id="controladores-m-drivers">Controladores — <code>m-drivers</code></h2>
+<p>Recorre PCI y USB leyendo los identificadores que publica el propio hardware, y
+de cada componente dice en cuál de estos estados está. Son averías distintas,
+con soluciones distintas, que desde fuera se veían todas igual:</p>
+<div class="tabla-ancha"><table>
+<thead>
+<tr>
+<th style="text-align: left;">Estado</th>
+<th style="text-align: left;">Significa</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;"><code>ok</code></td>
+<td style="text-align: left;">Funciona.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>sin-driver</code></td>
+<td style="text-align: left;">El kernel no tiene quien lo maneje.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>sin-firmware</code></td>
+<td style="text-align: left;">Hay driver, pero le falta un archivo de firmware.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>apagado</code></td>
+<td style="text-align: left;">Está todo, pero el servicio que lo usa no está en pie.</td>
+</tr>
+<tr>
+<td style="text-align: left;"><code>mejorable</code></td>
+<td style="text-align: left;">Funciona, y hay un paquete que lo hace ir mejor.</td>
+</tr>
+</tbody>
+</table></div>
+<p>Cubre gráfica, red (PCI <strong>y</strong> USB), Bluetooth, sonido, entrada, cámara,
+almacenamiento, procesador y batería.</p>
+<p>Tres salidas del mismo análisis, para que el panel y la terminal no puedan
+decir cosas distintas:</p>
+<ul>
+<li>sin argumentos, el informe para leerlo;</li>
+<li><code>--json</code>, lo que lee el Centro de Control;</li>
+<li><code>--breve</code>, líneas <code>COMP|categoría|nombre|estado|detalle</code> para la pantalla de
+  bienvenida, que está escrita en C.</li>
+</ul>
+<p><code>--breve</code> existe porque la bienvenida leía la salida <strong>bonita</strong> buscando una
+línea que empezara por <code>Recomendado:</code>. Cualquier cambio de formato la dejaba
+mostrando datos vacíos o viejos sin un solo error.</p></article></main></div>
 <footer><div class="cont">
-MIKE OS 0.5.0, licencia MIT. Servido desde un mini PC en casa.
-Actualizado el 13 de September de 2026.
-<a href="https://github.com/M1KE-27/m1keos">Código en GitHub</a>
+MIKE OS 0.6.0, MIT licence. Served from a mini PC at home.
+Updated on September 13, 2026.
+<a href="https://github.com/M1KE-27/m1keos">Source on GitHub</a>
 </div></footer>
+<script>
+/* El botón de tema. Tres estados y no dos: claro, oscuro, y "lo que diga el
+   sistema", que es donde empieza todo el mundo. Sin el tercero, quien tenga el
+   móvil en automático pierde ese automático en cuanto toca el botón una vez y
+   no hay forma de recuperarlo. */
+(function(){
+  var b=document.querySelector(".tema"); if(!b) return;
+  var r=document.documentElement;
+  function sistemaOscuro(){
+    return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+  }
+  b.addEventListener("click",function(){
+    var actual=r.getAttribute("data-tema");
+    var oscuroAhora = actual ? actual==="oscuro" : sistemaOscuro();
+    var nuevo = oscuroAhora ? "claro" : "oscuro";
+    /* Si lo elegido vuelve a coincidir con lo que dice el sistema, se borra la
+       preferencia en vez de guardarla: así el sitio vuelve a seguir al sistema
+       cuando este cambie solo de día a noche. */
+    if((nuevo==="oscuro")===sistemaOscuro()){
+      r.removeAttribute("data-tema");
+      try{localStorage.removeItem("mikeos-tema");}catch(e){}
+    }else{
+      r.setAttribute("data-tema",nuevo);
+      try{localStorage.setItem("mikeos-tema",nuevo);}catch(e){}
+    }
+  });
+})();
+</script>
 </body></html>

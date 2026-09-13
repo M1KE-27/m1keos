@@ -1,0 +1,333 @@
+#!/bin/sh
+# m-energia - que el portátil dure y no se caliente sin motivo.
+#
+# Por qué hace falta
+# ------------------
+# No había NADA de gestión de energía. El kernel arranca con sus valores de
+# fábrica, que están pensados para un servidor enchufado a la pared: el
+# procesador al máximo permanente, los discos sin dormir, el wifi sin ahorro,
+# los buses PCI Express siempre despiertos. En un portátil eso son horas de
+# batería tiradas y un ventilador que no para.
+#
+# Esto se ejecuta al arrancar y cada vez que cambia la alimentación (se
+# enchufa o se desenchufa el cargador), y ajusta lo que de verdad se nota.
+#
+#   m-energia            aplica el perfil según esté enchufado o no
+#   m-energia rendimiento  fuerza el modo de máximo rendimiento
+#   m-energia ahorro       fuerza el modo de ahorro
+#   m-energia maximo       rendimiento máximo: nada se duerme, nada baja
+#   m-energia estado       dice cómo está ahora
+#   m-energia suspender    duerme el equipo (si sabe despertarse)
+#   m-energia puede        lista lo que este equipo soporta
+#   m-energia tapa [qué]   qué hace al cerrar la tapa
+set -u
+
+PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
+export PATH
+
+# ¿Está enchufado a la corriente?
+con_cargador() {
+    for _a in /sys/class/power_supply/*/online; do
+        [ -r "$_a" ] || continue
+        _t="$(cat "$(dirname "$_a")/type" 2>/dev/null || echo '')"
+        [ "$_t" = "Mains" ] || continue
+        [ "$(cat "$_a" 2>/dev/null)" = "1" ] && return 0
+    done
+    # Sin batería (un sobremesa) se considera siempre enchufado.
+    [ -d /sys/class/power_supply/BAT0 ] || [ -d /sys/class/power_supply/BAT1 ] || return 0
+    return 1
+}
+
+escribir() {  # escribir <archivo> <valor>   -- en silencio si no se puede
+    [ -e "$1" ] || return 0
+    printf '%s' "$2" > "$1" 2>/dev/null || return 0
+}
+
+# Un apunte sobre vm.laptop_mode, que NO se toca en ninguno de los perfiles:
+# el archivo sigue existiendo en /proc, pero este kernel lo ignora y lo anuncia
+# por la consola en cada escritura ("vm.laptop_mode is deprecated. Ignoring
+# setting."). O sea que escribirlo no hacía nada y ensuciaba el arranque y cada
+# cambio de perfil con un aviso que parecía un error. Lo que de verdad agrupa
+# las escrituras a disco es dirty_writeback_centisecs, que sí se usa.
+
+gobernador() {  # gobernador <nombre>
+    for _c in /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor; do
+        escribir "$_c" "$1"
+    done
+    # Los procesadores AMD modernos usan además esta preferencia, que es la que
+    # de verdad decide cuánto sube la frecuencia en ráfagas cortas.
+    for _p in /sys/devices/system/cpu/cpu*/cpufreq/energy_performance_preference; do
+        case "$1" in
+            performance) escribir "$_p" "performance" ;;
+            powersave)   escribir "$_p" "power" ;;
+            *)           escribir "$_p" "balance_power" ;;
+        esac
+    done
+}
+
+# ¿Es un portátil? Lo dice tener batería. En un sobremesa no tiene sentido
+# hablar de ahorro ni de suspender al cerrar la tapa.
+es_portatil() {
+    for _b in /sys/class/power_supply/BAT*; do
+        [ -d "$_b" ] && return 0
+    done
+    return 1
+}
+
+# El perfil elegido a mano, si lo hay. "auto" significa decidir según esté
+# enchufado o no.
+#
+# Vive en /etc y no en el $HOME de nadie, y eso es deliberado: quien lo ESCRIBE
+# es la persona que usa el escritorio, pero quien lo LEE es el servicio de
+# runit, que corre como root. Con el archivo en ~/.config el servicio miraba
+# /root/.config/mike/energia --- un archivo que nunca se escribe --- así que la
+# elección se aplicaba una vez y se perdía en el siguiente arranque, o al
+# enchufar el cargador, sin que nada lo dijera.
+PREF="/etc/mikeos/energia"
+leer_preferencia() {
+    [ -r "$PREF" ] && cat "$PREF" 2>/dev/null || echo auto
+}
+guardar_preferencia() {
+    mkdir -p "$(dirname "$PREF")" 2>/dev/null || true
+    printf '%s\n' "$1" > "$PREF" 2>/dev/null || true
+}
+
+# Rendimiento máximo. Para cuando da igual la batería y lo que se quiere es
+# que no haya ni un tirón: el procesador no baja de frecuencia, nada se duerme
+# y no se agrupa ninguna escritura.
+#
+# En un sobremesa es el modo sensato por defecto. En un portátil desenchufado
+# se nota en la autonomía, y por eso no es automático: se elige.
+perfil_maximo() {
+    gobernador performance
+    escribir /sys/module/pcie_aspm/parameters/policy performance
+    for _d in /sys/class/scsi_host/host*/link_power_management_policy; do
+        escribir "$_d" max_performance
+    done
+    escribir /proc/sys/vm/dirty_writeback_centisecs 100
+    # Nada de dormir: ni USB, ni PCI, ni el audio. Dormir y despertar cuesta
+    # microsegundos, y eso es justo lo que se está intentando evitar.
+    for _p in /sys/bus/usb/devices/*/power/control; do escribir "$_p" on; done
+    for _p in /sys/bus/pci/devices/*/power/control; do escribir "$_p" on; done
+    escribir /sys/module/snd_hda_intel/parameters/power_save 0
+    for _w in /sys/class/net/*/device/power/control; do escribir "$_w" on; done
+    # Que el planificador reparta pensando en respuesta, no en rendimiento
+    # medio: es lo que se nota moviendo una ventana o en un juego.
+    escribir /proc/sys/kernel/sched_autogroup_enabled 1
+    # Y que la memoria comprimida se use sólo cuando de verdad hace falta.
+    escribir /proc/sys/vm/swappiness 10
+}
+
+perfil_rendimiento() {
+    gobernador schedutil
+    escribir /sys/module/pcie_aspm/parameters/policy default
+    # El disco, despierto: en un SSD dormirse y despertarse constantemente se
+    # nota más que lo que ahorra.
+    for _d in /sys/class/scsi_host/host*/link_power_management_policy; do
+        escribir "$_d" max_performance
+    done
+    escribir /proc/sys/vm/dirty_writeback_centisecs 500
+    escribir /proc/sys/vm/swappiness 60
+    # Wifi sin ahorro: el ahorro de energía del wifi añade latencia, y con
+    # cargador no compensa.
+    for _w in /sys/class/net/*/device/power/control; do escribir "$_w" on; done
+}
+
+perfil_ahorro() {
+    gobernador schedutil
+    escribir /sys/module/pcie_aspm/parameters/policy powersave
+    for _d in /sys/class/scsi_host/host*/link_power_management_policy; do
+        escribir "$_d" med_power_with_dipm
+    done
+    # Agrupar las escrituras: escribir a ráfagas deja el disco dormir entre
+    # medias en vez de despertarlo cada pocos segundos.
+    escribir /proc/sys/vm/dirty_writeback_centisecs 1500
+    escribir /proc/sys/vm/swappiness 100
+    # Dejar dormir a lo que cuelga del USB y del PCI cuando no se usa.
+    for _p in /sys/bus/usb/devices/*/power/control; do escribir "$_p" auto; done
+    for _p in /sys/bus/pci/devices/*/power/control; do
+        # La gráfica NO: dormirla y despertarla da parpadeos y cuelgues.
+        case "$(cat "$(dirname "$(dirname "$_p")")/class" 2>/dev/null)" in
+            0x03*) continue ;;
+        esac
+        escribir "$_p" auto
+    done
+    # El audio también, pero con margen: dormirlo demasiado rápido hace que se
+    # oiga un chasquido al empezar cada sonido.
+    escribir /sys/module/snd_hda_intel/parameters/power_save 10
+}
+
+estado() {
+    echo "Alimentación: $(con_cargador && echo 'con cargador' || echo 'con batería')"
+    echo "Gobernador:   $(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor 2>/dev/null || echo 'no configurable')"
+    for _b in /sys/class/power_supply/BAT*; do
+        [ -d "$_b" ] || continue
+        echo "Batería:      $(cat "$_b/capacity" 2>/dev/null || echo '?')% ($(cat "$_b/status" 2>/dev/null || echo '?'))"
+    done
+    echo "Escrituras:   agrupadas cada $(( $(cat /proc/sys/vm/dirty_writeback_centisecs 2>/dev/null || echo 0) / 100 ))s"
+}
+
+# ---------------------------------------------------------------- suspender
+#
+# Qué sabe hacer este equipo. No todos saben lo mismo, y ofrecer en el menú
+# algo que el kernel no soporta es prometer que el portátil se despierta
+# cuando en realidad se queda apagado con el trabajo dentro.
+#
+#   mem     suspender a memoria. Se despierta en dos segundos, gasta poco.
+#   disk    hibernar: vuelca la memoria a la swap y se apaga del todo.
+#           Necesita swap del tamaño de la RAM; sin ella no se ofrece.
+#   freeze  "suspensión ligera", sin apagar nada. Es la que hay cuando el
+#           firmware sólo implementa s2idle (casi todos los portátiles
+#           modernos, la Surface incluida).
+soporta() {  # soporta <mem|disk|freeze>
+    [ -r /sys/power/state ] || return 1
+    case " $(cat /sys/power/state 2>/dev/null) " in
+        *" $1 "*) ;;
+        *) return 1 ;;
+    esac
+    # Hibernar sin sitio donde volcar la memoria no es hibernar: es apagar de
+    # golpe. Se comprueba que haya swap y que quepa.
+    if [ "$1" = "disk" ]; then
+        _swap="$(awk 'NR>1 {s+=$3} END {print s+0}' /proc/swaps 2>/dev/null)"
+        _ram="$(awk '/^MemTotal:/ {print $2}' /proc/meminfo 2>/dev/null)"
+        [ "${_swap:-0}" -ge "${_ram:-0}" ] || return 1
+    fi
+    return 0
+}
+
+dormir() {  # dormir <mem|disk|freeze>
+    soporta "$1" || return 1
+    # Escribir el disco antes de dormir. Si el despertar sale mal -- y en
+    # hardware nuevo sale mal más de lo que debería -- al menos no se pierde
+    # lo que estaba a medio escribir.
+    sync
+    printf '%s' "$1" > /sys/power/state 2>/dev/null || return 1
+    # Al volver, reaplicar el perfil: el kernel reinicia varios de estos
+    # ajustes al despertar y el equipo vuelve con el gobernador de fábrica.
+    aplicar "$(leer_preferencia)"
+    return 0
+}
+
+# Qué hace la tapa al cerrarse. Vive aparte del perfil porque son decisiones
+# distintas: alguien puede querer rendimiento máximo Y que se suspenda al
+# cerrar.
+PREF_TAPA="/etc/mikeos/tapa"
+leer_tapa() {
+    if [ -r "$PREF_TAPA" ]; then
+        cat "$PREF_TAPA" 2>/dev/null
+    else
+        # Por defecto, apagar la pantalla y bloquear: funciona en todas
+        # partes. Suspender se elige, porque en algunos equipos no despierta.
+        echo pantalla
+    fi
+}
+
+aplicar() {
+    case "$1" in
+        maximo)      perfil_maximo ;;
+        rendimiento) perfil_rendimiento ;;
+        ahorro)      perfil_ahorro ;;
+        *)
+            # Automático.
+            #
+            # En un SOBREMESA no hay ninguna razón para no ir al máximo: no hay
+            # batería que cuidar, y lo que se ahorra dejando dormir los buses
+            # son unos vatios a cambio de microsegundos de latencia en cada
+            # cosa que se toca. Así que un PC de sobremesa arranca en máximo,
+            # sin tener que pedirlo.
+            #
+            # En un PORTÁTIL, enchufado va en equilibrado y con batería en
+            # ahorro. El máximo también está disponible, pero se elige: en
+            # batería se nota, y nadie debería descubrir eso por sorpresa.
+            if ! es_portatil; then
+                perfil_maximo
+            elif con_cargador; then
+                perfil_rendimiento
+            else
+                perfil_ahorro
+            fi
+            ;;
+    esac
+}
+
+case "${1:-}" in
+    maximo|rendimiento|ahorro|auto)
+        # Hace falta root tanto para escribir en /sys como para guardar la
+        # elección en /etc. Si no lo somos, se vuelve a entrar por m-sudo y se
+        # hace todo allí: guardar desde aquí fallaría en silencio y el perfil
+        # se perdería en el siguiente arranque.
+        if [ "$(id -u)" != "0" ] && command -v m-sudo >/dev/null 2>&1; then
+            exec m-sudo "$0" "--aplicar-$1"
+        fi
+        guardar_preferencia "$1"
+        aplicar "$1"
+        echo "Perfil de energía: $1"
+        ;;
+    --aplicar-*)
+        guardar_preferencia "${1#--aplicar-}"
+        aplicar "${1#--aplicar-}"
+        ;;
+    estado)
+        estado
+        echo "Perfil:       $(leer_preferencia)"
+        echo "Equipo:       $(es_portatil && echo portátil || echo sobremesa)"
+        ;;
+    perfil)
+        leer_preferencia
+        ;;
+    suspender|hibernar|dormir-ligero)
+        case "$1" in
+            suspender)      _modo=mem ;;
+            hibernar)       _modo=disk ;;
+            dormir-ligero)  _modo=freeze ;;
+        esac
+        if [ "$(id -u)" != "0" ] && command -v m-sudo >/dev/null 2>&1; then
+            exec m-sudo "$0" "$1"
+        fi
+        if dormir "$_modo"; then
+            exit 0
+        fi
+        echo "Este equipo no sabe $1." >&2
+        exit 1
+        ;;
+    puede)
+        # Lo que el equipo soporta de verdad, una palabra por línea. Es lo que
+        # lee el Centro de Control para no ofrecer lo que no existe.
+        soporta mem    && echo suspender
+        soporta disk   && echo hibernar
+        soporta freeze && echo dormir-ligero
+        es_portatil    && echo portatil
+        ;;
+    tapa)
+        # m-energia tapa            dice qué hace la tapa
+        # m-energia tapa <opción>   lo cambia
+        if [ -n "${2:-}" ]; then
+            case "$2" in
+                pantalla|suspender|hibernar|nada) ;;
+                *) echo "Opciones: pantalla suspender hibernar nada" >&2; exit 1 ;;
+            esac
+            if [ "$(id -u)" != "0" ] && command -v m-sudo >/dev/null 2>&1; then
+                m-sudo "$0" tapa "$2" >/dev/null 2>&1 || true
+            else
+                mkdir -p "$(dirname "$PREF_TAPA")" 2>/dev/null || true
+                printf '%s\n' "$2" > "$PREF_TAPA" 2>/dev/null || true
+            fi
+        fi
+        leer_tapa
+        ;;
+    ""|servicio)
+        # Lo que llama el servicio al arrancar y cada vez que cambia la
+        # alimentación. Sólo aplica: la elección ya está guardada.
+        _p="$(leer_preferencia)"
+        if [ "$(id -u)" != "0" ] && command -v m-sudo >/dev/null 2>&1; then
+            exec m-sudo "$0" "--aplicar-$_p"
+        fi
+        aplicar "$_p"
+        ;;
+    *)
+        echo "Uso: m-energia [maximo|rendimiento|ahorro|auto|estado|perfil]" >&2
+        echo "            [suspender|hibernar|dormir-ligero|puede|tapa [opción]]" >&2
+        exit 1
+        ;;
+esac
+exit 0

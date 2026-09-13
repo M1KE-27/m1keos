@@ -1,8 +1,44 @@
 #!/bin/sh
+# bluetoothd - el demonio de Bluetooth.
 exec 2>&1
+
+# Esperar al bus del sistema: bluetoothd se rinde si no lo encuentra.
 i=0
 while [ ! -S /run/dbus/system_bus_socket ] && [ "$i" -lt 50 ]; do
     sleep 0.1
     i=$((i + 1))
 done
+
+# Quitar el bloqueo por software de todo lo de radio.
+#
+# Sin udev nadie restaura el estado guardado de rfkill, y en varios equipos
+# --- y en casi todos los que vienen de Windows --- el adaptador arranca
+# bloqueado por software. Desde fuera es idéntico a no tener Bluetooth:
+# bluetoothctl dice "No default controller available" y no hay ni un error.
+#
+# Se escribe directamente en /sys para no depender de la herramienta rfkill,
+# que no está en la imagen.
+for _r in /sys/class/rfkill/rfkill*; do
+    [ -d "$_r" ] || continue
+    case "$(cat "$_r/type" 2>/dev/null)" in
+        bluetooth|wlan) printf '0' > "$_r/soft" 2>/dev/null || true ;;
+    esac
+done
+
+# Esperar al adaptador. Si el firmware llegó tarde (ver m-reintentar-drivers),
+# hci0 aparece unos segundos después del arranque; arrancar bluetoothd antes no
+# rompe nada, pero esperar un poco evita un ciclo de reinicios de runit
+# mientras tanto.
+i=0
+while [ "$i" -lt 100 ]; do
+    # Cualquier hci, no sólo hci0: tras un reenganche del driver el adaptador
+    # puede volver con otro número, y esperar por "hci0" a secas dejaría el
+    # servicio dando vueltas veinte segundos para nada.
+    for _h in /sys/class/bluetooth/hci*; do
+        [ -d "$_h" ] && break 2
+    done
+    sleep 0.2
+    i=$((i + 1))
+done
+
 exec /usr/lib/bluetooth/bluetoothd --nodetach

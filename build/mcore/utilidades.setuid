@@ -1,0 +1,8 @@
+# Utilidades que DEBEN quedar con el bit setuid (modo 4755).
+#
+# m-sudo escala a root y m-autenticar lee /etc/shadow para la pantalla de
+# bloqueo. La imagen ya les ponía 4755, pero el paquete que los actualiza por
+# red los metía con 755: la primera "mpm upgrade" del sistema habría dejado
+# a quien la ejecutara sin sudo y sin poder desbloquear la pantalla.
+m-sudo
+m-autenticar

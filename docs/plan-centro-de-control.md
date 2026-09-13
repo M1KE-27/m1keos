@@ -315,6 +315,47 @@ verdadera y responde al clic.
 
 ---
 
+## Bloque 2b — Energía   ✅ hecho
+
+Apartado propio, porque mezclarlo con «Sistema» escondía justo lo que más se
+busca en un portátil.
+
+- [x] **2b.1 Perfil** — Automático / Ahorro / Equilibrado / **Máximo**. En un
+      sobremesa, «automático» YA significa máximo: no hay batería que cuidar y
+      lo que se ahorra dejando dormir los buses son unos vatios a cambio de
+      latencia en todo lo que se toca.
+- [x] **2b.2 Estado** — alimentación, gobernador, batería y `laptop_mode`, en
+      crudo. Lo que diría la terminal, sin traducir.
+- [x] **2b.3 Al cerrar la tapa** — Apagar pantalla / Suspender / Hibernar /
+      Nada. **Sólo aparece si el equipo tiene tapa**, y cada opción sólo si
+      `/sys/power/state` la publica de verdad.
+- [x] **2b.4 Suspender ahora / Hibernar ahora**.
+
+Lo detrás es `m-energia`, y la elección vive en `/etc/mikeos/energia` — no en
+el `$HOME` de nadie, porque quien la escribe es la persona que usa el
+escritorio y quien la lee es el servicio de runit, que corre como root.
+
+---
+
+## Bloque 2c — Controladores   ✅ hecho
+
+El apartado que pedía a gritos existir: cuando algo no funciona, la pregunta
+siempre es la misma y no tenía dónde responderse.
+
+- [x] **2c.1 Análisis del equipo** — gráfica, red (PCI y USB), **Bluetooth**,
+      sonido, entrada, cámara, almacenamiento, procesador y batería.
+- [x] **2c.2 Estado por componente** — funciona / sin driver / falta firmware /
+      parado. Cuatro averías distintas que hasta ahora se veían todas igual.
+- [x] **2c.3 Paquetes recomendados**, con el motivo de cada uno, y un botón que
+      los instala en una terminal de verdad.
+- [x] **2c.4 Informe completo** — abre `m-hardware`.
+
+Sale de `m-drivers --json`, la misma orden que responde en la terminal: el
+panel y la terminal no pueden decir cosas distintas porque salen del mismo
+sitio.
+
+---
+
 ## Bloque 3 — Escritorio
 
 - [ ] **3.1 Fondo: elegir archivo**

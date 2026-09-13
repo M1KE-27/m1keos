@@ -157,18 +157,37 @@ MCORE_SPEC="$PKGS_BUILD_DIR/mcore"
 rm -rf "$MCORE_SPEC"
 mkdir -p "$MCORE_SPEC/root/usr/bin"
 
-# Esta lista se había quedado atrás respecto a la de scripts/build.sh: faltaban
-# m-metrics, m-drivers, m-wifi, m-bluetooth, m-wallhaven, m-audio-setup y
-# m-fondo, o sea que existían en la imagen recién instalada pero NINGUNA
-# actualización podía tocarlas nunca.
-for u in m-service m-system m-network m-user m-disk m-info m-doctor m-log \
-         m-sudo m-install m-desktop m-screenshot m-volume m-fastfetch \
-         m-workspace-cycle m-metrics m-drivers m-wifi m-bluetooth \
-         m-wallhaven m-audio-setup m-fondo m-internet; do
-    if [ -f "$PROJECT_ROOT/build/mcore/$u" ]; then
-        cp "$PROJECT_ROOT/build/mcore/$u" "$MCORE_SPEC/root/usr/bin/"
-        chmod 755 "$MCORE_SPEC/root/usr/bin/$u"
+# La lista se lee de build/mcore/utilidades.lista, que es la MISMA que usa
+# scripts/build.sh para armar la imagen.
+#
+# Antes estaba escrita aquí a mano, y se había quedado atrás: faltaban
+# m-brillo, m-tapa, m-clave, m-autenticar, m-acceso-remoto, m-colores,
+# m-particiones, m-apagado, m-hardware, m-reintentar-drivers, m-discos-permisos
+# y resolvconf. Existían en la imagen recién instalada y NINGUNA actualización
+# podía tocarlas nunca. El fallo no daba ningún error: "mpm upgrade" decía que
+# todo estaba al día, que es justo la forma más cara de equivocarse.
+MCORE_LISTA="$PROJECT_ROOT/build/mcore/utilidades.lista"
+[ -f "$MCORE_LISTA" ] || { echo "ERROR: falta $MCORE_LISTA" >&2; exit 1; }
+for u in $(grep -v '^[[:space:]]*#' "$MCORE_LISTA" | grep -v '^[[:space:]]*$'); do
+    if [ ! -f "$PROJECT_ROOT/build/mcore/$u" ]; then
+        echo "ERROR: utilidades.lista nombra $u y no existe en build/mcore/" >&2
+        exit 1
     fi
+    cp "$PROJECT_ROOT/build/mcore/$u" "$MCORE_SPEC/root/usr/bin/"
+    chmod 755 "$MCORE_SPEC/root/usr/bin/$u"
+done
+
+# Y el bit setuid donde hace falta.
+#
+# Esto faltaba y era grave: el paquete metía m-sudo con modo 755, así que la
+# PRIMERA "mpm upgrade" de un sistema instalado dejaba a quien la ejecutara
+# sin poder escalar a root y sin poder desbloquear la pantalla --- con el
+# agravante de que arreglarlo requiere justamente el sudo que se acaba de
+# romper. La imagen sí les ponía 4755; el paquete no.
+for u in $(grep -v '^[[:space:]]*#' "$PROJECT_ROOT/build/mcore/utilidades.setuid" 2>/dev/null \
+           | grep -v '^[[:space:]]*$'); do
+    [ -f "$MCORE_SPEC/root/usr/bin/$u" ] || continue
+    chmod 4755 "$MCORE_SPEC/root/usr/bin/$u"
 done
 
 # Fastfetch se entrega junto a mcore para que el banner MIKE sea reproducible

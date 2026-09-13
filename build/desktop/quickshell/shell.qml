@@ -206,6 +206,111 @@ ShellRoot {
         onExited: mirarClave.running = true
     }
 
+    // ------------------------------------------------------------------
+    // ENERGÍA
+    // ------------------------------------------------------------------
+    // El perfil (ahorro / equilibrado / máximo) y qué hace la tapa. Los dos
+    // los guarda y aplica m-energia; aquí sólo se enseñan y se cambian.
+    //
+    // "energiaPuede" es la lista de lo que ESTE equipo soporta de verdad
+    // (suspender, hibernar, portatil). Se pregunta en vez de suponerlo: un
+    // menú que ofrece hibernar en un equipo sin swap suficiente promete algo
+    // que va a terminar en un apagón con el trabajo dentro.
+    property string perfilEnergia: "auto"
+    property string tapaAccion: "pantalla"
+    property var energiaPuede: []
+    property string energiaEstado: ""
+    readonly property bool esPortatil: energiaPuede.indexOf("portatil") >= 0
+
+    Process {
+        id: leerEnergia
+        running: true
+        command: ["sh", "-c", "m-energia perfil; echo '---'; m-energia tapa; echo '---'; m-energia puede"]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                var partes = text.split("---")
+                if (partes.length >= 1) root.perfilEnergia = partes[0].trim() || "auto"
+                if (partes.length >= 2) root.tapaAccion = partes[1].trim() || "pantalla"
+                if (partes.length >= 3) {
+                    var l = []
+                    var lineas = partes[2].split("\n")
+                    for (var i = 0; i < lineas.length; i++) {
+                        var v = lineas[i].trim()
+                        if (v !== "") l.push(v)
+                    }
+                    root.energiaPuede = l
+                }
+            }
+        }
+    }
+    Process {
+        id: leerEnergiaEstado
+        command: ["m-energia", "estado"]
+        stdout: StdioCollector { onStreamFinished: root.energiaEstado = text.trim() }
+    }
+    Process {
+        id: ponerPerfil
+        property string cual: "auto"
+        command: ["m-energia", cual]
+        onExited: { leerEnergia.running = true; leerEnergiaEstado.running = true }
+    }
+    Process {
+        id: ponerTapa
+        property string cual: "pantalla"
+        command: ["m-energia", "tapa", cual]
+        onExited: leerEnergia.running = true
+    }
+    Process { id: dormirAhora; command: ["m-energia", "suspender"] }
+    Process { id: hibernarAhora; command: ["m-energia", "hibernar"] }
+
+    // ------------------------------------------------------------------
+    // CONTROLADORES
+    // ------------------------------------------------------------------
+    // El análisis completo del equipo: qué hay, en qué estado está cada cosa
+    // y qué paquete le falta. Lo hace m-drivers, que es el mismo que responde
+    // en la terminal: el panel y la terminal no pueden decir cosas distintas
+    // porque salen de la misma orden.
+    property var driversComp: []
+    property var driversPaq: []
+    property bool driversEscaneando: false
+    property bool driversInstalando: false
+    property string driversCuando: ""
+
+    Process {
+        id: escanearDrivers
+        command: ["m-drivers", "--json"]
+        onRunningChanged: if (running) root.driversEscaneando = true
+        stdout: StdioCollector {
+            onStreamFinished: {
+                root.driversEscaneando = false
+                try {
+                    var d = JSON.parse(text)
+                    root.driversComp = d.componentes || []
+                    root.driversPaq = d.paquetes || []
+                    root.driversCuando = Qt.formatDateTime(new Date(), "HH:mm:ss")
+                } catch (e) {
+                    root.driversComp = []
+                    root.driversPaq = []
+                    root.driversCuando = "el análisis falló"
+                }
+            }
+        }
+    }
+    Process {
+        id: instalarDrivers
+        // En una terminal de verdad y no en silencio: instalar descarga cientos
+        // de megas y puede pedir cosas. Esconder eso detrás de un botón que no
+        // da señales es exactamente lo que hacía pensar que no pasaba nada.
+        command: ["m-terminal", "-e", "sh", "-c",
+                  "m-drivers --instalar; echo; echo 'Pulsa Intro para cerrar.'; read x"]
+        onExited: escanearDrivers.running = true
+    }
+    Process {
+        id: informeHardware
+        command: ["m-terminal", "-e", "sh", "-c",
+                  "m-hardware; echo; echo 'Pulsa Intro para cerrar.'; read x"]
+    }
+
     // Distribución de teclado activa, para que el botón enseñe cuál es.
     property string kbActual: String(ajuste("kb_layout", "us,es")).split(",")[0]
 
@@ -1166,6 +1271,8 @@ ShellRoot {
     readonly property var secciones: [
         { id: "vistazo",    nombre: "Vistazo",     icono: "vistazo" },
         { id: "sistema",    nombre: "Sistema",     icono: "sistema" },
+        { id: "energia",    nombre: "Energía",     icono: "energia" },
+        { id: "drivers",    nombre: "Controladores", icono: "drivers" },
         { id: "barra",      nombre: "Barra",       icono: "barra" },
         { id: "escritorio", nombre: "Escritorio",  icono: "escritorio" },
         { id: "bloqueo",    nombre: "Bloqueo",     icono: "bloqueo" },
@@ -1481,6 +1588,303 @@ ShellRoot {
 
                                 Separador {}
                                 Pendiente { texto: "Sonido, batería e idioma llegan en el Bloque 2." }
+                            }
+
+                            // ===== ENERGÍA =====
+                            //
+                            // Rendimiento máximo para quien lo quiera --- en
+                            // un sobremesa no hay motivo para no tenerlo --- y
+                            // en un portátil, además, elegir qué pasa al
+                            // cerrar la tapa. No se decide por el usuario: se
+                            // le ofrece sólo lo que su equipo sabe hacer.
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: 14
+                                visible: root.seccion === "energia"
+
+                                Titulo { texto: "Perfil" }
+
+                                GridLayout {
+                                    columns: 2; columnSpacing: 14; rowSpacing: 10
+                                    Layout.fillWidth: true
+
+                                    Etiqueta { texto: "Modo" }
+                                    Row {
+                                        spacing: 6
+                                        Layout.alignment: Qt.AlignRight
+                                        CtlButton {
+                                            text: "Automático"; small: true
+                                            active: root.perfilEnergia === "auto"
+                                            onClicked: { ponerPerfil.cual = "auto"; ponerPerfil.running = true }
+                                        }
+                                        CtlButton {
+                                            text: "Ahorro"; small: true
+                                            active: root.perfilEnergia === "ahorro"
+                                            onClicked: { ponerPerfil.cual = "ahorro"; ponerPerfil.running = true }
+                                        }
+                                        CtlButton {
+                                            text: "Equilibrado"; small: true
+                                            active: root.perfilEnergia === "rendimiento"
+                                            onClicked: { ponerPerfil.cual = "rendimiento"; ponerPerfil.running = true }
+                                        }
+                                        CtlButton {
+                                            text: "Máximo"; small: true
+                                            active: root.perfilEnergia === "maximo"
+                                            onClicked: { ponerPerfil.cual = "maximo"; ponerPerfil.running = true }
+                                        }
+                                    }
+                                }
+
+                                Text {
+                                    Layout.fillWidth: true
+                                    wrapMode: Text.WordWrap
+                                    color: Paleta.textoTenue
+                                    font.pixelSize: 10
+                                    text: root.perfilEnergia === "maximo"
+                                        ? "El procesador no baja de frecuencia y nada se duerme: ni el USB, ni el PCI Express, ni el audio. Es lo más rápido que da este equipo. En un portátil sin cargador gasta bastante más."
+                                        : root.perfilEnergia === "ahorro"
+                                        ? "Todo lo que puede dormirse, duerme. Las escrituras al disco se agrupan. Menos batería gastada, algo más de latencia al despertar."
+                                        : root.perfilEnergia === "rendimiento"
+                                        ? "Frecuencia bajo demanda y disco siempre despierto. El punto medio, y lo que se usa con el cargador puesto."
+                                        : root.esPortatil
+                                        ? "Con el cargador puesto va en equilibrado; con batería, en ahorro. Se cambia solo al enchufar y desenchufar."
+                                        : "Este equipo no tiene batería, así que automático ya significa rendimiento máximo: no hay nada que ahorrar."
+                                }
+
+                                Separador {}
+
+                                Titulo { texto: "Estado" }
+                                Text {
+                                    Layout.fillWidth: true
+                                    color: Paleta.texto
+                                    font.pixelSize: 11
+                                    font.family: "monospace"
+                                    text: root.energiaEstado === "" ? "Pulsa «Actualizar» para leerlo." : root.energiaEstado
+                                }
+                                CtlButton {
+                                    text: "Actualizar"; small: true
+                                    onClicked: leerEnergiaEstado.running = true
+                                }
+
+                                // Lo de la tapa sólo tiene sentido si hay tapa.
+                                Separador { visible: root.esPortatil }
+                                Titulo { texto: "Al cerrar la tapa"; visible: root.esPortatil }
+
+                                GridLayout {
+                                    columns: 2; columnSpacing: 14; rowSpacing: 10
+                                    Layout.fillWidth: true
+                                    visible: root.esPortatil
+
+                                    Etiqueta { texto: "Hacer" }
+                                    Row {
+                                        spacing: 6
+                                        Layout.alignment: Qt.AlignRight
+                                        CtlButton {
+                                            text: "Apagar pantalla"; small: true
+                                            active: root.tapaAccion === "pantalla"
+                                            onClicked: { ponerTapa.cual = "pantalla"; ponerTapa.running = true }
+                                        }
+                                        CtlButton {
+                                            text: "Suspender"; small: true
+                                            visible: root.energiaPuede.indexOf("suspender") >= 0
+                                            active: root.tapaAccion === "suspender"
+                                            onClicked: { ponerTapa.cual = "suspender"; ponerTapa.running = true }
+                                        }
+                                        CtlButton {
+                                            text: "Hibernar"; small: true
+                                            visible: root.energiaPuede.indexOf("hibernar") >= 0
+                                            active: root.tapaAccion === "hibernar"
+                                            onClicked: { ponerTapa.cual = "hibernar"; ponerTapa.running = true }
+                                        }
+                                        CtlButton {
+                                            text: "Nada"; small: true
+                                            active: root.tapaAccion === "nada"
+                                            onClicked: { ponerTapa.cual = "nada"; ponerTapa.running = true }
+                                        }
+                                    }
+                                }
+
+                                Text {
+                                    Layout.fillWidth: true
+                                    visible: root.esPortatil
+                                    wrapMode: Text.WordWrap
+                                    color: Paleta.textoTenue
+                                    font.pixelSize: 10
+                                    text: "La sesión se bloquea siempre al cerrar, hagas lo que hagas con el resto. "
+                                        + (root.energiaPuede.indexOf("suspender") >= 0
+                                           ? "Suspender depende del firmware del equipo: pruébalo con la tapa abierta antes de fiarte de él en la mochila."
+                                           : "Este equipo no ofrece suspender: su firmware no lo publica en /sys/power/state.")
+                                        + " Con un monitor externo conectado no se hace nada, para poder usarlo cerrado."
+                                }
+
+                                Separador { visible: root.energiaPuede.indexOf("suspender") >= 0 }
+                                Row {
+                                    spacing: 8
+                                    visible: root.energiaPuede.indexOf("suspender") >= 0
+                                    CtlButton { text: "Suspender ahora"; onClicked: dormirAhora.running = true }
+                                    CtlButton {
+                                        text: "Hibernar ahora"
+                                        visible: root.energiaPuede.indexOf("hibernar") >= 0
+                                        onClicked: hibernarAhora.running = true
+                                    }
+                                }
+                            }
+
+                            // ===== CONTROLADORES =====
+                            //
+                            // El apartado que faltaba: mira TODO el equipo ---
+                            // gráfica, red, Bluetooth, sonido, entrada, cámara,
+                            // discos, procesador, batería --- y de cada cosa
+                            // dice en qué estado está. No sólo "qué instalar":
+                            // también qué está detectado pero muerto, que es un
+                            // problema distinto y se arregla de otra forma.
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: 14
+                                visible: root.seccion === "drivers"
+
+                                // Escanear al entrar, no al arrancar la barra:
+                                // recorrer PCI, USB y dmesg cuesta, y no tiene
+                                // sentido pagarlo en cada arranque de sesión
+                                // para un apartado que casi nunca se abre.
+                                onVisibleChanged: if (visible && root.driversComp.length === 0 && !root.driversEscaneando) escanearDrivers.running = true
+
+                                Titulo { texto: "Este equipo" }
+
+                                Row {
+                                    spacing: 8
+                                    CtlButton {
+                                        text: root.driversEscaneando ? "Analizando…" : "Analizar de nuevo"
+                                        onClicked: if (!root.driversEscaneando) escanearDrivers.running = true
+                                    }
+                                    CtlButton { text: "Informe completo"; onClicked: informeHardware.running = true }
+                                }
+
+                                Text {
+                                    visible: root.driversCuando !== ""
+                                    color: Paleta.textoTenue
+                                    font.pixelSize: 10
+                                    text: "Último análisis: " + root.driversCuando
+                                }
+
+                                Text {
+                                    visible: root.driversComp.length === 0 && !root.driversEscaneando
+                                    Layout.fillWidth: true
+                                    wrapMode: Text.WordWrap
+                                    color: Paleta.textoTenue
+                                    font.pixelSize: 11
+                                    text: "Todavía no se ha analizado nada."
+                                }
+
+                                // La lista, agrupada por categoría. El
+                                // encabezado se dibuja cuando cambia respecto
+                                // a la fila anterior.
+                                Repeater {
+                                    model: root.driversComp
+                                    ColumnLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 2
+
+                                        Text {
+                                            visible: index === 0 || root.driversComp[index - 1].categoria !== modelData.categoria
+                                            text: modelData.categoria
+                                            color: Paleta.textoTenue
+                                            font.pixelSize: 10
+                                            font.bold: true
+                                            topPadding: index === 0 ? 0 : 8
+                                        }
+
+                                        RowLayout {
+                                            Layout.fillWidth: true
+                                            spacing: 8
+
+                                            // Un punto de color: verde va,
+                                            // rojo no va, ámbar le falta algo.
+                                            Rectangle {
+                                                width: 8; height: 8; radius: 4
+                                                Layout.alignment: Qt.AlignTop
+                                                Layout.topMargin: 4
+                                                color: modelData.estado === "ok"           ? "#00e676"
+                                                     : modelData.estado === "sin-driver"   ? "#ff5252"
+                                                     : modelData.estado === "sin-firmware" ? "#ffca28"
+                                                     : modelData.estado === "apagado"      ? "#ffca28"
+                                                     : Paleta.borde
+                                            }
+
+                                            ColumnLayout {
+                                                Layout.fillWidth: true
+                                                spacing: 0
+                                                Text {
+                                                    Layout.fillWidth: true
+                                                    text: modelData.nombre
+                                                    color: Paleta.texto
+                                                    font.pixelSize: 11
+                                                    elide: Text.ElideRight
+                                                }
+                                                Text {
+                                                    Layout.fillWidth: true
+                                                    text: modelData.detalle
+                                                    color: Paleta.textoTenue
+                                                    font.pixelSize: 10
+                                                    wrapMode: Text.WordWrap
+                                                }
+                                            }
+
+                                            Text {
+                                                text: modelData.estado === "ok"           ? "funciona"
+                                                    : modelData.estado === "sin-driver"   ? "sin driver"
+                                                    : modelData.estado === "sin-firmware" ? "falta firmware"
+                                                    : modelData.estado === "apagado"      ? "parado"
+                                                    : modelData.estado === "ausente"      ? "no hay"
+                                                    : modelData.estado
+                                                color: Paleta.textoTenue
+                                                font.pixelSize: 10
+                                                Layout.alignment: Qt.AlignTop
+                                                Layout.topMargin: 1
+                                            }
+                                        }
+                                    }
+                                }
+
+                                Separador { visible: root.driversPaq.length > 0 }
+                                Titulo { texto: "Recomendado para este equipo"; visible: root.driversPaq.length > 0 }
+
+                                Repeater {
+                                    model: root.driversPaq
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 8
+                                        Text {
+                                            text: modelData.nombre
+                                            color: Paleta.texto
+                                            font.pixelSize: 11
+                                            font.bold: true
+                                            Layout.preferredWidth: 140
+                                        }
+                                        Text {
+                                            Layout.fillWidth: true
+                                            text: modelData.motivo
+                                            color: Paleta.textoTenue
+                                            font.pixelSize: 10
+                                            wrapMode: Text.WordWrap
+                                        }
+                                    }
+                                }
+
+                                CtlButton {
+                                    visible: root.driversPaq.length > 0
+                                    text: "Instalar lo recomendado"
+                                    onClicked: instalarDrivers.running = true
+                                }
+
+                                Text {
+                                    visible: root.driversPaq.length === 0 && root.driversComp.length > 0
+                                    Layout.fillWidth: true
+                                    wrapMode: Text.WordWrap
+                                    color: Paleta.textoTenue
+                                    font.pixelSize: 11
+                                    text: "No falta nada: el sistema ya cubre este equipo."
+                                }
                             }
 
                             // ===== BARRA =====
@@ -1955,6 +2359,19 @@ ShellRoot {
             root.seccion = "vistazo"
             root.panelOpen = true
             wifiList.refresh()
+        }
+
+        // Abrir directamente un apartado. Lo usa la pantalla de bienvenida
+        // para llevar a "Controladores" desde su ficha del equipo: contar con
+        // palabras dónde hay que pulsar es el sustituto de un botón.
+        function seccion(cual: string): void {
+            var valida = false
+            for (var i = 0; i < root.secciones.length; i++)
+                if (root.secciones[i].id === cual) valida = true
+            root.seccion = valida ? cual : "vistazo"
+            root.panelOpen = true
+            if (root.seccion === "drivers" && !root.driversEscaneando)
+                escanearDrivers.running = true
         }
 
         // Para poder PREGUNTARLE a la barra en qué estado está.

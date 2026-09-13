@@ -85,6 +85,106 @@ for _dev in /sys/bus/usb/devices/*:*; do
     fi
 done
 
+# ---------------------------------------------------------------------------
+# Los que SÍ tienen driver pero se quedaron sin firmware
+# ---------------------------------------------------------------------------
+#
+# Lo de arriba sólo rescata dispositivos SIN driver. Y resulta que el caso más
+# molesto no es ése.
+#
+# El Bluetooth de Intel (btusb) y muchos otros drivers se enganchan al
+# dispositivo ANTES de pedir el firmware: primero hacen "probe", que sale bien,
+# y luego cargan el firmware en segundo plano. Si el firmware no está --
+# porque el sistema todavía no se ha montado -- el probe ya ha terminado con
+# éxito y el dispositivo se queda con driver puesto y muerto:
+#
+#     Bluetooth: hci0: Direct firmware load for intel/ibt-19-0-4.sfi failed with error -2
+#     Bluetooth: hci0: Failed to load Intel firmware file (-2)
+#
+# Desde /sys eso es indistinguible de un dispositivo que funciona: tiene
+# driver. Por eso el bucle de arriba lo saltaba y el Bluetooth seguía sin
+# aparecer después de un arranque entero. Era exactamente el síntoma: "no
+# funciona el bluetooth", sin un solo error a la vista.
+#
+# La forma de arreglarlo es desengancharlo y volverlo a enganchar, que rehace
+# el probe entero con el firmware ya disponible. Y para saber a quién, se lee
+# el propio registro del kernel: dice el driver, el dispositivo y qué archivo
+# pidió. Sólo se rehace si ese archivo existe AHORA -- si sigue sin estar, el
+# reintento fallaría igual y encima dejaría el dispositivo desenganchado.
+rescatar_sin_firmware() {
+    command -v dmesg >/dev/null 2>&1 || return 0
+
+    # El kernel nombra al dispositivo de tres formas distintas según el
+    # driver, y las tres aparecen en un arranque normal:
+    #
+    #   Bluetooth: hci0: Direct firmware load for intel/ibt-19-0-4.sfi failed
+    #   iwlwifi 0000:02:00.0: Direct firmware load for iwlwifi-cc-a0-77.ucode failed
+    #   btusb 1-5:1.0: Direct firmware load for intel/ibt-0041-0041.sfi failed
+    #
+    # Así que no se intenta adivinar el driver por el texto: se coge la última
+    # palabra antes de los dos puntos (hci0, 0000:02:00.0, 1-5:1.0), se busca
+    # ese nombre en /sys, y se lee del propio dispositivo a qué driver está
+    # enganchado. Eso funciona con los tres formatos y con los que vengan.
+    dmesg 2>/dev/null | awk '
+        /Direct firmware load for .* failed/ {
+            # Lo de delante de ": Direct firmware load": ahí acaba el nombre
+            # del dispositivo. La última palabra de eso es el nombre.
+            i = index($0, ": Direct firmware load for ")
+            if (i == 0) next
+            izq = substr($0, 1, i - 1)
+            sub(/.*[] ]/, "", izq)
+            fw = $0
+            sub(/.*Direct firmware load for /, "", fw)
+            sub(/ .*/, "", fw)
+            if (izq != "" && fw != "") print izq, fw
+        }' | sort -u | while read -r _id _fw; do
+        [ -n "$_id" ] && [ -n "$_fw" ] || continue
+
+        # ¿Está el firmware AHORA? Si sigue faltando, reintentar sólo dejaría
+        # el dispositivo desenganchado y peor que antes.
+        _hay=0
+        for _ext in '' .zst .xz .gz; do
+            [ -f "/lib/firmware/$_fw$_ext" ] && { _hay=1; break; }
+        done
+        [ "$_hay" = 1 ] || continue
+
+        # Encontrar el dispositivo real en /sys.
+        _dev=""
+        for _b in /sys/bus/*/devices/"$_id"; do
+            [ -e "$_b" ] && { _dev="$_b"; break; }
+        done
+        if [ -z "$_dev" ]; then
+            # Nombre de clase (hci0, wlan0, card0): su enlace "device" lleva
+            # al dispositivo de verdad.
+            for _c in /sys/class/*/"$_id"/device; do
+                [ -e "$_c" ] && { _dev="$(readlink -f "$_c" 2>/dev/null)"; break; }
+            done
+        fi
+        [ -n "$_dev" ] && [ -d "$_dev" ] || continue
+
+        # La gráfica NO se reengancha, por el mismo motivo que arriba: la
+        # consola está pintando sobre ella. Desengancharla deja la pantalla en
+        # negro y no hay forma de leer lo que pasó. Su firmware va empotrado
+        # en el kernel precisamente para no llegar aquí nunca.
+        case "$(cat "$_dev/class" 2>/dev/null)" in
+            0x03*) continue ;;
+        esac
+
+        # ¿A qué driver está enganchado? Si no lo está, ya lo cubre el bucle
+        # de arriba.
+        _drvdir="$(readlink -f "$_dev/driver" 2>/dev/null)"
+        [ -n "$_drvdir" ] && [ -d "$_drvdir" ] || continue
+        _nombre="$(basename "$_dev")"
+
+        # Desenganchar y volver a enganchar: rehace el probe entero, y esta
+        # vez el firmware está donde tiene que estar.
+        printf '%s' "$_nombre" > "$_drvdir/unbind" 2>/dev/null || continue
+        printf '%s' "$_nombre" > "$_drvdir/bind"   2>/dev/null || true
+        echo "[drivers] $(basename "$_drvdir") $_nombre: reenganchado, $_fw ya está en el sistema."
+    done
+}
+rescatar_sin_firmware
+
 if [ "$_reintentados" -gt 0 ]; then
     echo "[drivers] Reintentados $_reintentados dispositivos que se quedaron sin driver."
     # Un momento para que los que ahora sí cargan terminen de registrarse antes

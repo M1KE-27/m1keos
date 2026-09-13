@@ -69,6 +69,10 @@ VERSION="$(tr -d ' \n' < "$RAIZ/VERSION" 2>/dev/null || echo 0.0.0)"
 [ -n "$ETIQUETA_ISO" ] || ETIQUETA_ISO="v$VERSION"
 URL_ISO="https://github.com/${MIKEOS_REPO_GITHUB:-M1KE-27/m1keos}/releases/download/$ETIQUETA_ISO/mikeos.iso"
 FECHA="$(date +'%-d de %B de %Y')"
+# La misma fecha en inglés, para el pie de las páginas en ese idioma. Se calcula
+# aquí y no dentro de t(): "date" con otro idioma exige tocar LC_TIME, y hacerlo
+# en medio de la generación afectaría a todo lo que venga detrás.
+FECHA_EN="$(LC_ALL=C date +'%B %-d, %Y')"
 gris "  kernel $KVER · ISO $ISO_TAM · $N_PKG paquetes"
 
 # --- Hoja de estilo compartida ------------------------------------------------
@@ -94,13 +98,39 @@ cat > "$WEB/estilo.css" <<'CSS'
 @font-face{font-family:Geist;src:url(tipos/geist-700.woff2)format("woff2");font-weight:700;font-display:swap}
 @font-face{font-family:"JB Mono";src:url(tipos/jbmono-400.woff2)format("woff2");font-weight:400;font-display:swap}
 
+/* ---------------------------------------------------------------------------
+   COLOR
+   ---------------------------------------------------------------------------
+   Los colores oscuros son los del escritorio (build/desktop/quickshell/
+   Paleta.qml). Para el sitio de un sistema operativo, la fuente honesta de
+   color es el propio sistema: lo que se ve aquí es lo que se ve al arrancarlo.
+
+   Hasta ahora el sitio era SÓLO oscuro, y había colores escritos a pelo por
+   media hoja (#05070c en los bloques de código, un rgba en la navegación).
+   Quien entraba de día con el móvil se comía un fondo negro sin alternativa, y
+   añadir un tema claro era imposible sin cazar esos valores sueltos uno a uno.
+   Ahora TODO color sale de una variable, y hay tres estados:
+
+     :root                        el tema claro, que es el valor por defecto
+     prefers-color-scheme:dark    lo que pida el sistema de quien mira
+     [data-tema="claro"|"oscuro"] lo que haya elegido a mano, que gana
+
+   La regla que separa esto del "dark tech" de plantilla sigue intacta: el
+   acento SÓLO para lo que está vivo. En toda la página aparece en cinco sitios
+   contados. El color lo ponen las capturas, no la decoración. */
 :root{
-  --lienzo:#090b10;
-  --superficie:#12161d;
-  --borde:#232a35;
-  --texto:#e8ebf0;
-  --tenue:#79818f;
-  --vivo:#00d4ff;
+  --lienzo:#fbfbfd;
+  --lienzo-nav:rgba(251,251,253,.82);
+  --superficie:#f1f2f6;
+  --hundido:#eef0f4;
+  --borde:#dfe2e9;
+  --borde-fuerte:#c8ccd6;
+  --texto:#10141b;
+  --tenue:#5c6472;
+  --vivo:#0077a8;
+  --vivo-claro:#005f88;
+  --sobre-vivo:#ffffff;
+  --sombra:0 1px 2px rgba(16,20,27,.05),0 8px 24px rgba(16,20,27,.06);
 
   --sans:Geist,ui-sans-serif,system-ui,sans-serif;
   --mono:"JB Mono",ui-monospace,SFMono-Regular,monospace;
@@ -108,6 +138,42 @@ cat > "$WEB/estilo.css" <<'CSS'
   /* Una sola escala de radios, documentada: reglas estructurales a 0,
      superficies e imágenes a 10, cosas pulsables en cápsula. */
   --r-sup:10px;
+}
+
+/* El tema oscuro: los colores del escritorio de verdad. */
+@media (prefers-color-scheme:dark){
+  :root:not([data-tema="claro"]){
+    --lienzo:#090b10;
+    --lienzo-nav:rgba(9,11,16,.86);
+    --superficie:#12161d;
+    --hundido:#05070c;
+    --borde:#232a35;
+    --borde-fuerte:#333c4a;
+    --texto:#e8ebf0;
+    --tenue:#79818f;
+    --vivo:#00d4ff;
+    --vivo-claro:#3ee0ff;
+    --sobre-vivo:#04121a;
+    --sombra:0 1px 2px rgba(0,0,0,.4),0 10px 30px rgba(0,0,0,.35);
+  }
+}
+/* Y el mismo tema cuando se elige a mano, que manda sobre lo que diga el
+   sistema. Va repetido a propósito: una variable definida SÓLO dentro de un
+   media query deja de existir en cuanto el media query no aplica, y entonces
+   el botón de cambiar tema no puede hacer nada. */
+:root[data-tema="oscuro"]{
+  --lienzo:#090b10;
+  --lienzo-nav:rgba(9,11,16,.86);
+  --superficie:#12161d;
+  --hundido:#05070c;
+  --borde:#232a35;
+  --borde-fuerte:#333c4a;
+  --texto:#e8ebf0;
+  --tenue:#79818f;
+  --vivo:#00d4ff;
+  --vivo-claro:#3ee0ff;
+  --sobre-vivo:#04121a;
+  --sombra:0 1px 2px rgba(0,0,0,.4),0 10px 30px rgba(0,0,0,.35);
 }
 
 *{box-sizing:border-box}
@@ -124,14 +190,14 @@ body{
   font-weight:400;letter-spacing:-0.003em;
   -webkit-font-smoothing:antialiased;
 }
-::selection{background:var(--vivo);color:#04121a}
+::selection{background:var(--vivo);color:var(--sobre-vivo)}
 
 .cont{max-width:1180px;margin:0 auto;padding:0 32px}
 .prosa{max-width:68ch}
 
 /* --- Navegación. Una línea, 64 px, sin excepciones. --- */
 nav{border-bottom:1px solid var(--borde);position:sticky;top:0;z-index:10;
-    background:rgba(9,11,16,.86);backdrop-filter:blur(14px)}
+    background:var(--lienzo-nav);backdrop-filter:blur(14px)}
 nav .cont{display:flex;align-items:center;gap:28px;height:64px}
 .marca{display:flex;align-items:center;gap:9px;color:var(--texto);
        text-decoration:none;font-weight:700;letter-spacing:-0.02em;margin-right:8px}
@@ -140,14 +206,42 @@ nav .cont{display:flex;align-items:center;gap:28px;height:64px}
 .enl:hover{color:var(--texto)}
 .enl.aqui{color:var(--texto)}
 nav .derecha{margin-left:auto}
+/* El selector de idioma va escrito EN EL IDIOMA AL QUE LLEVA ("Read in
+   English" en la página española). Un icono de globo o las siglas "EN/ES" no
+   dicen nada a quien no sabe ya lo que va a pasar; la frase en el otro idioma
+   la entiende justo quien la necesita. */
+.idioma{white-space:nowrap}
+
+/* El botón de tema. Un cuadrado del alto de un botón, con los dos iconos
+   dentro y sólo uno visible: así no cambia de tamaño al pulsarlo y la
+   navegación no da un salto. */
+.tema{width:34px;height:34px;flex:none;display:grid;place-items:center;
+      border:1px solid var(--borde);border-radius:999px;background:transparent;
+      color:var(--tenue);cursor:pointer;padding:0}
+.tema:hover{color:var(--texto);border-color:var(--borde-fuerte)}
+.tema svg{width:15px;height:15px}
+.tema .luna{display:none}
+.tema .sol{display:block}
+@media (prefers-color-scheme:dark){
+  :root:not([data-tema="claro"]) .tema .luna{display:block}
+  :root:not([data-tema="claro"]) .tema .sol{display:none}
+}
+:root[data-tema="oscuro"] .tema .luna{display:block}
+:root[data-tema="oscuro"] .tema .sol{display:none}
+:root[data-tema="claro"] .tema .luna{display:none}
+:root[data-tema="claro"] .tema .sol{display:block}
 
 /* --- Botones. Cápsula, y sólo el primario lleva el acento. --- */
-.btn{display:inline-block;padding:11px 20px;border-radius:999px;
-     font-size:14.5px;font-weight:500;text-decoration:none;
-     border:1px solid var(--borde);color:var(--texto);background:transparent}
-.btn:hover{background:var(--superficie)}
-.btn-vivo{background:var(--vivo);color:#04121a;border-color:var(--vivo);font-weight:700}
-.btn-vivo:hover{background:#3ee0ff}
+.btn{display:inline-flex;align-items:center;gap:9px;padding:11px 20px;
+     border-radius:999px;font-size:14.5px;font-weight:500;text-decoration:none;
+     border:1px solid var(--borde);color:var(--texto);background:transparent;
+     transition:background .15s,border-color .15s}
+.btn:hover{background:var(--superficie);border-color:var(--borde-fuerte)}
+.btn-vivo{background:var(--vivo);color:var(--sobre-vivo);border-color:var(--vivo);font-weight:700}
+.btn-vivo:hover{background:var(--vivo-claro);border-color:var(--vivo-claro)}
+/* El tamaño del archivo va DENTRO del botón de descarga: quien lo mira está
+   decidiendo si se lo baja, y el dato que necesita para decidir es ese. */
+.btn .peso{font-family:var(--mono);font-size:12px;opacity:.72;font-weight:400}
 
 /* --- Portada --- */
 /* La captura va DEBAJO del texto, no al lado.
@@ -155,7 +249,15 @@ nav .derecha{margin-left:auto}
    un 22% de escala, y encima desbordaba su celda y se veía sólo la mitad
    izquierda. Una captura de un escritorio necesita ancho o no se entiende.
    Debajo se lleva la página entera y se ve completa a cualquier tamaño. */
-.portada{padding:74px 0 0}
+.portada{padding:74px 0 0;position:relative;overflow:hidden}
+/* Un resplandor del color del sistema detrás del titular. Muy tenue y muy
+   grande: no se ve como una mancha, se nota como que la página tiene fondo.
+   Va en un pseudoelemento para que no capture ni un clic. */
+.portada::before{content:"";position:absolute;inset:-40% 0 auto 50%;
+  width:1100px;height:640px;transform:translateX(-50%);pointer-events:none;
+  background:radial-gradient(50% 50% at 50% 50%,var(--vivo) 0,transparent 72%);
+  opacity:.07}
+.portada .cont{position:relative}
 h1{font-size:clamp(27px,3.4vw,36px);line-height:1.12;letter-spacing:-0.03em;
    font-weight:700;margin:38px 0 14px}
 .portada h1{font-size:clamp(32px,4.6vw,52px);line-height:1.05;
@@ -165,9 +267,18 @@ main{padding-bottom:10px}
 .acciones{display:flex;gap:11px;flex-wrap:wrap;align-items:center}
 .bajo-boton{font-family:var(--mono);font-size:12.5px;color:var(--tenue);margin-top:16px}
 
+/* La chapa de versión, encima del titular. Dice la versión Y que es alpha en
+   el mismo sitio: son el mismo dato para quien decide si instalarlo. */
+.chapa{display:inline-flex;align-items:center;gap:9px;margin:0 0 22px;
+       padding:5px 13px 5px 9px;border:1px solid var(--borde);border-radius:999px;
+       font-size:13px;color:var(--tenue);background:var(--superficie)}
+.chapa .punto{width:6px;height:6px;border-radius:999px;background:var(--vivo);flex:none}
+.chapa b{font-family:var(--mono);font-weight:400;color:var(--texto)}
+.chapa .sep{color:var(--borde-fuerte)}
+
 .captura-portada{margin-top:46px}
 .captura-portada img{width:100%;
-  border:1px solid var(--borde);border-radius:var(--r-sup)}
+  border:1px solid var(--borde);border-radius:var(--r-sup);box-shadow:var(--sombra)}
 
 /* A partir de este ancho sobra sitio: la captura se sale hasta el borde
    derecho de la ventana. Se sigue viendo ENTERA; lo único que cambia es
@@ -192,16 +303,21 @@ h2{font-size:clamp(24px,3vw,31px);line-height:1.15;letter-spacing:-0.028em;
    font-weight:700;margin:0 0 14px}
 h3{font-size:18px;letter-spacing:-0.018em;font-weight:700;margin:30px 0 8px}
 p{margin:0 0 16px}
-a{color:var(--texto);text-decoration:underline;text-decoration-color:var(--borde);
+a{color:var(--texto);text-decoration:underline;text-decoration-color:var(--borde-fuerte);
   text-underline-offset:3px}
 a:hover{text-decoration-color:var(--tenue)}
+
+/* Un rótulo pequeño encima de un título, para situar la sección sin gastar
+   una línea de titular en ello. */
+.rotulo{font-family:var(--mono);font-size:12px;letter-spacing:.04em;
+        color:var(--vivo);margin:0 0 10px;text-transform:uppercase}
 
 /* Máquina frente a persona: mono para lo que escribió un ordenador. */
 code,kbd,.mono{font-family:var(--mono);font-size:.895em}
 code{background:var(--superficie);border:1px solid var(--borde);
      border-radius:5px;padding:1.5px 6px}
 pre{font-family:var(--mono);font-size:13.5px;line-height:1.75;
-    background:#05070c;border:1px solid var(--borde);border-radius:var(--r-sup);
+    background:var(--hundido);border:1px solid var(--borde);border-radius:var(--r-sup);
     padding:18px 20px;overflow-x:auto;margin:0 0 18px}
 pre code{background:none;border:0;padding:0;font-size:inherit}
 
@@ -210,6 +326,18 @@ figure{margin:26px 0}
 figure img{display:block;width:100%;border:1px solid var(--borde);
            border-radius:var(--r-sup)}
 figcaption{font-size:13.5px;color:var(--tenue);margin-top:9px}
+
+/* --- Novedades. Tarjetas, porque son cosas distintas entre sí y sin orden:
+       una lista numerada prometería una secuencia que no existe. --- */
+.nuevo{display:grid;grid-template-columns:repeat(auto-fit,minmax(268px,1fr));
+       gap:1px;background:var(--borde);border:1px solid var(--borde);
+       border-radius:var(--r-sup);overflow:hidden;margin-top:26px}
+.nuevo>div{background:var(--lienzo);padding:24px 22px}
+.nuevo b{display:block;font-size:16px;letter-spacing:-0.015em;margin-bottom:7px}
+.nuevo p{margin:0;color:var(--tenue);font-size:15px;line-height:1.6}
+.nuevo .marca-nueva{display:inline-block;font-family:var(--mono);font-size:11px;
+  color:var(--vivo);border:1px solid var(--vivo);border-radius:999px;
+  padding:0 7px;margin-bottom:11px;opacity:.85}
 
 /* --- Pasos. Numerados porque esto SÍ es una secuencia. --- */
 .pasos{counter-reset:paso;margin:24px 0 0;padding:0;list-style:none}
@@ -240,7 +368,8 @@ figcaption{font-size:13.5px;color:var(--tenue);margin-top:9px}
 .galeria{display:grid;grid-template-columns:repeat(2,1fr);gap:20px;margin-top:24px}
 .galeria a{display:block;text-decoration:none}
 .galeria img{display:block;width:100%;border:1px solid var(--borde);
-             border-radius:var(--r-sup)}
+             border-radius:var(--r-sup);transition:border-color .15s,transform .15s}
+.galeria a:hover img{border-color:var(--borde-fuerte);transform:translateY(-2px)}
 .galeria span{display:block;font-size:13.5px;color:var(--tenue);margin-top:8px}
 
 /* --- Índices de documentación --- */
@@ -268,8 +397,8 @@ th,td{border-bottom:1px solid var(--borde);padding:9px 12px 9px 0;text-align:lef
 th{font-weight:500;color:var(--tenue);font-size:13.5px}
 
 /* Teclado visible: quien navega sin ratón tiene que ver dónde está. */
-a:focus-visible,.btn:focus-visible{outline:2px solid var(--vivo);outline-offset:3px;
-  border-radius:3px}
+a:focus-visible,.btn:focus-visible,.tema:focus-visible{
+  outline:2px solid var(--vivo);outline-offset:3px;border-radius:3px}
 
 @media (max-width:900px){
   body{font-size:16px}
@@ -283,6 +412,24 @@ a:focus-visible,.btn:focus-visible{outline:2px solid var(--vivo);outline-offset:
   .galeria{grid-template-columns:1fr}
   .limites div,.piezas div,.indice a{grid-template-columns:1fr;gap:5px}
   nav .cont{gap:18px;overflow-x:auto}
+  /* En el móvil la navegación se desplaza a lo ancho; el botón de tema y el
+     de descargar tienen que quedarse quietos al final y no encogerse. */
+  .tema,nav .btn{flex:none}
+}
+/* En pantallas estrechas de verdad, los enlaces del medio sobran: el logo
+   lleva a inicio y el botón de descargar es lo que casi todo el mundo busca.
+   Se ocultan en vez de dejar una barra que hay que arrastrar para usarla. */
+@media (max-width:560px){
+  nav .cont{gap:14px;overflow:visible}
+  nav .enl{display:none}
+  /* El idioma NO se oculta: en un móvil es donde más falta hace poder cambiarlo,
+     y es lo primero que busca quien abre la página y no entiende nada. Se queda
+     reducido a las dos letras para que quepa. */
+  nav .idioma{display:inline;margin-left:auto;font-size:13px}
+  nav .idioma{font-size:0}
+  nav .idioma::after{content:attr(lang);font-size:13px;text-transform:uppercase;
+                     font-family:var(--mono);letter-spacing:.03em}
+  nav .derecha{margin-left:0}
 }
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 CSS
@@ -302,34 +449,142 @@ except Exception:
 PY
 }
 
+# --- Idiomas ------------------------------------------------------------------
+#
+# El sitio se publica en dos idiomas, y como DOS ÁRBOLES DE PÁGINAS ESTÁTICAS:
+# el español en la raíz y el inglés bajo /en/. No con JavaScript que cambia los
+# textos al vuelo.
+#
+# El motivo es que un sistema operativo se busca, se enlaza y se cita. Con
+# páginas de verdad por idioma, cada una tiene su URL, su <html lang> y su
+# <link rel="alternate" hreflang>, así que un buscador puede ofrecer la inglesa
+# a quien busca en inglés y alguien puede enlazar directamente la que quiere.
+# Con textos intercambiados por JavaScript no existe más que una página --- la
+# española --- y el resto es humo: no se puede enlazar, no se indexa, y quien
+# tenga el JavaScript bloqueado se queda sin nada.
+#
+# La documentación técnica (docs/) ya está escrita en inglés y se comparte entre
+# los dos: traducirla a dos idiomas y mantener las dos al día es exactamente la
+# forma de acabar con una de las dos mintiendo.
+IDIOMAS="es en"
+
+# t <clave> -- el texto en el idioma activo ($L).
+#
+# Los dos idiomas van EN LA MISMA LÍNEA a propósito. Con un archivo por idioma,
+# añadir una frase en uno y olvidarla en el otro no se ve; aquí, un "case" sin
+# su pareja canta a la primera.
+t() {
+    case "$1" in
+    nav.inicio)      [ "$L" = en ] && echo "Home"            || echo "Inicio" ;;
+    nav.capturas)    [ "$L" = en ] && echo "Screenshots"     || echo "Capturas" ;;
+    nav.docs)        [ "$L" = en ] && echo "Docs"            || echo "Documentación" ;;
+    nav.wiki)        [ "$L" = en ] && echo "Wiki"            || echo "Wiki" ;;
+    nav.codigo)      [ "$L" = en ] && echo "Source"          || echo "Código" ;;
+    nav.descargar)   [ "$L" = en ] && echo "Download"        || echo "Descargar" ;;
+    nav.tema)        [ "$L" = en ] && echo "Switch theme"    || echo "Cambiar de tema" ;;
+    nav.idioma)      [ "$L" = en ] && echo "Ver en español"  || echo "Read in English" ;;
+
+    meta.desc)       [ "$L" = en ] \
+        && echo "MIKE OS: an operating system built from the kernel up. No systemd, with its own package manager, shell and desktop." \
+        || echo "MIKE OS: un sistema operativo construido desde el kernel hacia arriba. Sin systemd, con gestor de paquetes, shell y escritorio propios." ;;
+    meta.og)         [ "$L" = en ] \
+        && echo "An operating system built from the kernel up." \
+        || echo "Un sistema operativo construido desde el kernel hacia arriba." ;;
+
+    pie.licencia)    [ "$L" = en ] \
+        && echo "MIKE OS $VERSION, MIT licence. Served from a mini PC at home." \
+        || echo "MIKE OS $VERSION, licencia MIT. Servido desde un mini PC en casa." ;;
+    pie.actualizado) [ "$L" = en ] && echo "Updated on $FECHA_EN." || echo "Actualizado el $FECHA." ;;
+    pie.codigo)      [ "$L" = en ] && echo "Source on GitHub" || echo "Código en GitHub" ;;
+    *)               echo "$1" ;;
+    esac
+}
+
+# La ruta de ESTA página en el otro idioma, para el selector. Se pone antes de
+# llamar a cabecera; si se deja vacía, el selector lleva a la portada del otro
+# idioma, que es lo correcto para las páginas que sólo existen en uno.
+ALTERNA=""
+
 # --- Cabecera y pie compartidos ----------------------------------------------
 cabecera() {  # cabecera <titulo> <seccion-activa> <prefijo> [suelto]
-    local t="$1" act="$2" pre="$3" suelto="${4:-}"
+    #
+    # "$pre" es la ruta hasta la RAÍZ DEL SITIO, y sirve para lo que se comparte
+    # entre idiomas: la hoja de estilo, el icono, las tipografías, las capturas,
+    # la documentación y la wiki.
+    #
+    # Pero las páginas que SÍ tienen versión por idioma --- la portada y las
+    # descargas --- no viven en la raíz del sitio: viven en la raíz de SU
+    # idioma. Desde /en/index.html, "Inicio" tiene que llevar a /en/index.html,
+    # no a /index.html, o pulsar el logotipo te saca del inglés sin avisar. Eso
+    # es exactamente lo que pasaba: la navegación inglesa entera apuntaba a las
+    # páginas españolas.
+    #
+    # De ahí las dos rutas. "$pre" para lo compartido, "$pre_idioma" para lo
+    # que está traducido.
+    local ti="$1" act="$2" pre="$3" suelto="${4:-}"
+    # Las páginas traducidas viven junto a su idioma; las compartidas (docs,
+    # wiki, capturas) se sirven en inglés, así que su "Inicio" lleva a /en/.
+    local pre_idioma
+    if [ "$L" = en ]; then
+        case "$act" in
+            inicio|descargas) pre_idioma="" ;;   # ya estamos dentro de /en/
+            *)                pre_idioma="${pre}en/" ;;
+        esac
+    else
+        pre_idioma="$pre"
+    fi
+    local otro alt_href
+    if [ "$L" = en ]; then otro=es; else otro=en; fi
+    alt_href="${ALTERNA:-}"
+    if [ -z "$alt_href" ]; then
+        # "$pre" ya apunta a la raíz del sitio, y la portada española ES la
+        # raíz del sitio. El "../" de más que había aquí mandaba a todas las
+        # páginas de documentación un nivel por encima de la web.
+        [ "$L" = en ] && alt_href="${pre}index.html" || alt_href="${pre}en/index.html"
+    fi
     cat <<HTML
 <!doctype html>
-<html lang="es"><head><meta charset="utf-8">
+<html lang="$L"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="color-scheme" content="dark">
-<meta name="description" content="MIKE OS: un sistema operativo construido desde el kernel hacia arriba. Sin systemd, con gestor de paquetes, shell y escritorio propios.">
-<meta property="og:title" content="$t">
-<meta property="og:description" content="Un sistema operativo construido desde el kernel hacia arriba.">
+<meta name="color-scheme" content="light dark">
+<meta name="description" content="$(t meta.desc)">
+<meta property="og:title" content="$ti">
+<meta property="og:description" content="$(t meta.og)">
 <meta property="og:image" content="https://m1keos.duckdns.org/capturas/escritorio.png">
 <meta property="og:type" content="website">
-<title>$t</title>
+<link rel="alternate" hreflang="$otro" href="$alt_href">
+<title>$ti</title>
 <link rel="icon" href="${pre}favicon.svg" type="image/svg+xml">
 <link rel="preload" href="${pre}tipos/geist-700.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="${pre}estilo.css"></head><body>
+<link rel="stylesheet" href="${pre}estilo.css">
+<script>
+/* El tema elegido se aplica ANTES de pintar nada.
+   Si esto fuera al final del cuerpo, quien tenga elegido el tema oscuro vería
+   un fogonazo blanco en cada carga: el navegador pinta con el tema por defecto
+   y lo corrige después. Son cuatro líneas y van aquí por eso. */
+try{var _t=localStorage.getItem("mikeos-tema");
+    if(_t)document.documentElement.setAttribute("data-tema",_t);}catch(e){}
+</script>
+</head><body>
 <nav><div class="cont">
-  <a class="marca" href="${pre}index.html">
+  <a class="marca" href="${pre_idioma}index.html">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
          stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 6l6 6-6 6"/><path d="M13 18h7"/></svg>
     MIKE OS</a>
-  <a class="enl $([ "$act" = inicio ] && echo aqui)" href="${pre}index.html">Inicio</a>
-  <a class="enl $([ "$act" = capturas ] && echo aqui)" href="${pre}capturas/index.html">Capturas</a>
-  <a class="enl $([ "$act" = docs ] && echo aqui)" href="${pre}docs/index.html">Documentación</a>
-  <a class="enl $([ "$act" = wiki ] && echo aqui)" href="${pre}wiki/index.html">Wiki</a>
-  <a class="enl derecha" href="https://github.com/${MIKEOS_REPO_GITHUB:-M1KE-27/m1keos}">Código</a>
-  <a class="btn $([ "$act" = descargas ] && echo aqui)" href="${pre}descargas.html">Descargar</a>
+  <a class="enl $([ "$act" = inicio ] && echo aqui)" href="${pre_idioma}index.html">$(t nav.inicio)</a>
+  <a class="enl $([ "$act" = capturas ] && echo aqui)" href="${pre}capturas/index.html">$(t nav.capturas)</a>
+  <a class="enl $([ "$act" = docs ] && echo aqui)" href="${pre}docs/index.html">$(t nav.docs)</a>
+  <a class="enl $([ "$act" = wiki ] && echo aqui)" href="${pre}wiki/index.html">$(t nav.wiki)</a>
+  <a class="enl derecha" href="https://github.com/${MIKEOS_REPO_GITHUB:-M1KE-27/m1keos}">$(t nav.codigo)</a>
+  <a class="enl idioma" href="$alt_href" hreflang="$otro" lang="$otro">$(t nav.idioma)</a>
+  <button class="tema" type="button" aria-label="$(t nav.tema)" title="$(t nav.tema)">
+    <svg class="sol" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+         stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/>
+      <path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.2 5.2l1.5 1.5M17.3 17.3l1.5 1.5M18.8 5.2l-1.5 1.5M6.7 17.3l-1.5 1.5"/></svg>
+    <svg class="luna" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.5A8.5 8.5 0 019.5 4a8.5 8.5 0 1010.5 10.5z"/></svg>
+  </button>
+  <a class="btn $([ "$act" = descargas ] && echo aqui)" href="${pre_idioma}$([ "$L" = en ] && echo downloads.html || echo descargas.html)">$(t nav.descargar)</a>
 </div></nav>
 HTML
     # Sin esto, las páginas interiores salían pegadas al borde izquierdo: la
@@ -341,10 +596,38 @@ pie() {  # pie [suelto]
     [ "${1:-}" = "suelto" ] || echo '</main></div>'
     cat <<HTML
 <footer><div class="cont">
-MIKE OS $VERSION, licencia MIT. Servido desde un mini PC en casa.
-Actualizado el $FECHA.
-<a href="https://github.com/${MIKEOS_REPO_GITHUB:-M1KE-27/m1keos}">Código en GitHub</a>
+$(t pie.licencia)
+$(t pie.actualizado)
+<a href="https://github.com/${MIKEOS_REPO_GITHUB:-M1KE-27/m1keos}">$(t pie.codigo)</a>
 </div></footer>
+<script>
+/* El botón de tema. Tres estados y no dos: claro, oscuro, y "lo que diga el
+   sistema", que es donde empieza todo el mundo. Sin el tercero, quien tenga el
+   móvil en automático pierde ese automático en cuanto toca el botón una vez y
+   no hay forma de recuperarlo. */
+(function(){
+  var b=document.querySelector(".tema"); if(!b) return;
+  var r=document.documentElement;
+  function sistemaOscuro(){
+    return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+  }
+  b.addEventListener("click",function(){
+    var actual=r.getAttribute("data-tema");
+    var oscuroAhora = actual ? actual==="oscuro" : sistemaOscuro();
+    var nuevo = oscuroAhora ? "claro" : "oscuro";
+    /* Si lo elegido vuelve a coincidir con lo que dice el sistema, se borra la
+       preferencia en vez de guardarla: así el sitio vuelve a seguir al sistema
+       cuando este cambie solo de día a noche. */
+    if((nuevo==="oscuro")===sistemaOscuro()){
+      r.removeAttribute("data-tema");
+      try{localStorage.removeItem("mikeos-tema");}catch(e){}
+    }else{
+      r.setAttribute("data-tema",nuevo);
+      try{localStorage.setItem("mikeos-tema",nuevo);}catch(e){}
+    }
+  });
+})();
+</script>
 </body></html>
 HTML
 }
@@ -354,10 +637,15 @@ HTML
 # llevaba su propia copia del HTML de la navegación, y al tocar una el resto se
 # quedaba atrás: el índice de documentación seguía enseñando un menú de hace dos
 # versiones. Un solo sitio, y se acabó.
+#
+# La documentación se sirve en inglés, que es como está escrita, así que sus
+# cabeceras se generan con ese idioma.
+L=en
 for _sec in inicio capturas docs wiki descargas; do
     cabecera "@TITULO@" "$_sec" "@PRE@" > "$WEB/.cabecera-$_sec.html"
 done
 pie > "$WEB/.pie.html"
+L=es
 
 # El icono, como SVG: son 200 bytes y la marca del sistema es exactamente esto.
 cat > "$WEB/favicon.svg" <<'SVG'
@@ -369,25 +657,221 @@ SVG
 
 # --- Página de inicio ---------------------------------------------------------
 paso "Escribiendo la portada"
-{
-cabecera "MIKE OS" inicio "" suelto
-cat <<HTML
-<div class="portada"><div class="cont"><div class="rejilla">
+
+# La portada, en el idioma que se le pida.
+#
+# Las dos versiones viven en la misma función y una al lado de la otra, sección
+# por sección. Con un archivo por idioma, tocar la española y olvidar la inglesa
+# no produce ningún error: produce una web que dice dos cosas distintas según
+# quién la mire, y nadie se entera hasta que alguien se queja.
+portada() {  # portada <es|en>
+    L="$1"
+    local pre alt dest
+    if [ "$L" = en ]; then pre="../"; alt="../index.html"; else pre=""; alt="en/index.html"; fi
+    ALTERNA="$alt"
+    cabecera "MIKE OS" inicio "$pre" suelto
+
+    # --- Portada -------------------------------------------------------------
+    if [ "$L" = en ]; then
+    cat <<HTML
+<div class="portada"><div class="cont">
   <div>
+    <p class="chapa"><span class="punto"></span><b>$VERSION</b><span class="sep">/</span>alpha</p>
+    <h1>Written from the kernel up.</h1>
+    <p class="entradilla">MIKE OS is a complete operating system. Its own kernel
+      build, no systemd, and a package manager, shell and desktop written for it.</p>
+    <div class="acciones">
+      <a class="btn btn-vivo" href="$URL_ISO">Download $ETIQUETA_ISO <span class="peso">$ISO_TAM</span></a>
+      <a class="btn" href="${pre}docs/instalacion.html">How to install it</a>
+    </div>
+    <p class="bajo-boton">x86_64 &nbsp;·&nbsp; UEFI only &nbsp;·&nbsp; Secure Boot off</p>
+  </div>
+  <div class="captura-portada">
+    <img src="${pre}capturas/bienvenida.png" $(dim capturas/bienvenida.png)
+         alt="The MIKE OS desktop with the welcome window open">
+  </div>
+
+<div class="cifras">
+  <div class="cifra"><b>0.59 s</b><span>from kernel to console</span></div>
+  <div class="cifra"><b>324 MB</b><span>of RAM with the desktop running</span></div>
+  <div class="cifra"><b>25 s</b><span>to build the system</span></div>
+  <div class="cifra"><b>0</b><span>lines of systemd</span></div>
+</div>
+</div></div>
+
+<div class="cont">
+
+<section>
+  <p class="rotulo">New in $VERSION</p>
+  <div class="prosa">
+    <h2>Power, drivers and the things that were quietly broken</h2>
+    <p>Most of this release is not new features: it is hardware that said it
+      worked and did not. Each item below is a real failure that left no error
+      message behind — which is why they lasted so long.</p>
+  </div>
+  <div class="nuevo">
+    <div><span class="marca-nueva">new</span><b>Power profiles</b>
+      <p>Maximum, balanced, saving, or automatic. On a desktop, automatic
+        already means maximum: nothing sleeps and the CPU never steps down.
+        On a laptop you also choose what closing the lid does — and suspend is
+        only offered if your machine actually advertises it.</p></div>
+    <div><span class="marca-nueva">new</span><b>Hardware panel</b>
+      <p>Scans graphics, wired and USB networking, Bluetooth, sound, input,
+        camera, disks, CPU and battery, and says which of four states each one
+        is in: working, no driver, missing firmware, or detected but stopped.
+        Four different faults that used to look identical.</p></div>
+    <div><b>Bluetooth</b>
+      <p>The firmware was there all along. <code>btusb</code> binds to the
+        adapter <em>before</em> asking for it, so from <code>/sys</code> a dead
+        adapter was indistinguishable from a healthy one. It is now rescued by
+        rebinding the driver once the real filesystem is mounted.</p></div>
+    <div><b>Games and Java</b>
+      <p>XWayland was dying at startup because <code>xkbcomp</code> was not in
+        the image, so it could not compile its keymap — but <code>DISPLAY</code>
+        stayed set, so anything using X11 failed much later talking about
+        OpenGL. Minecraft was the visible casualty.</p></div>
+    <div><b>Updates that do not break sudo</b>
+      <p>The core package shipped <code>m-sudo</code> without its setuid bit.
+        The first <code>mpm upgrade</code> on any installed system would have
+        left you unable to become root or unlock the screen — and fixing it
+        needed the very sudo it had just broken.</p></div>
+    <div><b>Copying files in</b>
+      <p><code>scp</code> to a MIKE OS machine failed, because
+        <code>sftp-server</code> was missing and the error named a path without
+        saying a program was absent. It ships now.</p></div>
+  </div>
+</section>
+
+<section>
+  <div class="prosa">
+    <h2>What is in here</h2>
+    <p>MIKE OS is not a distribution with a new theme on top. The kernel is
+      configured and compiled here, the init is runit, and the package manager,
+      the shell, the terminal and the desktop are written for this system.</p>
+  </div>
+  <div class="piezas">
+    <div><b>kernel $KVER</b><span>configured by hand, with its own UEFI boot path and btrfs built in</span></div>
+    <div><b>runit</b><span>the init. Starts services and watches them; if one dies, it comes back</span></div>
+    <div><b>mpm</b><span>package manager with a snapshot before every change, and rollback</span></div>
+    <div><b>mkshell</b><span>the system shell</span></div>
+    <div><b>Hyprland + Quickshell</b><span>the compositor, and a bar written in QML for this system</span></div>
+    <div><b>$N_PKG packages</b><span>in its own repository</span></div>
+  </div>
+</section>
+
+<section>
+  <div class="prosa">
+    <h2>It installs from a interface, not from the terminal</h2>
+    <p>Up to the previous version you had to know that a command called
+      <code>m-install</code> existed. There is now a graphical installer: it
+      finds the disk on its own, shows you what is on it, and tells you what you
+      are about to erase before erasing it.</p>
+  </div>
+
+  <figure>
+    <img src="${pre}capturas/instalador-disco.png" $(dim capturas/instalador-disco.png)
+         alt="The installer showing the disk, its partitions and the warning about what will be erased">
+    <figcaption>It detects the disk, lists its partitions with whatever system is
+      on each one, and warns in amber about what will be lost. If something would
+      stop the machine booting afterwards, it refuses to continue and says why.</figcaption>
+  </figure>
+
+  <div class="prosa">
+    <h3>Installing alongside Windows</h3>
+    <p>It uses the free space and touches nothing that is already there. Any EFI
+      partition it finds is kept exactly as it is, with the Windows boot loader
+      inside: that is what makes Windows keep appearing in the menu instead of
+      "disappearing". GRUB adds it on its own when the install finishes.</p>
+
+    <h3>Someone can help you from their own house</h3>
+    <p>If you get stuck installing, the network step turns on SSH, creates a
+      temporary four-letter account and shows you the exact command and password
+      to read out over the phone. Turning it off deletes the account.</p>
+  </div>
+
+  <figure>
+    <img src="${pre}capturas/instalador-red.png" $(dim capturas/instalador-red.png)
+         alt="The installer's network step, with the remote help card">
+    <figcaption>English by default, Spanish one click away.</figcaption>
+  </figure>
+</section>
+
+<section>
+  <div class="prosa">
+    <h2>Writing it and booting</h2>
+  </div>
+  <ol class="pasos">
+    <li>
+      <h3>Write the image to a USB stick</h3>
+      <p>Check the device letter before you run this: it erases the whole stick.</p>
+      <pre><code>sudo dd if=mikeos.iso of=/dev/sdX bs=4M status=progress oflag=sync</code></pre>
+    </li>
+    <li>
+      <h3>Turn off Secure Boot</h3>
+      <p>The kernel does not carry Microsoft's signature, so the firmware refuses
+        to run it with Secure Boot on. On most machines you turn it off in the
+        board's setup screen at power-on.</p>
+    </li>
+    <li>
+      <h3>Try it, then install it if you like it</h3>
+      <p>The stick boots to a complete desktop running in memory: it does not
+        touch your disk. When you want to install it, the button is in the
+        welcome window.</p>
+    </li>
+  </ol>
+</section>
+
+<section>
+  <div class="prosa">
+    <h2>What does not work yet</h2>
+    <p>This is an alpha, and this list is part of the documentation, not a
+      footnote. If something here would block you, better to know now than with
+      the disk half formatted.</p>
+  </div>
+  <div class="limites">
+    <div><b>Secure Boot</b><p>It has to be turned off. The kernel is not signed by Microsoft and will not be any time soon.</p></div>
+    <div><b>UEFI only</b><p>It does not boot via BIOS or CSM. On machines older than 2012 it will not work.</p></div>
+    <div><b>Manual partitioning</b><p>The installer can erase, install alongside and replace. To create or resize by hand it brings GParted with <code>mpm install gparted</code>.</p></div>
+    <div><b>Privileges</b><p><code>m-sudo</code> gives the account root without asking for a password. The lock screen protects against passers-by, not against someone with time and a keyboard.</p></div>
+    <div><b>Real hardware</b><p>Tested on QEMU with real UEFI firmware, and on a Surface Laptop 4. On other physical laptops it is still untested: that is what this release is for.</p></div>
+  </div>
+</section>
+
+<section>
+  <div class="prosa"><h2>The desktop</h2>
+  <p>The bar and the Control Centre are written in QML for this system. The bar
+    can go on any edge, change shape, and carry whichever modules you want. The
+    wallpaper can tint the whole palette, terminal included.</p>
+  </div>
+  <div class="galeria">
+    <a href="${pre}capturas/centro-de-control.png"><img $(dim capturas/centro-de-control.png) src="${pre}capturas/centro-de-control.png" alt="The MIKE OS Control Centre" loading="lazy"><span>The Control Centre</span></a>
+    <a href="${pre}capturas/bloqueo.png"><img $(dim capturas/bloqueo.png) src="${pre}capturas/bloqueo.png" alt="The lock screen" loading="lazy"><span>The lock screen</span></a>
+    <a href="${pre}capturas/terminal.png"><img $(dim capturas/terminal.png) src="${pre}capturas/terminal.png" alt="The MIKE OS terminal" loading="lazy"><span>The terminal</span></a>
+    <a href="${pre}capturas/grub.png"><img $(dim capturas/grub.png) src="${pre}capturas/grub.png" alt="The MIKE OS boot menu" loading="lazy"><span>The boot menu</span></a>
+  </div>
+  <p style="margin-top:22px"><a href="${pre}capturas/index.html">See every screenshot</a></p>
+</section>
+
+</div>
+HTML
+    else
+    cat <<HTML
+<div class="portada"><div class="cont">
+  <div>
+    <p class="chapa"><span class="punto"></span><b>$VERSION</b><span class="sep">/</span>alpha</p>
     <h1>Escrito desde el kernel hacia arriba.</h1>
     <p class="entradilla">MIKE OS es un sistema operativo completo. Kernel
       propio, sin systemd, gestor de paquetes y escritorio escritos para él.</p>
     <div class="acciones">
-      <a class="btn btn-vivo" href="$URL_ISO">Descargar $ETIQUETA_ISO</a>
-      <a class="btn" href="docs/instalacion.html">Cómo se instala</a>
+      <a class="btn btn-vivo" href="$URL_ISO">Descargar $ETIQUETA_ISO <span class="peso">$ISO_TAM</span></a>
+      <a class="btn" href="${pre}docs/instalacion.html">Cómo se instala</a>
     </div>
-    <p class="bajo-boton">$ISO_TAM &nbsp;·&nbsp; x86_64 UEFI</p>
+    <p class="bajo-boton">x86_64 &nbsp;·&nbsp; sólo UEFI &nbsp;·&nbsp; sin Secure Boot</p>
   </div>
   <div class="captura-portada">
-    <img src="capturas/bienvenida.png" $(dim capturas/bienvenida.png)
+    <img src="${pre}capturas/bienvenida.png" $(dim capturas/bienvenida.png)
          alt="El escritorio de MIKE OS con la ventana de bienvenida abierta">
   </div>
-</div>
 
 <div class="cifras">
   <div class="cifra"><b>0,59 s</b><span>del kernel a la consola</span></div>
@@ -398,6 +882,48 @@ cat <<HTML
 </div></div>
 
 <div class="cont">
+
+<section>
+  <p class="rotulo">Novedades de la $VERSION</p>
+  <div class="prosa">
+    <h2>Energía, controladores, y lo que estaba roto sin decirlo</h2>
+    <p>Casi nada de esta versión son funciones nuevas: es hardware que decía
+      funcionar y no funcionaba. Cada cosa de aquí abajo es una avería real que
+      no dejaba ni un mensaje de error, que es justo por lo que duraron tanto.</p>
+  </div>
+  <div class="nuevo">
+    <div><span class="marca-nueva">nuevo</span><b>Perfiles de energía</b>
+      <p>Máximo, equilibrado, ahorro o automático. En un sobremesa, automático
+        ya significa máximo: nada se duerme y el procesador no baja de
+        frecuencia. En un portátil eliges además qué hace al cerrar la tapa, y
+        suspender sólo se ofrece si tu equipo lo admite de verdad.</p></div>
+    <div><span class="marca-nueva">nuevo</span><b>Apartado de controladores</b>
+      <p>Analiza gráfica, red por cable y por USB, Bluetooth, sonido, entrada,
+        cámara, discos, procesador y batería, y dice en cuál de cuatro estados
+        está cada cosa: funciona, sin driver, le falta firmware, o detectado
+        pero parado. Cuatro averías distintas que antes se veían igual.</p></div>
+    <div><b>Bluetooth</b>
+      <p>El firmware estaba desde el principio. <code>btusb</code> se engancha
+        al adaptador <em>antes</em> de pedirlo, así que desde <code>/sys</code>
+        un adaptador muerto era indistinguible de uno sano. Ahora se rescata
+        reenganchando el driver cuando el sistema de archivos ya está montado.</p></div>
+    <div><b>Juegos y Java</b>
+      <p>XWayland se moría al arrancar porque <code>xkbcomp</code> no estaba en
+        la imagen y no podía compilar su mapa de teclado — pero
+        <code>DISPLAY</code> seguía puesto, así que cualquier programa de X11
+        fallaba muchísimo después hablando de OpenGL. Minecraft era la víctima
+        visible.</p></div>
+    <div><b>Actualizar sin perder sudo</b>
+      <p>El paquete del núcleo metía <code>m-sudo</code> sin su bit setuid. La
+        primera <code>mpm upgrade</code> de cualquier sistema instalado te
+        habría dejado sin poder ser root y sin poder desbloquear la pantalla, y
+        arreglarlo necesitaba justo el sudo que se acababa de romper.</p></div>
+    <div><b>Copiar archivos al equipo</b>
+      <p><code>scp</code> hacia una máquina MIKE OS fallaba porque faltaba
+        <code>sftp-server</code>, y el error nombraba una ruta sin decir que lo
+        que faltaba era un programa. Ahora va dentro.</p></div>
+  </div>
+</section>
 
 <section>
   <div class="prosa">
@@ -426,7 +952,7 @@ cat <<HTML
   </div>
 
   <figure>
-    <img src="capturas/instalador-disco.png" $(dim capturas/instalador-disco.png)
+    <img src="${pre}capturas/instalador-disco.png" $(dim capturas/instalador-disco.png)
          alt="El instalador enseñando el disco, las particiones y el aviso de lo que se va a borrar">
     <figcaption>Detecta el disco, lista sus particiones con el sistema que hay en
       cada una, y avisa en ámbar de lo que se va a perder. Si algo impediría que
@@ -447,7 +973,7 @@ cat <<HTML
   </div>
 
   <figure>
-    <img src="capturas/instalador-red.png" $(dim capturas/instalador-red.png)
+    <img src="${pre}capturas/instalador-red.png" $(dim capturas/instalador-red.png)
          alt="El paso de red del instalador, con la tarjeta de ayuda remota">
     <figcaption>En inglés por defecto, con español a un clic.</figcaption>
   </figure>
@@ -491,7 +1017,7 @@ cat <<HTML
     <div><b>Sólo UEFI</b><p>No arranca por BIOS ni con CSM. En equipos anteriores a 2012 no va a funcionar.</p></div>
     <div><b>Particionado manual</b><p>El instalador sabe borrar, instalar al lado y reemplazar. Para crear o redimensionar a mano, trae GParted con <code>mpm install gparted</code>.</p></div>
     <div><b>Privilegios</b><p><code>m-sudo</code> da root a la cuenta sin pedir contraseña. La pantalla de bloqueo protege de miradas, no de alguien con tiempo y teclado.</p></div>
-    <div><b>Hardware real</b><p>Probado en QEMU con firmware UEFI de verdad. En portátiles físicos está sin probar: esta versión existe para eso.</p></div>
+    <div><b>Hardware real</b><p>Probado en QEMU con firmware UEFI de verdad y en una Surface Laptop 4. En otros portátiles físicos sigue sin probar: esta versión existe para eso.</p></div>
   </div>
 </section>
 
@@ -502,25 +1028,88 @@ cat <<HTML
     lleva. El fondo de pantalla puede teñir la paleta entera, terminal incluida.</p>
   </div>
   <div class="galeria">
-    <a href="capturas/centro-de-control.png"><img $(dim capturas/centro-de-control.png) src="capturas/centro-de-control.png" alt="El Centro de Control de MIKE OS" loading="lazy"><span>El Centro de Control</span></a>
-    <a href="capturas/bloqueo.png"><img $(dim capturas/bloqueo.png) src="capturas/bloqueo.png" alt="La pantalla de bloqueo" loading="lazy"><span>La pantalla de bloqueo</span></a>
-    <a href="capturas/terminal.png"><img $(dim capturas/terminal.png) src="capturas/terminal.png" alt="La terminal de MIKE OS" loading="lazy"><span>La terminal</span></a>
-    <a href="capturas/grub.png"><img $(dim capturas/grub.png) src="capturas/grub.png" alt="El menú de arranque de MIKE OS" loading="lazy"><span>El menú de arranque</span></a>
+    <a href="${pre}capturas/centro-de-control.png"><img $(dim capturas/centro-de-control.png) src="${pre}capturas/centro-de-control.png" alt="El Centro de Control de MIKE OS" loading="lazy"><span>El Centro de Control</span></a>
+    <a href="${pre}capturas/bloqueo.png"><img $(dim capturas/bloqueo.png) src="${pre}capturas/bloqueo.png" alt="La pantalla de bloqueo" loading="lazy"><span>La pantalla de bloqueo</span></a>
+    <a href="${pre}capturas/terminal.png"><img $(dim capturas/terminal.png) src="${pre}capturas/terminal.png" alt="La terminal de MIKE OS" loading="lazy"><span>La terminal</span></a>
+    <a href="${pre}capturas/grub.png"><img $(dim capturas/grub.png) src="${pre}capturas/grub.png" alt="El menú de arranque de MIKE OS" loading="lazy"><span>El menú de arranque</span></a>
   </div>
-  <p style="margin-top:22px"><a href="capturas/index.html">Ver todas las capturas</a></p>
+  <p style="margin-top:22px"><a href="${pre}capturas/index.html">Ver todas las capturas</a></p>
 </section>
 
 </div>
 HTML
-pie suelto
-} > "$WEB/index.html"
+    fi
+    pie suelto
+}
+
+mkdir -p "$WEB/en"
+portada es > "$WEB/index.html"
+portada en > "$WEB/en/index.html"
+L=es
 
 # --- Descargas ----------------------------------------------------------------
 paso "Descargas"
-{
-cabecera "Descargar · MIKE OS" descargas ""
-if [ "$HAY_ISO" -eq 1 ]; then
-cat <<HTML
+
+descargas() {  # descargas <es|en>
+    L="$1"
+    local pre alt
+    if [ "$L" = en ]; then pre="../"; alt="../descargas.html"; else pre=""; alt="en/downloads.html"; fi
+    ALTERNA="$alt"
+    if [ "$L" = en ]; then
+        cabecera "Download · MIKE OS" descargas "$pre"
+    else
+        cabecera "Descargar · MIKE OS" descargas "$pre"
+    fi
+
+    if [ "$HAY_ISO" -ne 1 ]; then
+        if [ "$L" = en ]; then
+            printf '%s\n' '<header><h1>Download</h1></header>' \
+                '<div class="aviso"><p>No image has been published yet.</p></div>'
+        else
+            printf '%s\n' '<header><h1>Descargar</h1></header>' \
+                '<div class="aviso"><p>Todavía no hay ninguna imagen publicada.</p></div>'
+        fi
+        pie
+        return
+    fi
+
+    if [ "$L" = en ]; then
+    cat <<HTML
+<header><h1>Download</h1>
+<p class="lema">One image that boots on any UEFI machine. You can try the whole
+  system without installing anything.</p></header>
+
+<table>
+  <tr><th>File</th><th>Size</th><th>Kernel</th></tr>
+  <tr><td>mikeos.iso</td><td>$ISO_TAM</td><td>$KVER</td></tr>
+</table>
+<p class="tenue">SHA256:<br><code style="font-size:11px;word-break:break-all">$ISO_SHA</code></p>
+<p style="margin:22px 0 8px"><a class="btn btn-vivo" href="$URL_ISO">Download mikeos.iso <span class="peso">$ISO_TAM</span></a></p>
+<p class="tenue">GitHub serves the download and it starts on click, with no
+interstitial page. It works that way because this site lives on a mini PC at
+home: its uplink gives about 780 KB/s, which is nearly four minutes per download
+and one at a time. Packages, which are small, do come from here.</p>
+
+<h2>Writing it to a USB stick</h2>
+<pre><span class="c"># first check that what you downloaded is what was published</span>
+sha256sum mikeos.iso
+
+<span class="c"># /dev/sdX is your stick. It will be erased completely.</span>
+sudo dd if=mikeos.iso of=/dev/sdX bs=4M status=progress oflag=sync</pre>
+
+<div class="aviso"><p><strong>Secure Boot.</strong> You have to turn it off in
+  the UEFI before booting the stick. This kernel does not carry Microsoft's
+  signature, so with Secure Boot on the firmware refuses to run it. On a Surface
+  you turn it off by entering the UEFI (hold volume up while powering on).</p></div>
+
+<h2>Trying it without installing</h2>
+<p>The image boots into memory: you can look around, touch everything and shut
+  down without your disk noticing. When you want to install it, the button is in
+  the welcome window.</p>
+<p><a href="${pre}docs/instalacion.html">Full installation guide</a></p>
+HTML
+    else
+    cat <<HTML
 <header><h1>Descargar</h1>
 <p class="lema">Una imagen que arranca en cualquier equipo con UEFI. Puedes
   probar el sistema sin instalar nada.</p></header>
@@ -530,7 +1119,7 @@ cat <<HTML
   <tr><td>mikeos.iso</td><td>$ISO_TAM</td><td>$KVER</td></tr>
 </table>
 <p class="tenue">SHA256:<br><code style="font-size:11px;word-break:break-all">$ISO_SHA</code></p>
-<p style="margin:22px 0 8px"><a class="btn btn-vivo" href="$URL_ISO">Descargar mikeos.iso</a></p>
+<p style="margin:22px 0 8px"><a class="btn btn-vivo" href="$URL_ISO">Descargar mikeos.iso <span class="peso">$ISO_TAM</span></a></p>
 <p class="tenue">La descarga la sirve GitHub y empieza al pulsar, sin página
 intermedia. Se hace así porque esta web vive en un mini PC de casa: su línea da
 unos 780 KB/s de subida, o sea casi cuatro minutos por descarga y de una en
@@ -552,18 +1141,17 @@ sudo dd if=mikeos.iso of=/dev/sdX bs=4M status=progress oflag=sync</pre>
 <p>La imagen arranca en memoria: puedes mirarla, tocarlo todo y apagar sin que
   el disco se entere. Cuando quieras instalarla, abre una terminal con
   <code>SUPER/ALT + Return</code> y escribe <code>m-install</code>.</p>
-<p><a href="docs/instalacion.html">Guía de instalación completa</a></p>
+<p><a href="${pre}docs/instalacion.html">Guía de instalación completa</a></p>
 HTML
-else
-cat <<HTML
-<header><h1>Descargar</h1></header>
-<div class="aviso"><p>Todavía no hay ninguna imagen publicada.</p></div>
-HTML
-fi
-pie
-} > "$WEB/descargas.html"
+    fi
+    pie
+}
 
-verde "  index.html y descargas.html"
+descargas es > "$WEB/descargas.html"
+descargas en > "$WEB/en/downloads.html"
+L=es
+
+verde "  index.html y descargas.html, en español y en inglés"
 
 # --- Documentación, generada desde docs/ --------------------------------------
 # El contenido vive en el repositorio y aquí sólo se convierte. Copiarlo a mano

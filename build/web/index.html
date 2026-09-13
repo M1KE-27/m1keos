@@ -1,16 +1,26 @@
 <!doctype html>
 <html lang="es"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="color-scheme" content="dark">
+<meta name="color-scheme" content="light dark">
 <meta name="description" content="MIKE OS: un sistema operativo construido desde el kernel hacia arriba. Sin systemd, con gestor de paquetes, shell y escritorio propios.">
 <meta property="og:title" content="MIKE OS">
 <meta property="og:description" content="Un sistema operativo construido desde el kernel hacia arriba.">
 <meta property="og:image" content="https://m1keos.duckdns.org/capturas/escritorio.png">
 <meta property="og:type" content="website">
+<link rel="alternate" hreflang="en" href="en/index.html">
 <title>MIKE OS</title>
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="preload" href="tipos/geist-700.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="estilo.css"></head><body>
+<link rel="stylesheet" href="estilo.css">
+<script>
+/* El tema elegido se aplica ANTES de pintar nada.
+   Si esto fuera al final del cuerpo, quien tenga elegido el tema oscuro vería
+   un fogonazo blanco en cada carga: el navegador pinta con el tema por defecto
+   y lo corrige después. Son cuatro líneas y van aquí por eso. */
+try{var _t=localStorage.getItem("mikeos-tema");
+    if(_t)document.documentElement.setAttribute("data-tema",_t);}catch(e){}
+</script>
+</head><body>
 <nav><div class="cont">
   <a class="marca" href="index.html">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
@@ -21,24 +31,32 @@
   <a class="enl " href="docs/index.html">Documentación</a>
   <a class="enl " href="wiki/index.html">Wiki</a>
   <a class="enl derecha" href="https://github.com/M1KE-27/m1keos">Código</a>
+  <a class="enl idioma" href="en/index.html" hreflang="en" lang="en">Read in English</a>
+  <button class="tema" type="button" aria-label="Cambiar de tema" title="Cambiar de tema">
+    <svg class="sol" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+         stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/>
+      <path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.2 5.2l1.5 1.5M17.3 17.3l1.5 1.5M18.8 5.2l-1.5 1.5M6.7 17.3l-1.5 1.5"/></svg>
+    <svg class="luna" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.5A8.5 8.5 0 019.5 4a8.5 8.5 0 1010.5 10.5z"/></svg>
+  </button>
   <a class="btn " href="descargas.html">Descargar</a>
 </div></nav>
-<div class="portada"><div class="cont"><div class="rejilla">
+<div class="portada"><div class="cont">
   <div>
+    <p class="chapa"><span class="punto"></span><b>0.6.0</b><span class="sep">/</span>alpha</p>
     <h1>Escrito desde el kernel hacia arriba.</h1>
     <p class="entradilla">MIKE OS es un sistema operativo completo. Kernel
       propio, sin systemd, gestor de paquetes y escritorio escritos para él.</p>
     <div class="acciones">
-      <a class="btn btn-vivo" href="https://github.com/M1KE-27/m1keos/releases/download/v0.5.0/mikeos.iso">Descargar v0.5.0</a>
+      <a class="btn btn-vivo" href="https://github.com/M1KE-27/m1keos/releases/download/v0.5.0/mikeos.iso">Descargar v0.5.0 <span class="peso">479M</span></a>
       <a class="btn" href="docs/instalacion.html">Cómo se instala</a>
     </div>
-    <p class="bajo-boton">479M &nbsp;·&nbsp; x86_64 UEFI</p>
+    <p class="bajo-boton">x86_64 &nbsp;·&nbsp; sólo UEFI &nbsp;·&nbsp; sin Secure Boot</p>
   </div>
   <div class="captura-portada">
     <img src="capturas/bienvenida.png" width="1600" height="900"
          alt="El escritorio de MIKE OS con la ventana de bienvenida abierta">
   </div>
-</div>
 
 <div class="cifras">
   <div class="cifra"><b>0,59 s</b><span>del kernel a la consola</span></div>
@@ -49,6 +67,48 @@
 </div></div>
 
 <div class="cont">
+
+<section>
+  <p class="rotulo">Novedades de la 0.6.0</p>
+  <div class="prosa">
+    <h2>Energía, controladores, y lo que estaba roto sin decirlo</h2>
+    <p>Casi nada de esta versión son funciones nuevas: es hardware que decía
+      funcionar y no funcionaba. Cada cosa de aquí abajo es una avería real que
+      no dejaba ni un mensaje de error, que es justo por lo que duraron tanto.</p>
+  </div>
+  <div class="nuevo">
+    <div><span class="marca-nueva">nuevo</span><b>Perfiles de energía</b>
+      <p>Máximo, equilibrado, ahorro o automático. En un sobremesa, automático
+        ya significa máximo: nada se duerme y el procesador no baja de
+        frecuencia. En un portátil eliges además qué hace al cerrar la tapa, y
+        suspender sólo se ofrece si tu equipo lo admite de verdad.</p></div>
+    <div><span class="marca-nueva">nuevo</span><b>Apartado de controladores</b>
+      <p>Analiza gráfica, red por cable y por USB, Bluetooth, sonido, entrada,
+        cámara, discos, procesador y batería, y dice en cuál de cuatro estados
+        está cada cosa: funciona, sin driver, le falta firmware, o detectado
+        pero parado. Cuatro averías distintas que antes se veían igual.</p></div>
+    <div><b>Bluetooth</b>
+      <p>El firmware estaba desde el principio. <code>btusb</code> se engancha
+        al adaptador <em>antes</em> de pedirlo, así que desde <code>/sys</code>
+        un adaptador muerto era indistinguible de uno sano. Ahora se rescata
+        reenganchando el driver cuando el sistema de archivos ya está montado.</p></div>
+    <div><b>Juegos y Java</b>
+      <p>XWayland se moría al arrancar porque <code>xkbcomp</code> no estaba en
+        la imagen y no podía compilar su mapa de teclado — pero
+        <code>DISPLAY</code> seguía puesto, así que cualquier programa de X11
+        fallaba muchísimo después hablando de OpenGL. Minecraft era la víctima
+        visible.</p></div>
+    <div><b>Actualizar sin perder sudo</b>
+      <p>El paquete del núcleo metía <code>m-sudo</code> sin su bit setuid. La
+        primera <code>mpm upgrade</code> de cualquier sistema instalado te
+        habría dejado sin poder ser root y sin poder desbloquear la pantalla, y
+        arreglarlo necesitaba justo el sudo que se acababa de romper.</p></div>
+    <div><b>Copiar archivos al equipo</b>
+      <p><code>scp</code> hacia una máquina MIKE OS fallaba porque faltaba
+        <code>sftp-server</code>, y el error nombraba una ruta sin decir que lo
+        que faltaba era un programa. Ahora va dentro.</p></div>
+  </div>
+</section>
 
 <section>
   <div class="prosa">
@@ -142,7 +202,7 @@
     <div><b>Sólo UEFI</b><p>No arranca por BIOS ni con CSM. En equipos anteriores a 2012 no va a funcionar.</p></div>
     <div><b>Particionado manual</b><p>El instalador sabe borrar, instalar al lado y reemplazar. Para crear o redimensionar a mano, trae GParted con <code>mpm install gparted</code>.</p></div>
     <div><b>Privilegios</b><p><code>m-sudo</code> da root a la cuenta sin pedir contraseña. La pantalla de bloqueo protege de miradas, no de alguien con tiempo y teclado.</p></div>
-    <div><b>Hardware real</b><p>Probado en QEMU con firmware UEFI de verdad. En portátiles físicos está sin probar: esta versión existe para eso.</p></div>
+    <div><b>Hardware real</b><p>Probado en QEMU con firmware UEFI de verdad y en una Surface Laptop 4. En otros portátiles físicos sigue sin probar: esta versión existe para eso.</p></div>
   </div>
 </section>
 
@@ -163,8 +223,36 @@
 
 </div>
 <footer><div class="cont">
-MIKE OS 0.5.0, licencia MIT. Servido desde un mini PC en casa.
+MIKE OS 0.6.0, licencia MIT. Servido desde un mini PC en casa.
 Actualizado el 13 de September de 2026.
 <a href="https://github.com/M1KE-27/m1keos">Código en GitHub</a>
 </div></footer>
+<script>
+/* El botón de tema. Tres estados y no dos: claro, oscuro, y "lo que diga el
+   sistema", que es donde empieza todo el mundo. Sin el tercero, quien tenga el
+   móvil en automático pierde ese automático en cuanto toca el botón una vez y
+   no hay forma de recuperarlo. */
+(function(){
+  var b=document.querySelector(".tema"); if(!b) return;
+  var r=document.documentElement;
+  function sistemaOscuro(){
+    return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+  }
+  b.addEventListener("click",function(){
+    var actual=r.getAttribute("data-tema");
+    var oscuroAhora = actual ? actual==="oscuro" : sistemaOscuro();
+    var nuevo = oscuroAhora ? "claro" : "oscuro";
+    /* Si lo elegido vuelve a coincidir con lo que dice el sistema, se borra la
+       preferencia en vez de guardarla: así el sitio vuelve a seguir al sistema
+       cuando este cambie solo de día a noche. */
+    if((nuevo==="oscuro")===sistemaOscuro()){
+      r.removeAttribute("data-tema");
+      try{localStorage.removeItem("mikeos-tema");}catch(e){}
+    }else{
+      r.setAttribute("data-tema",nuevo);
+      try{localStorage.setItem("mikeos-tema",nuevo);}catch(e){}
+    }
+  });
+})();
+</script>
 </body></html>

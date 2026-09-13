@@ -1,27 +1,45 @@
 <!doctype html>
-<html lang="es"><head><meta charset="utf-8">
+<html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="color-scheme" content="dark">
-<meta name="description" content="MIKE OS: un sistema operativo construido desde el kernel hacia arriba. Sin systemd, con gestor de paquetes, shell y escritorio propios.">
+<meta name="color-scheme" content="light dark">
+<meta name="description" content="MIKE OS: an operating system built from the kernel up. No systemd, with its own package manager, shell and desktop.">
 <meta property="og:title" content="Desarrollo · MIKE OS">
-<meta property="og:description" content="Un sistema operativo construido desde el kernel hacia arriba.">
+<meta property="og:description" content="An operating system built from the kernel up.">
 <meta property="og:image" content="https://m1keos.duckdns.org/capturas/escritorio.png">
 <meta property="og:type" content="website">
+<link rel="alternate" hreflang="es" href="../index.html">
 <title>Desarrollo · MIKE OS</title>
 <link rel="icon" href="../favicon.svg" type="image/svg+xml">
 <link rel="preload" href="../tipos/geist-700.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="../estilo.css"></head><body>
+<link rel="stylesheet" href="../estilo.css">
+<script>
+/* El tema elegido se aplica ANTES de pintar nada.
+   Si esto fuera al final del cuerpo, quien tenga elegido el tema oscuro vería
+   un fogonazo blanco en cada carga: el navegador pinta con el tema por defecto
+   y lo corrige después. Son cuatro líneas y van aquí por eso. */
+try{var _t=localStorage.getItem("mikeos-tema");
+    if(_t)document.documentElement.setAttribute("data-tema",_t);}catch(e){}
+</script>
+</head><body>
 <nav><div class="cont">
-  <a class="marca" href="../index.html">
+  <a class="marca" href="../en/index.html">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
          stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 6l6 6-6 6"/><path d="M13 18h7"/></svg>
     MIKE OS</a>
-  <a class="enl " href="../index.html">Inicio</a>
-  <a class="enl " href="../capturas/index.html">Capturas</a>
-  <a class="enl aqui" href="../docs/index.html">Documentación</a>
+  <a class="enl " href="../en/index.html">Home</a>
+  <a class="enl " href="../capturas/index.html">Screenshots</a>
+  <a class="enl aqui" href="../docs/index.html">Docs</a>
   <a class="enl " href="../wiki/index.html">Wiki</a>
-  <a class="enl derecha" href="https://github.com/M1KE-27/m1keos">Código</a>
-  <a class="btn " href="../descargas.html">Descargar</a>
+  <a class="enl derecha" href="https://github.com/M1KE-27/m1keos">Source</a>
+  <a class="enl idioma" href="../index.html" hreflang="es" lang="es">Ver en español</a>
+  <button class="tema" type="button" aria-label="Switch theme" title="Switch theme">
+    <svg class="sol" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+         stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/>
+      <path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.2 5.2l1.5 1.5M17.3 17.3l1.5 1.5M18.8 5.2l-1.5 1.5M6.7 17.3l-1.5 1.5"/></svg>
+    <svg class="luna" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.5A8.5 8.5 0 019.5 4a8.5 8.5 0 1010.5 10.5z"/></svg>
+  </button>
+  <a class="btn " href="../en/downloads.html">Download</a>
 </div></nav>
 <div class="cont"><main>
 <header><h1>Desarrollo</h1></header>
@@ -49,8 +67,36 @@ int main() {
 gcc hello.c
 </code></pre></article></main></div>
 <footer><div class="cont">
-MIKE OS 0.5.0, licencia MIT. Servido desde un mini PC en casa.
-Actualizado el 13 de September de 2026.
-<a href="https://github.com/M1KE-27/m1keos">Código en GitHub</a>
+MIKE OS 0.6.0, MIT licence. Served from a mini PC at home.
+Updated on September 13, 2026.
+<a href="https://github.com/M1KE-27/m1keos">Source on GitHub</a>
 </div></footer>
+<script>
+/* El botón de tema. Tres estados y no dos: claro, oscuro, y "lo que diga el
+   sistema", que es donde empieza todo el mundo. Sin el tercero, quien tenga el
+   móvil en automático pierde ese automático en cuanto toca el botón una vez y
+   no hay forma de recuperarlo. */
+(function(){
+  var b=document.querySelector(".tema"); if(!b) return;
+  var r=document.documentElement;
+  function sistemaOscuro(){
+    return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+  }
+  b.addEventListener("click",function(){
+    var actual=r.getAttribute("data-tema");
+    var oscuroAhora = actual ? actual==="oscuro" : sistemaOscuro();
+    var nuevo = oscuroAhora ? "claro" : "oscuro";
+    /* Si lo elegido vuelve a coincidir con lo que dice el sistema, se borra la
+       preferencia en vez de guardarla: así el sitio vuelve a seguir al sistema
+       cuando este cambie solo de día a noche. */
+    if((nuevo==="oscuro")===sistemaOscuro()){
+      r.removeAttribute("data-tema");
+      try{localStorage.removeItem("mikeos-tema");}catch(e){}
+    }else{
+      r.setAttribute("data-tema",nuevo);
+      try{localStorage.setItem("mikeos-tema",nuevo);}catch(e){}
+    }
+  });
+})();
+</script>
 </body></html>

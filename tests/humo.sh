@@ -68,6 +68,25 @@ comprobar() {
 # --- Arranque ---------------------------------------------------------------
 QPID=""
 if [ "$USAR_VM" -eq 0 ]; then
+    # Antes de arrancar nada: que no haya otra máquina ocupando el puerto.
+    #
+    # Esto pasó de verdad y fue caro. Una VM de una sesión anterior seguía
+    # encendida en el 2222, así que esta prueba arrancó la imagen NUEVA,
+    # esperó a que respondiera... y se conectó a la VIEJA, que respondía
+    # antes. Resultado: se estuvo probando una imagen de hace una hora
+    # mientras el registro decía el nombre de la nueva. Trece comprobaciones
+    # en rojo por algo que no estaba roto, y --- lo peligroso --- las otras
+    # veinte en verde sin haber tocado la imagen que se quería probar.
+    #
+    # El patrón va anclado ("^qemu-system") a propósito: con "pkill -f qemu"
+    # el propio shell que ejecuta esto lleva la palabra escrita y se mata solo.
+    _viejas="$(pgrep -f "^qemu-system-x86_64" 2>/dev/null || true)"
+    if [ -n "$_viejas" ]; then
+        echo "$(rojo "Ya hay una máquina QEMU encendida") (PID: $(echo "$_viejas" | tr '\n' ' '))."
+        echo "Se conectaría a ESA y no a la imagen recién construida."
+        echo "Apágala, o usa --usar-vm si es la que quieres probar."
+        exit 2
+    fi
     echo "Arrancando MIKE OS..."
     "$RAIZ/scripts/run-qemu.sh" --gui --desktop --ssh-port "$PUERTO" \
         > "$SALIDA/vm.log" 2>&1 < /dev/null &
@@ -142,6 +161,67 @@ comprobar "el fondo elegido se recuerda" \
     '/tmp/otro.png'
 echo
 
+# --- XWayland ---------------------------------------------------------------
+# Aquí murió Minecraft, y costó encontrarlo porque no dejaba ni un error a la
+# vista: XWayland arranca, no encuentra /usr/bin/xkbcomp, no puede compilar su
+# mapa de teclado y se muere --- pero DISPLAY=:0 sigue exportado, así que
+# cualquier programa de X11 intenta conectarse a un servidor que no existe y
+# falla mucho más adelante, en _initGlfw, hablando de OpenGL.
+echo "XWayland"
+comprobar "xkbcomp está en la imagen"    'test -x /usr/bin/xkbcomp && echo ok' 'ok'
+comprobar "XWayland en marcha"           'pgrep -f "[X]wayland" >/dev/null && echo ok' 'ok'
+comprobar "el socket de X existe"        'ls /tmp/.X11-unix'               'X[0-9]'
+# La prueba que de verdad importa: que un cliente de X11 CONECTE. Que el
+# proceso esté vivo no basta --- puede estar arrancando y morirse después.
+comprobar "un cliente X11 conecta"       'DISPLAY=:0 xrandr >/dev/null 2>&1 && echo ok' 'ok'
+echo
+
+# --- Energía ----------------------------------------------------------------
+echo "Energía"
+comprobar "m-energia dice qué sabe hacer" 'm-energia puede | wc -l'        '^ *[0-9]'
+comprobar "el perfil se guarda en /etc"  'm-energia maximo >/dev/null 2>&1; cat /etc/mikeos/energia' 'maximo'
+comprobar "el perfil máximo sube el gobernador"     'cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor 2>/dev/null || echo sin-cpufreq'     'performance|sin-cpufreq'
+comprobar "vuelve a automático"          'm-energia auto >/dev/null 2>&1; m-energia perfil' '^auto$'
+# Lo que PRUEBA que el servicio corre es su registro: esa línea sólo la
+# escribe el bucle del servicio, y sólo cuando ha llegado a mirar la
+# alimentación. Ni "sv status" ni supervise/pid valen: el directorio de
+# supervisión es 0700 de root y el escritorio corre como mike, así que esa
+# comprobación daba rojo con el servicio perfectamente vivo.
+comprobar "el servicio de energía vive"  'cat /var/log/energia/current 2>/dev/null | tail -1' 'energía\] .*Perfil:'
+echo
+
+# --- Controladores ----------------------------------------------------------
+echo "Controladores"
+comprobar "m-drivers da líneas para máquinas" 'm-drivers --breve | head -1' '^COMP\|'
+comprobar "m-drivers mira el Bluetooth"  'm-drivers --breve | grep -c "^COMP|Bluetooth"' '^[1-9]'
+comprobar "m-drivers da JSON válido"     'm-drivers --json | head -c 20'   '\{"componentes"'
+# El JSON tiene que ser ANALIZABLE, no sólo empezar bien: si un nombre de
+# tarjeta lleva comillas y no se escapan, el panel se queda en blanco sin decir
+# por qué. Se analiza AQUÍ, en el equipo que prueba, porque dentro de la imagen
+# no hay python y comprobarlo con grep sería fingir que se ha comprobado.
+printf '  %-46s' "el JSON se puede analizar"
+if vm 'm-drivers --json' | python3 -c 'import json,sys; d=json.load(sys.stdin); sys.exit(0 if "componentes" in d else 1)' 2>/dev/null; then
+    echo "$(verde ✓)"; PASAN=$((PASAN + 1))
+else
+    echo "$(rojo ✗)"; FALLAN=$((FALLAN + 1)); FALLOS+=("el JSON de m-drivers no se puede analizar")
+fi
+# El informe lo escribe un trabajo en segundo plano con "sleep 20" (etc/runit/1),
+# para no retrasar el arranque. Comprobarlo a secas era una carrera que perdía
+# casi siempre: se esperaba a que esté, hasta 40 segundos.
+printf '  %-46s' "m-hardware deja su informe"
+_hay=""
+for _ in $(seq 1 20); do
+    _hay="$(vm 'test -s /var/log/mikeos-hardware.txt && echo ok')"
+    [ -n "$_hay" ] && break
+    sleep 2
+done
+if [ -n "$_hay" ]; then
+    echo "$(verde ✓)"; PASAN=$((PASAN + 1))
+else
+    echo "$(rojo ✗)"; FALLAN=$((FALLAN + 1)); FALLOS+=("m-hardware no dejó su informe")
+fi
+echo
+
 # --- Gestor de paquetes -----------------------------------------------------
 echo "Paquetes"
 comprobar "mpm search encuentra algo"    'mpm search ripgrep | tail -2'    'resultado'
@@ -155,6 +235,26 @@ else
     echo "$(rojo ✗)"; FALLAN=$((FALLAN + 1)); FALLOS+=("mpm search se contradice")
 fi
 comprobar "mpm list responde"            'mpm list >/dev/null 2>&1 && echo ok' 'ok'
+echo
+
+# --- Copiar archivos a la máquina -------------------------------------------
+# "scp archivo mike@equipo:" fallaba con «/usr/libexec/sftp-server: No such
+# file or directory»: el scp moderno habla SFTP, no el protocolo antiguo, y ese
+# binario no estaba. Desde fuera parecía que MIKE OS no admitía copiar
+# archivos, y el mensaje nombraba una ruta sin decir que lo que faltaba era un
+# programa.
+echo "Copia de archivos"
+comprobar "sftp-server está donde lo busca dropbear" \
+    'test -x /usr/libexec/sftp-server && echo ok' 'ok'
+printf '  %-46s' "scp copia un archivo de verdad"
+if scp -P "$PUERTO" -i "$CLAVE" -o StrictHostKeyChecking=no \
+       -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR \
+       "$RAIZ/VERSION" mike@localhost:/tmp/humo-scp >/dev/null 2>&1 \
+   && [ -n "$(vm 'cat /tmp/humo-scp')" ]; then
+    echo "$(verde ✓)"; PASAN=$((PASAN + 1))
+else
+    echo "$(rojo ✗)"; FALLAN=$((FALLAN + 1)); FALLOS+=("scp no puede copiar a la máquina")
+fi
 echo
 
 # --- Centro de Control, con clics de verdad ---------------------------------
@@ -199,6 +299,21 @@ if [ -S "$QMP" ]; then
         *) echo "$(rojo ✗)  $(gris "la pantalla volvió al escritorio: se cerró")"
            FALLAN=$((FALLAN + 1)); FALLOS+=("el panel se cierra al cambiar de apartado") ;;
     esac
+
+    # Los dos apartados nuevos se abren por IPC, que es como los abre la
+    # pantalla de bienvenida. Comprobar que el botón EXISTE no vale: lo que
+    # importa es que al pedirlo, el panel acabe de verdad en ese apartado.
+    for _sec in energia drivers; do
+        _i="$(vm 'quickshell list --all' | awk '/^Instance /{gsub(":","",$2);print $2;exit}')"
+        vm "quickshell ipc -i $_i call ajustes seccion $_sec" >/dev/null 2>&1
+        sleep 2
+        printf '  %-46s' "el apartado «$_sec» se abre"
+        case "$(estado_cc)" in
+            "abierto $_sec") echo "$(verde ✓)"; PASAN=$((PASAN + 1)) ;;
+            *) echo "$(rojo ✗)  $(gris "$(estado_cc)")"
+               FALLAN=$((FALLAN + 1)); FALLOS+=("el apartado $_sec no se abre") ;;
+        esac
+    done
 
     # Cerrar el Centro de Control antes de tocar la barra: su ventana ocupa
     # la pantalla entera y se queda con el gesto de la rueda.

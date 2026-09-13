@@ -1,0 +1,51 @@
+# Las utilidades de MIKE OS que viven en /usr/bin.
+#
+# Esta lista estaba escrita DOS VECES: una en scripts/build.sh (lo que entra en
+# la imagen) y otra en scripts/build-repo.sh (lo que se puede actualizar por
+# red). Y se separaron, como se separa siempre todo lo que hay que acordarse de
+# cambiar en dos sitios: había utilidades que existían en la imagen recién
+# instalada y que NINGUNA actualización podía tocar jamás. El fallo no daba
+# ningún error -- "mpm upgrade" decía que todo estaba al día -- y por eso
+# aguantó tanto.
+#
+# Ahora la lista es esta y sólo esta. Los dos scripts la leen.
+#
+# Una línea por utilidad. Lo que empieza por "#" es un comentario.
+#
+# m-desktop NO está aquí a propósito: lo entrega el paquete "desktop". Dos
+# paquetes que traen el mismo archivo se pisan al actualizar.
+m-service
+m-system
+m-network
+m-user
+m-disk
+m-info
+m-doctor
+m-log
+m-sudo
+m-autenticar
+m-clave
+m-acceso-remoto
+m-colores
+m-particiones
+m-brillo
+m-tapa
+m-energia
+m-install
+m-screenshot
+m-volume
+m-metrics
+m-audio-setup
+m-fastfetch
+m-workspace-cycle
+m-drivers
+m-wifi
+m-bluetooth
+m-wallhaven
+m-fondo
+m-internet
+m-apagado
+m-hardware
+m-reintentar-drivers
+m-discos-permisos
+resolvconf

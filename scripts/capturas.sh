@@ -1,4 +1,7 @@
 #!/bin/bash
+# Nota: aquí NO se usa "pgrep -x". El pgrep de BusyBox compara el patrón con la
+# línea de órdenes entera, así que "-x m-welcome" no encuentra un proceso
+# lanzado como "/usr/bin/m-welcome" --- que es justo como se lanza.
 # ==============================================================================
 # capturas.sh - saca las capturas de la web desde el sistema de verdad.
 #
@@ -46,7 +49,7 @@ mkdir -p "$SALIDA"
 paso "Sacando capturas"
 
 # 1. La bienvenida, que es lo primero que ve alguien.
-if [ -n "$(vm 'pgrep -x m-welcome')" ]; then
+if [ -n "$(vm 'pgrep m-welcome')" ]; then
     sacar "bienvenida" "pantalla de inicio"
     # Cerrarla para las siguientes: el botón "Empezar" está abajo a la derecha
     # de la ventana flotante de 880x580 centrada en 1920x1080.

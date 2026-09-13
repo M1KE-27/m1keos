@@ -155,7 +155,7 @@ done
 # retiraron del menú porque no tenían dentro ni un control: eran un título y
 # una frase diciendo que llegarían más adelante. Si vuelven, tendrán que volver
 # también a esta lista, con algo dentro que probar.
-for SEC in vistazo sistema barra escritorio bloqueo acercade; do
+for SEC in vistazo sistema energia drivers barra escritorio bloqueo acercade; do
     printf '  %-44s' "el apartado «$SEC» se puede abrir"
     case " $ALCANZADOS " in
         *" $SEC "*) echo "$(verde ✓)"; PASAN=$((PASAN + 1)) ;;

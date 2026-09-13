@@ -220,6 +220,25 @@ Canvas {
             linea(ctx, 12, 3, 12, 6);   linea(ctx, 12, 18, 12, 21)
             linea(ctx, 3, 12, 6, 12);   linea(ctx, 18, 12, 21, 12)
             return
+        case "energia":
+            // Batería tumbada con un rayo dentro: energía y perfiles.
+            caja(ctx, 2.5, 8, 16, 8, 1.5)
+            caja(ctx, 19.5, 10.5, 2, 3, 1)
+            ctx.beginPath()
+            ctx.moveTo(11.5, 9.5); ctx.lineTo(8.5, 12.5); ctx.lineTo(10.8, 12.5)
+            ctx.lineTo(9.5, 14.5); ctx.lineTo(12.5, 11.5); ctx.lineTo(10.2, 11.5)
+            ctx.closePath(); ctx.stroke()
+            return
+        case "drivers":
+            // Una lupa sobre un chip: esto no es "el sistema", es BUSCAR
+            // dentro de él. Con la misma silueta que "sistema" los dos
+            // apartados se confundían en la lista lateral.
+            caja(ctx, 3.5, 4, 11, 11, 1.5)
+            linea(ctx, 6.5, 2, 6.5, 4);   linea(ctx, 11.5, 2, 11.5, 4)
+            linea(ctx, 1.5, 7, 3.5, 7);   linea(ctx, 1.5, 12, 3.5, 12)
+            circulo(ctx, 15.5, 15.5, 5, false)
+            linea(ctx, 19.2, 19.2, 22, 22)
+            return
         case "avanzado":
             caja(ctx, 2.5, 4.5, 19, 15, 2)
             ctx.beginPath()

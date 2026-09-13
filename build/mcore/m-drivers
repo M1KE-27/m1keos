@@ -1,15 +1,39 @@
 #!/bin/sh
-# m-drivers - detecta el hardware de la máquina y dice qué instalar para que
-# funcione del todo.
+# m-drivers - mira TODO lo que hay en este equipo y dice qué le falta a cada
+# cosa para funcionar del todo.
 #
 # No adivina por el nombre comercial: lee los identificadores que el propio
-# hardware publica en /sys/bus/pci y /sys/bus/usb, que es lo único fiable.
-# Cada dispositivo se traduce a los paquetes que le hacen falta, y sólo se
-# proponen: nada se instala sin que alguien lo pida.
+# hardware publica en /sys/bus/pci y /sys/bus/usb, que es lo único fiable. De
+# cada componente dice en qué estado está -- y son estados distintos, con
+# soluciones distintas, que desde fuera se ven todos igual:
+#
+#   ok            funciona
+#   sin-driver    el kernel no tiene quien lo maneje
+#   sin-firmware  hay driver, pero le falta un archivo de firmware
+#   apagado       está todo, pero el servicio que lo usa no está en pie
+#   mejorable     funciona, y hay un paquete que lo hace ir mejor
+#
+# Antes sólo miraba gráfica, red, sonido, entrada y procesador, y sólo sabía
+# proponer paquetes: no sabía decir si algo ya detectado estaba muerto. El
+# Bluetooth, que es justo lo que más se queda a medias, no aparecía por ningún
+# lado.
+#
+#   m-drivers              el informe
+#   m-drivers --json       lo mismo para el Centro de Control
+#   m-drivers --breve      lo mismo en líneas, para la pantalla de bienvenida
+#   m-drivers --lista      sólo los paquetes recomendados
+#   m-drivers --instalar   los instala
 set -u
 
+PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
+export PATH
+
 PCI="/sys/bus/pci/devices"
+USB="/sys/bus/usb/devices"
 INSTALAR=""
+FILAS="${TMPDIR:-/tmp}/.m-drivers.$$"
+: > "$FILAS"
+trap 'rm -f "$FILAS"' EXIT INT TERM
 
 # La base de identificadores de fabricante que trae el sistema da el nombre
 # comercial; sin ella se enseña el identificador en crudo, que sigue sirviendo.
@@ -21,192 +45,491 @@ done
 nombre_dispositivo() {
     # $1 = vendedor (4 hex), $2 = dispositivo (4 hex)
     [ -n "$IDS" ] || { printf '%s:%s' "$1" "$2"; return; }
-    awk -v v="$1" -v d="$2" '
-        /^[0-9a-f]{4}  / {
+    _n="$(awk -v v="$1" -v d="$2" '
+        /^[0-9a-f][0-9a-f][0-9a-f][0-9a-f]  / {
             envendedor = (substr($0, 1, 4) == v)
             if (envendedor) vnom = substr($0, 7)
             next
         }
-        envendedor && /^\t[0-9a-f]{4}  / {
+        envendedor && /^\t[0-9a-f][0-9a-f][0-9a-f][0-9a-f]  / {
             if (substr($0, 2, 4) == d) { print vnom " " substr($0, 8); exit }
         }
-    ' "$IDS" 2>/dev/null || printf '%s:%s' "$1" "$2"
-}
-
-proponer() {
-    # $1 = paquete, $2 = por qué
-    case " $INSTALAR " in *" $1 "*) return ;; esac
-    INSTALAR="$INSTALAR $1"
-    printf '    %-24s %s\n' "$1" "$2"
+    ' "$IDS" 2>/dev/null)"
+    [ -n "$_n" ] && printf '%s' "$_n" || printf '%s:%s' "$1" "$2"
 }
 
 leer_hex() { [ -f "$1" ] && sed 's/^0x//' "$1" || echo ""; }
-
 is_instalado() { [ -f "/var/lib/mpm/installed/$1.json" ]; }
 
-echo "Hardware detectado"
-echo "=================="
-echo
+# ¿Este dispositivo pidió un firmware que no estaba? Lo dice el kernel.
+firmware_que_falta() {
+    dmesg 2>/dev/null | awk -v d="$1" '
+        index($0, d) && /Direct firmware load/ {
+            if (match($0, /for [^ ]+/)) { print substr($0, RSTART + 4, RLENGTH - 4); exit }
+        }'
+}
 
-# ---------------------------------------------------------------- gráfica
-echo "Gráfica"
-_hay_gpu=0
-for _d in "$PCI"/*; do
-    [ -d "$_d" ] || continue
-    _clase="$(leer_hex "$_d/class")"
-    # 0x030000 = VGA, 0x038000 = otra controladora de pantalla
-    case "$_clase" in 03*) ;; *) continue ;; esac
-    _hay_gpu=1
-    _v="$(leer_hex "$_d/vendor")"; _p="$(leer_hex "$_d/device")"
-    echo "  $(nombre_dispositivo "$_v" "$_p")"
-    case "$_v" in
-        10de)
-            # Las tarjetas de las últimas generaciones van mejor con el
-            # módulo abierto; el propietario cubre las anteriores.
-            proponer nvidia-open "controlador NVIDIA (Turing en adelante)"
-            proponer nvidia-utils "bibliotecas OpenGL/Vulkan de NVIDIA"
-            ;;
-        1002)
-            proponer vulkan-radeon "Vulkan para AMD"
-            proponer libva-mesa-driver "aceleración de vídeo AMD"
-            ;;
-        8086)
-            proponer vulkan-intel "Vulkan para Intel"
-            proponer intel-media-driver "aceleración de vídeo Intel"
-            ;;
-        1af4|1234)
-            # En una máquina virtual el driver de OpenGL ya está, pero Vulkan
-            # no: hace falta Venus, que es el que traduce Vulkan del huésped
-            # al anfitrión. Sin él no hay DXVK ni VKD3D, o sea que Wine no
-            # puede con DirectX 11 ni 12.
-            proponer vulkan-virtio "Vulkan en máquina virtual (Venus)"
-            ;;
-    esac
-done
-[ "$_hay_gpu" = 1 ] || echo "  (ninguna encontrada)"
-echo
-
-# ------------------------------------------------------------------- red
-echo "Red"
-_hay_red=0
-for _d in "$PCI"/*; do
-    [ -d "$_d" ] || continue
-    _clase="$(leer_hex "$_d/class")"
-    case "$_clase" in 02*) ;; *) continue ;; esac
-    _hay_red=1
-    _v="$(leer_hex "$_d/vendor")"; _p="$(leer_hex "$_d/device")"
-    echo "  $(nombre_dispositivo "$_v" "$_p")"
-    case "$_v" in
-        8086) proponer linux-firmware "firmware de la Wi-Fi Intel" ;;
-        14e4) proponer broadcom-wl "controlador Wi-Fi Broadcom" ;;
-        10ec) proponer linux-firmware "firmware Realtek" ;;
-        168c|17cb) proponer linux-firmware "firmware Atheros/Qualcomm" ;;
-        14c3) proponer linux-firmware "firmware Wi-Fi MediaTek" ;;
-    esac
-done
-[ "$_hay_red" = 1 ] || echo "  (ninguna encontrada)"
-echo
-
-# ---------------------------------------------------------------- sonido
-echo "Sonido"
-if [ -r /proc/asound/cards ] && grep -q '[0-9]' /proc/asound/cards 2>/dev/null; then
-    sed -n 's/.*\]: *//p' /proc/asound/cards | sed 's/^/  /'
-else
-    echo "  (ninguna tarjeta)"
-fi
-echo
-
-# ---------------------------------------------------------------- táctil
-echo "Entrada"
-_tactil=0
-for _n in /sys/class/input/input*/name; do
-    [ -r "$_n" ] || continue
-    _nom="$(cat "$_n" 2>/dev/null)"
-    case "$_nom" in
-        *[Tt]ouch*|*[Ss]tylus*|*[Ww]acom*|*[Pp]en*)
-            echo "  $_nom"
-            _tactil=1
-            ;;
-    esac
-done
-[ "$_tactil" = 1 ] || echo "  (sin pantalla táctil ni tableta)"
-echo
-
-# ------------------------------------------------------------------ CPU
-echo "Procesador"
-sed -n 's/^model name[[:space:]]*: //p' /proc/cpuinfo 2>/dev/null | head -1 | sed 's/^/  /'
-_marca="$(sed -n 's/^vendor_id[[:space:]]*: //p' /proc/cpuinfo 2>/dev/null | head -1)"
-case "$_marca" in
-    GenuineIntel) proponer intel-ucode "actualizaciones de microcódigo Intel" ;;
-    AuthenticAMD) proponer amd-ucode  "actualizaciones de microcódigo AMD" ;;
-esac
-echo
-
-# ------------------------------------------------------------- DirectX
-# Sólo se menciona; no se propone por defecto porque son cientos de megas y
-# no todo el mundo quiere ejecutar programas de Windows.
-if ! is_instalado wine 2>/dev/null; then
-    echo "Juegos de Windows"
-    echo "  DirectX 9 a 12 funcionan mediante Wine con DXVK y VKD3D."
-    echo "  Requieren Vulkan, así que instala antes lo de arriba."
-    echo "  mpm install wine vkd3d"
-    echo
-fi
-
-# --------------------------------------------------------------- resumen
-if [ -z "$INSTALAR" ]; then
-    echo "No hace falta instalar nada: el sistema ya cubre este equipo."
-    exit 0
-fi
-
-echo "=================="
-echo "Recomendado:$INSTALAR"
-echo
-
-# El problema del huevo y la gallina, dicho antes de que muerda.
+# ¿Hay un proceso con este nombre?
 #
-# Todo esto se descarga del repositorio, o sea que hace falta internet. Si lo
-# que falta justamente es el firmware de la tarjeta WiFi, no hay forma de
-# bajarlo por WiFi. Antes se intentaba igual y salía un error de red genérico
-# que no explicaba nada, dejando a quien lo leía convencido de que el
-# repositorio estaba caído.
-if ! m-internet >/dev/null 2>&1; then
-    echo "AVISO: ahora mismo no hay internet, y esto se descarga."
-    echo
-    case "$INSTALAR" in
-        *firmware*|*wifi*|*iwlwifi*)
-            echo "  Y lo que falta es justo lo que da acceso a la red, así que"
-            echo "  por WiFi no se puede resolver. Tres salidas:"
-            echo
-            echo "    1. Un cable de red. Es lo más rápido si tienes puerto o"
-            echo "       un adaptador USB."
-            echo "    2. El móvil por USB: conéctalo y activa «compartir"
-            echo "       internet» o «anclaje a red por USB». Casi todos los"
-            echo "       móviles funcionan sin instalar nada."
-            echo "    3. Otro equipo: descarga el paquete a un USB y luego"
-            echo "       «mpm install /ruta/al/paquete.mpk»."
-            ;;
-        *)
-            echo "  Conéctate a una red y vuelve a ejecutar esto."
-            ;;
+# NO se usa "pgrep -x", y esto costó un rato: el pgrep de BusyBox compara el
+# patrón con la línea de órdenes ENTERA, así que "pgrep -x pipewire" no
+# encuentra un proceso lanzado como "/usr/bin/pipewire" --- pero sí encuentra
+# "Hyprland", que se lanza sin ruta. O sea que funcionaba en unos sitios y en
+# otros no, en silencio: el informe decía "pipewire no está en marcha" con el
+# sonido sonando.
+proceso_vivo() {
+    pgrep "$1" >/dev/null 2>&1
+}
+
+# ¿Está en pie el servicio? runit deja un directorio "supervise" con el estado.
+servicio_vivo() {
+    # Sin /var/service no estamos en un MIKE OS arrancado (pasa al ejecutar
+    # esto desde el equipo de construcción): entonces la única prueba honesta
+    # es si el proceso está o no.
+    if [ ! -d "/var/service/$1" ]; then
+        proceso_vivo "$1"
+        return
+    fi
+    if command -v sv >/dev/null 2>&1; then
+        sv status "$1" 2>/dev/null | grep -q '^run:' && return 0
+        return 1
+    fi
+    proceso_vivo "$1"
+}
+
+# ------------------------------------------------------------------ registro
+#
+# Cada componente encontrado se apunta como una fila con campos separados por
+# tabulador. Así el informe de texto y el JSON salen de los MISMOS datos, y no
+# puede pasar que el panel diga una cosa y la terminal otra.
+componente() {  # categoría | nombre | estado | detalle
+    printf '%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "$4" >> "$FILAS"
+}
+
+proponer() {  # paquete | por qué
+    case " $INSTALAR " in *" $1 "*) return ;; esac
+    is_instalado "$1" && return
+    INSTALAR="$INSTALAR $1"
+    printf 'PAQUETE\t%s\t%s\t%s\n' "$1" "propuesto" "$2" >> "$FILAS"
+}
+
+# ================================================================== gráfica
+buscar_graficas() {
+    for _d in "$PCI"/*; do
+        [ -d "$_d" ] || continue
+        case "$(leer_hex "$_d/class")" in 03*) ;; *) continue ;; esac
+        _id="$(basename "$_d")"
+        _v="$(leer_hex "$_d/vendor")"; _p="$(leer_hex "$_d/device")"
+        _nom="$(nombre_dispositivo "$_v" "$_p")"
+        _drv="$(basename "$(readlink -f "$_d/driver" 2>/dev/null)" 2>/dev/null)"
+        _fw="$(firmware_que_falta "$_id")"
+        if [ -z "$_drv" ] || [ "$_drv" = "." ]; then
+            if [ -n "$_fw" ]; then
+                componente "Gráfica" "$_nom" "sin-firmware" "le falta $_fw"
+            else
+                componente "Gráfica" "$_nom" "sin-driver" "el kernel no la reconoce"
+            fi
+        else
+            componente "Gráfica" "$_nom" "ok" "driver $_drv"
+        fi
+        case "$_v" in
+            10de) proponer nvidia-open  "controlador NVIDIA (Turing en adelante)"
+                  proponer nvidia-utils "bibliotecas OpenGL/Vulkan de NVIDIA" ;;
+            1002) proponer vulkan-radeon     "Vulkan para AMD"
+                  proponer libva-mesa-driver "aceleración de vídeo AMD" ;;
+            8086) proponer vulkan-intel       "Vulkan para Intel"
+                  proponer intel-media-driver "aceleración de vídeo Intel" ;;
+            1af4|1234) proponer vulkan-virtio "Vulkan en máquina virtual (Venus)" ;;
+        esac
+    done
+}
+
+# ====================================================================== red
+buscar_red() {
+    # Por PCI: la Ethernet y la Wi-Fi integradas.
+    for _d in "$PCI"/*; do
+        [ -d "$_d" ] || continue
+        case "$(leer_hex "$_d/class")" in 02*|0d*) ;; *) continue ;; esac
+        _id="$(basename "$_d")"
+        _v="$(leer_hex "$_d/vendor")"; _p="$(leer_hex "$_d/device")"
+        _nom="$(nombre_dispositivo "$_v" "$_p")"
+        _drv="$(basename "$(readlink -f "$_d/driver" 2>/dev/null)" 2>/dev/null)"
+        _fw="$(firmware_que_falta "$_id")"
+        # ¿Le salió interfaz? Es la prueba de que funciona de verdad.
+        #
+        # Y hay que buscarla DOS niveles: en una tarjeta normal cuelga de
+        # ".../0000:04:00.0/net/enp4s0", pero en virtio (o sea, en toda máquina
+        # virtual) hay un bus intermedio y queda en ".../virtio0/net/eth0".
+        # Mirando sólo el primer nivel, el informe decía "driver virtio-pci,
+        # sin interfaz" en una máquina que tenía red, IP y DNS funcionando.
+        _iface=""
+        for _n in "$_d"/net/* "$_d"/*/net/*; do
+            [ -d "$_n" ] && _iface="$(basename "$_n")"
+        done
+        if [ -n "$_iface" ]; then
+            _ip="$(ip -4 addr show "$_iface" 2>/dev/null | sed -n 's/.*inet \([0-9.]*\).*/\1/p' | head -1)"
+            if [ -n "$_ip" ]; then
+                componente "Red" "$_nom" "ok" "$_iface con $_ip"
+            else
+                componente "Red" "$_nom" "apagado" "$_iface sin dirección IP"
+            fi
+        elif [ -n "$_fw" ]; then
+            componente "Red" "$_nom" "sin-firmware" "le falta $_fw"
+        elif [ -z "$_drv" ] || [ "$_drv" = "." ]; then
+            componente "Red" "$_nom" "sin-driver" "el kernel no la reconoce"
+        else
+            componente "Red" "$_nom" "apagado" "driver $_drv, sin interfaz"
+        fi
+        # El paquete de firmware SÓLO se propone si a esta tarjeta le falta
+        # algo de verdad. Antes se proponía por el fabricante, así que un
+        # equipo con la Wi-Fi funcionando perfectamente salía recomendando
+        # descargar 90 MB de firmware que no iba a usar -- y eso era justo lo
+        # que hacía que la pantalla de bienvenida siguiera pidiendo instalar
+        # controladores después de haberlos instalado.
+        if [ -n "$_fw" ] || [ -z "$_drv" ] || [ "$_drv" = "." ]; then
+            case "$_v" in
+                8086)      proponer firmware-extra "firmware de Wi-Fi Intel completo" ;;
+                14e4)      proponer broadcom-wl    "controlador Wi-Fi Broadcom" ;;
+                168c|17cb) proponer firmware-extra "firmware Atheros/Qualcomm" ;;
+                14c3)      proponer firmware-extra "firmware Wi-Fi MediaTek" ;;
+            esac
+        fi
+    done
+
+    # Por USB: los adaptadores de red que se enchufan, y el móvil compartiendo
+    # internet. Este bloque faltaba entero.
+    for _d in "$USB"/*:*; do
+        [ -d "$_d" ] || continue
+        _cl="$(cat "$_d/bInterfaceClass" 2>/dev/null || echo '')"
+        # 02 = comunicaciones (ethernet USB, móvil anclado), ff = propietario
+        case "$_cl" in 02) ;; *) continue ;; esac
+        _iface=""
+        for _n in "$_d"/net/*; do [ -d "$_n" ] && _iface="$(basename "$_n")"; done
+        _padre="$(dirname "$_d")/$(basename "$_d" | cut -d: -f1)"
+        _nom="$(cat "$_padre/product" 2>/dev/null || echo 'Adaptador de red USB')"
+        if [ -n "$_iface" ]; then
+            componente "Red" "$_nom" "ok" "USB, $_iface"
+        else
+            componente "Red" "$_nom" "sin-driver" "USB, sin interfaz de red"
+        fi
+    done
+}
+
+# ================================================================ bluetooth
+#
+# Este apartado no existía. El Bluetooth es el componente que más veces se
+# queda a medias --- el driver se engancha y luego falla al cargar el firmware,
+# así que desde /sys parece que está bien --- y era justo el que no se miraba.
+buscar_bluetooth() {
+    _hay=0
+
+    # Adaptadores que YA funcionan: tienen su hci.
+    for _h in /sys/class/bluetooth/hci*; do
+        [ -d "$_h" ] || continue
+        _hay=1
+        _hci="$(basename "$_h")"
+        _nom="$(cat "$_h/device/../product" 2>/dev/null || echo 'Adaptador Bluetooth')"
+
+        # ¿Bloqueado por software? Sin udev nadie restaura rfkill y en muchos
+        # equipos arranca bloqueado: idéntico a no tener adaptador.
+        _bloqueado=0
+        for _r in /sys/class/rfkill/rfkill*; do
+            [ -d "$_r" ] || continue
+            [ "$(cat "$_r/type" 2>/dev/null)" = "bluetooth" ] || continue
+            [ "$(cat "$_r/soft" 2>/dev/null)" = "1" ] && _bloqueado=1
+        done
+
+        if [ "$_bloqueado" = 1 ]; then
+            componente "Bluetooth" "$_nom" "apagado" "$_hci bloqueado por software"
+        elif ! servicio_vivo bluetoothd; then
+            componente "Bluetooth" "$_nom" "apagado" "$_hci detectado, bluetoothd caído"
+        else
+            componente "Bluetooth" "$_nom" "ok" "$_hci"
+        fi
+    done
+
+    # Adaptadores USB que el sistema ve pero que no llegaron a dar un hci: es
+    # el caso del firmware que no estaba al arrancar.
+    for _d in "$USB"/*:*; do
+        [ -d "$_d" ] || continue
+        # Clase e0, subclase 01, protocolo 01: adaptador Bluetooth. Es
+        # estándar y lo cumplen todos, Intel incluido.
+        [ "$(cat "$_d/bInterfaceClass" 2>/dev/null || echo '')" = "e0" ] || continue
+        [ "$(cat "$_d/bInterfaceSubClass" 2>/dev/null || echo '')" = "01" ] || continue
+        [ "$_hay" = 1 ] && continue
+        _hay=1
+        _id="$(basename "$_d")"
+        _padre="$(dirname "$_d")/$(echo "$_id" | cut -d: -f1)"
+        _nom="$(cat "$_padre/product" 2>/dev/null || echo 'Adaptador Bluetooth USB')"
+        _fw="$(firmware_que_falta "$_id")"
+        [ -z "$_fw" ] && _fw="$(firmware_que_falta 'hci0')"
+        if [ -n "$_fw" ]; then
+            componente "Bluetooth" "$_nom" "sin-firmware" "le falta $_fw"
+            proponer firmware-extra "firmware de Bluetooth que falta"
+        else
+            componente "Bluetooth" "$_nom" "sin-driver" "detectado, sin adaptador hci"
+        fi
+    done
+
+    [ "$_hay" = 1 ] || componente "Bluetooth" "Sin adaptador" "ausente" "este equipo no tiene Bluetooth"
+}
+
+# =================================================================== sonido
+buscar_sonido() {
+    _hay=0
+    if [ -r /proc/asound/cards ]; then
+        while IFS= read -r _l; do
+            case "$_l" in
+                *']:'*)
+                    _hay=1
+                    _nom="${_l#*]: }"
+                    _n="$(echo "$_l" | sed -n 's/^ *\([0-9]*\) .*/\1/p')"
+                    # ¿Tiene salida de verdad? Un códec sin PCM de reproducción
+                    # aparece en la lista y no suena.
+                    if ls /proc/asound/card"$_n"/pcm*p >/dev/null 2>&1; then
+                        componente "Sonido" "$_nom" "ok" "tarjeta $_n con salida"
+                    else
+                        componente "Sonido" "$_nom" "apagado" "tarjeta $_n sin salida de audio"
+                    fi
+                    ;;
+            esac
+        done < /proc/asound/cards
+    fi
+    if [ "$_hay" = 0 ]; then
+        componente "Sonido" "Sin tarjeta" "sin-driver" "no hay ninguna tarjeta registrada"
+    elif ! proceso_vivo pipewire; then
+        componente "Sonido" "Servidor de audio" "apagado" "pipewire no está en marcha"
+    fi
+}
+
+# ================================================================== entrada
+buscar_entrada() {
+    _t=0; _tp=0
+    for _n in /sys/class/input/input*/name; do
+        [ -r "$_n" ] || continue
+        _nom="$(cat "$_n" 2>/dev/null)"
+        case "$_nom" in
+            *[Tt]ouchpad*|*[Tt]rackpad*) componente "Entrada" "$_nom" "ok" "panel táctil"; _tp=1 ;;
+            *[Tt]ouch*|*[Ss]tylus*|*[Ww]acom*|*[Pp]en*) componente "Entrada" "$_nom" "ok" "pantalla táctil o tableta"; _t=1 ;;
+        esac
+    done
+    [ "$_t" = 1 ] || [ "$_tp" = 1 ] || componente "Entrada" "Teclado y ratón" "ok" "sin pantalla táctil ni panel"
+}
+
+# ==================================================================== cámara
+buscar_camara() {
+    _hay=0
+    for _v in /dev/video*; do
+        [ -e "$_v" ] || continue
+        _hay=1
+        _nom="$(cat "/sys/class/video4linux/$(basename "$_v")/name" 2>/dev/null || basename "$_v")"
+        componente "Cámara" "$_nom" "ok" "$_v"
+    done
+    if [ "$_hay" = 0 ]; then
+        # ¿Hay una cámara USB que no llegó a dar /dev/video? Clase 0e = vídeo.
+        for _d in "$USB"/*:*; do
+            [ -d "$_d" ] || continue
+            [ "$(cat "$_d/bInterfaceClass" 2>/dev/null || echo '')" = "0e" ] || continue
+            _padre="$(dirname "$_d")/$(basename "$_d" | cut -d: -f1)"
+            componente "Cámara" "$(cat "$_padre/product" 2>/dev/null || echo 'Cámara USB')" \
+                       "sin-driver" "detectada, sin /dev/video"
+            _hay=1
+            break
+        done
+    fi
+    [ "$_hay" = 1 ] || componente "Cámara" "Sin cámara" "ausente" "no se encontró ninguna"
+}
+
+# =============================================================== almacenamiento
+buscar_discos() {
+    for _b in /sys/block/*; do
+        [ -d "$_b" ] || continue
+        _n="$(basename "$_b")"
+        case "$_n" in loop*|ram*|zram*|dm-*|sr*) continue ;; esac
+        _tam="$(cat "$_b/size" 2>/dev/null || echo 0)"
+        [ "$_tam" -gt 0 ] 2>/dev/null || continue
+        _gb=$(( _tam / 2097152 ))
+        # Los discos virtio y muchos NVMe no tienen "model". Sin esto salía
+        # "vda — vda, 10 GB": el mismo dato dos veces y ningún nombre.
+        _mod="$(cat "$_b/device/model" 2>/dev/null || true)"
+        [ -n "$_mod" ] || _mod="$(cat "$_b/device/modelo" 2>/dev/null || true)"
+        if [ -z "$_mod" ]; then
+            case "$_n" in
+                nvme*)  _mod="Disco NVMe" ;;
+                vd*)    _mod="Disco virtual" ;;
+                mmcblk*) _mod="Tarjeta o memoria eMMC" ;;
+                *)      _mod="Disco" ;;
+            esac
+        fi
+        componente "Almacenamiento" "$_mod" "ok" "$_n, ${_gb} GB"
+    done
+}
+
+# ================================================================ procesador
+buscar_cpu() {
+    _cpu="$(sed -n 's/^model name[[:space:]]*: //p' /proc/cpuinfo 2>/dev/null | head -1)"
+    [ -n "$_cpu" ] || _cpu="Procesador desconocido"
+    _gob="$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor 2>/dev/null || echo '')"
+    if [ -n "$_gob" ]; then
+        componente "Procesador" "$_cpu" "ok" "gobernador $_gob"
+    else
+        componente "Procesador" "$_cpu" "mejorable" "sin control de frecuencia"
+    fi
+    case "$(sed -n 's/^vendor_id[[:space:]]*: //p' /proc/cpuinfo 2>/dev/null | head -1)" in
+        GenuineIntel) proponer intel-ucode "actualizaciones de microcódigo Intel" ;;
+        AuthenticAMD) proponer amd-ucode   "actualizaciones de microcódigo AMD" ;;
     esac
+}
+
+# ===================================================================== batería
+buscar_bateria() {
+    for _b in /sys/class/power_supply/BAT*; do
+        [ -d "$_b" ] || continue
+        componente "Batería" "$(cat "$_b/model_name" 2>/dev/null || basename "$_b")" "ok" \
+                   "$(cat "$_b/capacity" 2>/dev/null || echo '?')% — $(cat "$_b/status" 2>/dev/null || echo '?')"
+    done
+}
+
+escanear() {
+    buscar_graficas
+    buscar_red
+    buscar_bluetooth
+    buscar_sonido
+    buscar_entrada
+    buscar_camara
+    buscar_discos
+    buscar_cpu
+    buscar_bateria
+}
+
+# ===================================================================== salida
+texto() {
+    echo "Hardware detectado"
+    echo "=================="
+    _cat=""
+    while IFS="$(printf '\t')" read -r _c _n _e _d; do
+        [ "$_c" = "PAQUETE" ] && continue
+        if [ "$_c" != "$_cat" ]; then
+            _cat="$_c"
+            printf '\n%s\n' "$_c"
+        fi
+        case "$_e" in
+            ok)           _m="  ✓" ;;
+            sin-driver)   _m="  ✗" ;;
+            sin-firmware) _m="  !" ;;
+            apagado)      _m="  ·" ;;
+            *)            _m="  ·" ;;
+        esac
+        printf '%s %s\n' "$_m" "$_n"
+        [ -n "$_d" ] && printf '      %s\n' "$_d"
+    done < "$FILAS"
     echo
-fi
+
+    if [ -z "$INSTALAR" ]; then
+        echo "No hace falta instalar nada: el sistema ya cubre este equipo."
+        return
+    fi
+    echo "Recomendado"
+    echo "==========="
+    while IFS="$(printf '\t')" read -r _c _n _e _d; do
+        [ "$_c" = "PAQUETE" ] || continue
+        printf '    %-20s %s\n' "$_n" "$_d"
+    done < "$FILAS"
+    echo
+}
+
+json() {
+    printf '{"componentes":['
+    _pri=1
+    while IFS="$(printf '\t')" read -r _c _n _e _d; do
+        [ "$_c" = "PAQUETE" ] && continue
+        [ "$_pri" = 1 ] || printf ','
+        _pri=0
+        printf '{"categoria":"%s","nombre":"%s","estado":"%s","detalle":"%s"}' \
+            "$(escapar "$_c")" "$(escapar "$_n")" "$_e" "$(escapar "$_d")"
+    done < "$FILAS"
+    printf '],"paquetes":['
+    _pri=1
+    while IFS="$(printf '\t')" read -r _c _n _e _d; do
+        [ "$_c" = "PAQUETE" ] || continue
+        [ "$_pri" = 1 ] || printf ','
+        _pri=0
+        printf '{"nombre":"%s","motivo":"%s"}' "$(escapar "$_n")" "$(escapar "$_d")"
+    done < "$FILAS"
+    printf ']}\n'
+}
+
+escapar() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
+
+# Lo mismo, en líneas con "|" por separador.
+#
+# Existe porque la pantalla de bienvenida está escrita en C y leía la salida
+# BONITA: buscaba una línea que empezara por "Recomendado:" y los nombres de
+# los apartados. Cualquier cambio de formato --- como el de ahora, que añade
+# Bluetooth, cámara y discos --- la dejaba mostrando datos vacíos o viejos sin
+# un solo error. Un formato pensado para leerlo una máquina no se rompe al
+# mejorar el que leen las personas.
+#
+#   COMP|categoría|nombre|estado|detalle
+#   PAQ|nombre|motivo
+breve() {
+    while IFS="$(printf '\t')" read -r _c _n _e _d; do
+        if [ "$_c" = "PAQUETE" ]; then
+            printf 'PAQ|%s|%s\n' "$_n" "$_d"
+        else
+            printf 'COMP|%s|%s|%s|%s\n' "$_c" "$_n" "$_e" "$_d"
+        fi
+    done < "$FILAS"
+}
+
+# ======================================================================= main
+escanear
 
 case "${1:-}" in
+    --json)
+        json
+        ;;
+    --breve)
+        breve
+        ;;
+    --lista)
+        # shellcheck disable=SC2086
+        [ -n "$INSTALAR" ] && printf '%s\n' $INSTALAR
+        ;;
     --instalar)
-        # -y a propósito: quien llega aquí ya ha dicho que sí, sea pulsando
-        # el botón del panel de bienvenida o escribiendo --instalar. Volver a
-        # preguntar dejaba la instalación parada esperando una tecla que
-        # nadie iba a pulsar, y parecía que no terminaba nunca.
+        [ -n "$INSTALAR" ] || { echo "No hay nada que instalar."; exit 0; }
+        # -y a propósito: quien llega aquí ya ha dicho que sí, sea pulsando el
+        # botón del panel o escribiendo --instalar. Volver a preguntar dejaba
+        # la instalación parada esperando una tecla que nadie iba a pulsar.
         # shellcheck disable=SC2086
         exec mpm install -y $INSTALAR
         ;;
-    --lista)
-        printf '%s\n' $INSTALAR
-        ;;
     *)
-        echo "Para instalarlo todo:  m-drivers --instalar"
-        echo "Para elegir uno:       mpm install <nombre>"
+        texto
+        # El problema del huevo y la gallina, dicho antes de que muerda: todo
+        # esto se descarga, y si lo que falta es justo el firmware de la Wi-Fi,
+        # por Wi-Fi no se puede resolver.
+        if [ -n "$INSTALAR" ] && ! m-internet >/dev/null 2>&1; then
+            echo "AVISO: ahora mismo no hay internet, y esto se descarga."
+            echo
+            case "$INSTALAR" in
+                *firmware*|*wifi*)
+                    echo "  Y lo que falta es justo lo que da acceso a la red. Tres salidas:"
+                    echo "    1. Un cable de red, o un adaptador USB."
+                    echo "    2. El móvil por USB con «compartir internet» activado."
+                    echo "    3. Descargar el paquete en otro equipo y traerlo en un USB:"
+                    echo "       mpm install /ruta/al/paquete.mpk"
+                    ;;
+                *)
+                    echo "  Conéctate a una red y vuelve a ejecutar esto."
+                    ;;
+            esac
+            echo
+        fi
+        [ -n "$INSTALAR" ] && {
+            echo "Para instalarlo todo:  m-drivers --instalar"
+            echo "Para elegir uno:       mpm install <nombre>"
+        }
         ;;
 esac
+exit 0

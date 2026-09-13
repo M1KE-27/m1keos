@@ -126,20 +126,25 @@ static GtkWidget *etiqueta_drivers = NULL;
 /* Qué falta por instalar, preguntándoselo a m-drivers. Devuelve texto nuevo
  * (hay que liberarlo) o NULL si no falta nada. */
 static char *texto_drivers(void) {
-    FILE *p = popen("m-drivers 2>/dev/null", "r");
+    FILE *p = popen("m-drivers --breve 2>/dev/null", "r");
     if (!p) return NULL;
-    char linea[512];
-    char *resultado = NULL;
+    char linea[1024];
+    GString *faltan = g_string_new("");
     while (fgets(linea, sizeof(linea), p)) {
         linea[strcspn(linea, "\n")] = 0;
-        if (g_str_has_prefix(linea, "Recomendado:")) {
-            const char *resto = linea + 12;
-            while (*resto == ' ') resto++;
-            if (*resto) resultado = g_strdup_printf("Faltan por instalar: %s", resto);
-            break;
+        if (!g_str_has_prefix(linea, "PAQ|")) continue;
+        char **c = g_strsplit(linea, "|", 3);
+        if (c[1] && *c[1]) {
+            if (faltan->len > 0) g_string_append(faltan, " ");
+            g_string_append(faltan, c[1]);
         }
+        g_strfreev(c);
     }
     pclose(p);
+    char *resultado = NULL;
+    if (faltan->len > 0)
+        resultado = g_strdup_printf("Faltan por instalar: %s", faltan->str);
+    g_string_free(faltan, TRUE);
     return resultado;
 }
 
@@ -165,7 +170,9 @@ static void on_instalar_drivers(GtkWidget *w, gpointer data) {
      * de megabytes y quien lo lanza tiene derecho a ver el progreso y los
      * errores, no una barra opaca. */
     char *argv[] = { (char *)"/usr/bin/m-terminal", (char *)"-e",
-                     (char *)"m-drivers", (char *)"--instalar", NULL };
+                     (char *)"sh", (char *)"-c",
+                     (char *)"m-drivers --instalar; echo; "
+                             "echo 'Pulsa Intro para cerrar.'; read x", NULL };
     GPid pid = 0;
     if (g_spawn_async(NULL, argv, NULL,
                       G_SPAWN_DO_NOT_REAP_CHILD | G_SPAWN_SEARCH_PATH,
@@ -225,6 +232,14 @@ static void on_abrir_ajustes(GtkWidget *w, gpointer data) {
     g_spawn_command_line_async("quickshell ipc call ajustes abrir", NULL);
 }
 
+/* Lleva al apartado "Controladores" del Centro de Control, que es donde está
+ * el análisis completo: cada componente con su estado, y el botón de instalar.
+ * Aquí caben unas líneas; allí cabe todo. */
+static void on_ver_controladores(GtkWidget *w, gpointer data) {
+    (void)w; (void)data;
+    g_spawn_command_line_async("quickshell ipc call ajustes seccion drivers", NULL);
+}
+
 static GtkWidget *build_hardware(void) {
     GtkWidget *caja = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
     gtk_widget_set_name(caja, "customizebox");
@@ -235,42 +250,78 @@ static GtkWidget *build_hardware(void) {
     gtk_widget_set_halign(tit, GTK_ALIGN_START);
     gtk_box_pack_start(GTK_BOX(caja), tit, FALSE, FALSE, 0);
 
+    /* Se lee el formato para máquinas, no el informe bonito.
+     *
+     * Antes se leía la salida de texto de m-drivers buscando los nombres de
+     * sus apartados ("Gráfica", "Red", "Procesador", "Entrada"). Eso dejaba
+     * fuera el Bluetooth, el sonido, la cámara y los discos --- que ni
+     * siquiera existían en aquel m-drivers --- y, peor, se rompía en silencio
+     * en cuanto el informe cambiaba de forma. Con "--breve" cada línea trae
+     * categoría, nombre, estado y detalle, y aquí sólo hay que pintarlo.
+     *
+     * Y ahora se enseña el ESTADO, no sólo el nombre: "detectado pero parado"
+     * y "no detectado" son averías distintas, y hasta ahora las dos se veían
+     * igual --- o no se veían. */
     GString *detectado = g_string_new("");
     GString *recomendado = g_string_new("");
-    FILE *p = popen("m-drivers 2>/dev/null", "r");
+    FILE *p = popen("m-drivers --breve 2>/dev/null", "r");
     if (p) {
-        char linea[512];
-        int seccion_util = 0;
+        char linea[1024];
+        char *ultima_cat = NULL;
         while (fgets(linea, sizeof(linea), p)) {
             linea[strcspn(linea, "\n")] = 0;
-            if (g_str_has_prefix(linea, "Recomendado:")) {
-                g_string_assign(recomendado, linea + 12);
-                continue;
-            }
-            /* Los encabezados marcan de qué se habla; las líneas con dos
-             * espacios de sangría son los dispositivos en sí. */
-            if (linea[0] != ' ' && linea[0] != 0 && linea[0] != '=') {
-                seccion_util = (g_strcmp0(linea, "Gráfica") == 0 ||
-                                g_strcmp0(linea, "Red") == 0 ||
-                                g_strcmp0(linea, "Procesador") == 0 ||
-                                g_strcmp0(linea, "Entrada") == 0);
-                continue;
-            }
-            if (seccion_util && g_str_has_prefix(linea, "  ") &&
-                !g_str_has_prefix(linea, "    ")) {
-                const char *txt = linea + 2;
-                if (*txt == '(') continue;
-                if (detectado->len > 0) g_string_append_c(detectado, '\n');
-                /* Los nombres de las tarjetas son larguísimos; cortar por
-                 * la mitad es preferible a romper la columna. */
-                if (strlen(txt) > 58) {
-                    g_string_append_len(detectado, txt, 55);
-                    g_string_append(detectado, "...");
-                } else {
-                    g_string_append(detectado, txt);
+
+            if (g_str_has_prefix(linea, "PAQ|")) {
+                char **c = g_strsplit(linea, "|", 3);
+                if (c[1] && *c[1]) {
+                    if (recomendado->len > 0) g_string_append_c(recomendado, ' ');
+                    g_string_append(recomendado, c[1]);
                 }
+                g_strfreev(c);
+                continue;
             }
+            if (!g_str_has_prefix(linea, "COMP|")) continue;
+
+            char **c = g_strsplit(linea, "|", 5);
+            const char *cat    = c[1] ? c[1] : "";
+            const char *nombre = c[2] ? c[2] : "";
+            const char *estado = c[3] ? c[3] : "";
+
+            /* Lo que no hay en este equipo no se lista: una línea que dice
+             * "Cámara: no hay" ocupa sitio para informar de una ausencia que
+             * a nadie le sorprende. */
+            if (g_strcmp0(estado, "ausente") == 0) { g_strfreev(c); continue; }
+
+            if (g_strcmp0(ultima_cat, cat) != 0) {
+                if (detectado->len > 0) g_string_append_c(detectado, '\n');
+                g_string_append_printf(detectado, "%s", cat);
+                g_free(ultima_cat);
+                ultima_cat = g_strdup(cat);
+            }
+
+            /* Una marca delante que se entiende sin leyenda. */
+            const char *marca = "·";
+            if (g_strcmp0(estado, "ok") == 0)                marca = "✓";
+            else if (g_strcmp0(estado, "sin-driver") == 0)   marca = "✗";
+            else if (g_strcmp0(estado, "sin-firmware") == 0) marca = "!";
+
+            /* Los nombres de las tarjetas son larguísimos; cortar por la
+             * mitad es preferible a romper la columna. */
+            char corto[64];
+            g_strlcpy(corto, nombre, sizeof(corto));
+            if (strlen(nombre) > 52) {
+                corto[49] = 0;
+                g_strlcat(corto, "...", sizeof(corto));
+            }
+            g_string_append_printf(detectado, "\n  %s %s", marca, corto);
+
+            /* Sólo se explica lo que NO va: si funciona, el nombre basta. */
+            if (g_strcmp0(estado, "ok") != 0 && c[4] && *c[4])
+                g_string_append_printf(detectado, "\n      %s", c[4]);
+
+            g_strfreev(c);
         }
+        g_free(ultima_cat);
         pclose(p);
     }
     if (detectado->len == 0)
@@ -280,13 +331,13 @@ static GtkWidget *build_hardware(void) {
     gtk_widget_set_name(lst, "customizetext");
     gtk_widget_set_halign(lst, GTK_ALIGN_START);
     gtk_label_set_line_wrap(GTK_LABEL(lst), TRUE);
-    gtk_label_set_max_width_chars(GTK_LABEL(lst), 40);
+    gtk_label_set_max_width_chars(GTK_LABEL(lst), 44);
     gtk_box_pack_start(GTK_BOX(caja), lst, FALSE, FALSE, 0);
 
     if (recomendado->len > 0) {
         /* El botón de abajo dice lo que hace; no hace falta un párrafo que
          * además tranquilice sobre cuándo pulsarlo. */
-        char *txt = g_strdup_printf("Faltan por instalar:%s", recomendado->str);
+        char *txt = g_strdup_printf("Faltan por instalar: %s", recomendado->str);
         GtkWidget *rec = gtk_label_new(txt);
         g_free(txt);
         /* Se guarda para poder rehacerla cuando termine la instalación: antes
@@ -296,21 +347,35 @@ static GtkWidget *build_hardware(void) {
         gtk_widget_set_name(rec, "customizetext");
         gtk_widget_set_halign(rec, GTK_ALIGN_START);
         gtk_label_set_line_wrap(GTK_LABEL(rec), TRUE);
-        gtk_label_set_max_width_chars(GTK_LABEL(rec), 40);
+        gtk_label_set_max_width_chars(GTK_LABEL(rec), 44);
         gtk_box_pack_start(GTK_BOX(caja), rec, FALSE, FALSE, 6);
 
+        GtkWidget *fila = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
         GtkWidget *btn = gtk_button_new_with_label("Instalar controladores");
         gtk_widget_set_name(btn, "gobtn");
-        gtk_widget_set_halign(btn, GTK_ALIGN_START);
         g_signal_connect(btn, "clicked", G_CALLBACK(on_instalar_drivers), NULL);
-        gtk_box_pack_start(GTK_BOX(caja), btn, FALSE, FALSE, 6);
+        gtk_box_pack_start(GTK_BOX(fila), btn, FALSE, FALSE, 0);
+
+        GtkWidget *ver = gtk_button_new_with_label("Ver todo");
+        g_signal_connect(ver, "clicked", G_CALLBACK(on_ver_controladores), NULL);
+        gtk_box_pack_start(GTK_BOX(fila), ver, FALSE, FALSE, 0);
+
+        gtk_widget_set_halign(fila, GTK_ALIGN_START);
+        gtk_box_pack_start(GTK_BOX(caja), fila, FALSE, FALSE, 6);
     } else {
         GtkWidget *ok = gtk_label_new("Nada pendiente de instalar.");
         gtk_widget_set_name(ok, "customizetext");
         gtk_widget_set_halign(ok, GTK_ALIGN_START);
         gtk_label_set_line_wrap(GTK_LABEL(ok), TRUE);
-        gtk_label_set_max_width_chars(GTK_LABEL(ok), 40);
+        gtk_label_set_max_width_chars(GTK_LABEL(ok), 44);
         gtk_box_pack_start(GTK_BOX(caja), ok, FALSE, FALSE, 6);
+
+        /* Aunque no falte nada, el análisis completo sigue teniendo valor:
+         * es donde se ve si algo está detectado pero parado. */
+        GtkWidget *ver = gtk_button_new_with_label("Ver todo el equipo");
+        gtk_widget_set_halign(ver, GTK_ALIGN_START);
+        g_signal_connect(ver, "clicked", G_CALLBACK(on_ver_controladores), NULL);
+        gtk_box_pack_start(GTK_BOX(caja), ver, FALSE, FALSE, 6);
     }
 
     g_string_free(detectado, TRUE);

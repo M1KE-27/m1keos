@@ -491,8 +491,19 @@ chmod 755 "$ROOTFS_DIR/usr/bin/jq"
 # comprobación de que llegó está después de ese paso, no aquí: preguntar antes
 # de copiarlo daba un aviso falso en cada build.
 
-# Instalar MCore
-for util in m-service m-system m-network m-user m-disk m-info m-doctor m-log m-sudo m-autenticar m-clave m-acceso-remoto m-colores m-particiones m-brillo m-tapa m-install m-screenshot m-volume m-metrics m-audio-setup m-fastfetch m-workspace-cycle m-drivers m-wifi m-bluetooth m-wallhaven m-fondo m-internet; do
+# Instalar MCore.
+#
+# La lista vive en build/mcore/utilidades.lista, que lee TAMBIÉN
+# scripts/build-repo.sh: las dos listas estaban escritas por separado y se
+# habían separado, dejando utilidades que existían en la imagen y que ninguna
+# actualización por red podía tocar nunca.
+MCORE_LISTA="$PROJECT_ROOT/build/mcore/utilidades.lista"
+[ -f "$MCORE_LISTA" ] || { echo "ERROR: falta $MCORE_LISTA" >&2; exit 1; }
+for util in $(grep -v '^[[:space:]]*#' "$MCORE_LISTA" | grep -v '^[[:space:]]*$'); do
+    if [ ! -f "$BUILD_DIR/mcore/$util" ]; then
+        echo "ERROR: utilidades.lista nombra $util y no existe en build/mcore/" >&2
+        exit 1
+    fi
     cp "$BUILD_DIR/mcore/$util" "$ROOTFS_DIR/usr/bin/"
     chmod 755 "$ROOTFS_DIR/usr/bin/$util"
 done
@@ -594,7 +605,28 @@ build_dir = os.environ['MIKEOS_BUILD_DIR']
 # bibliotecas: wpctl moría con "libwireplumber-0.5.so.0: cannot open shared
 # object file" y el volumen no se podía leer.
 bins = ['/usr/bin/Hyprland', '/usr/bin/Xwayland', '/usr/bin/start-hyprland', '/usr/bin/hyprctl', '/usr/bin/quickshell', '/usr/bin/fuzzel', '/usr/bin/seatd', '/usr/bin/seatd-launch', '/usr/bin/swaybg', '/usr/bin/bwrap', '/usr/bin/wpctl', '/usr/bin/pactl', '/usr/bin/amixer', '/usr/bin/grim', '/usr/bin/slurp', '/usr/bin/wl-copy', '/usr/bin/pipewire', '/usr/bin/pipewire-pulse', '/usr/bin/wireplumber', '/usr/bin/dbus-daemon', '/usr/bin/dbus-launch', '/usr/bin/dbus-run-session', '/usr/bin/zstd', '/usr/bin/unzstd', '/usr/bin/iwctl', '/usr/bin/bluetoothctl',
-        '/usr/bin/fc-cache', '/usr/bin/fc-list', '/usr/bin/fc-match', f'{build_dir}/mterminal/m-terminal', f'{build_dir}/settings/m-settings', f'{build_dir}/settings/m-wallpapers', f'{build_dir}/settings/m-welcome',
+        '/usr/bin/fc-cache', '/usr/bin/fc-list', '/usr/bin/fc-match',
+        # xkbcomp: sin él XWayland NO ARRANCA, y ésa es la causa de que
+        # Minecraft (y cualquier aplicación X11) se cayera nada más empezar.
+        #
+        # XWayland compila el mapa de teclado al arrancar llamando a xkbcomp.
+        # Si no está, muere con "XKB: Failed to compile keymap / Fatal server
+        # error: Failed to activate virtual core keyboard". Y como Hyprland
+        # exporta DISPLAY=:0 igualmente, las aplicaciones creen que hay un
+        # servidor X, se conectan, no encuentran a nadie y revientan. El error
+        # que se ve entonces es el de la aplicación (GLFW, en el caso de
+        # Minecraft), no el de XWayland, que muere en silencio.
+        #
+        # xauth y xrandr van con él: son lo mínimo para que un programa X11 se
+        # autentique y sepa qué pantalla tiene.
+        '/usr/bin/xkbcomp', '/usr/bin/xauth', '/usr/bin/xrandr',
+        # sftp-server. Sin él "scp archivo mike@equipo:" falla con
+        #     bash: /usr/libexec/sftp-server: No such file or directory
+        # porque el scp moderno habla SFTP y no el protocolo antiguo, y
+        # dropbear va a buscar ese binario a esa ruta exacta. Se arreglaba con
+        # "scp -O", pero eso hay que saberlo: el mensaje no lo dice, y parece
+        # que el sistema no admite copiar archivos. Depende sólo de libc.
+        '/usr/lib/ssh/sftp-server', f'{build_dir}/mterminal/m-terminal', f'{build_dir}/settings/m-settings', f'{build_dir}/settings/m-wallpapers', f'{build_dir}/settings/m-welcome',
     # Herramientas de disco. Hacen falta para que el instalador pueda crear
     # una instalación que arranque de verdad: tabla GPT (sfdisk), partición
     # EFI en FAT32 (mkfs.vfat) y raíz en btrfs (mkfs.btrfs, btrfs). BusyBox
@@ -1015,6 +1047,18 @@ for r_root, r_dirs, r_files in os.walk(rootfs):
                 pass
 PYEOF
 
+# sftp-server tiene que estar en la ruta que dropbear va a buscar, y el
+# resolutor de bibliotecas deja todo en /usr/bin. Sin este enlace, "scp" falla
+# con "No such file or directory" nombrando una ruta que no existe, y no hay
+# forma de adivinar desde ahí que lo que falta es un binario.
+if [ -x "$ROOTFS_DIR/usr/bin/sftp-server" ]; then
+    mkdir -p "$ROOTFS_DIR/usr/libexec"
+    ln -sf ../bin/sftp-server "$ROOTFS_DIR/usr/libexec/sftp-server"
+else
+    echo "Aviso: no hay sftp-server en la imagen; 'scp' hacia este equipo" >&2
+    echo "       necesitará la opción -O." >&2
+fi
+
 if [ ! -x "$ROOTFS_DIR/usr/bin/fastfetch" ]; then
     echo "Aviso: no hay fastfetch en la imagen; la terminal abrirá sin la ficha" >&2
     echo "       del sistema y m-info usará su versión de respaldo." >&2
@@ -1384,10 +1428,6 @@ cp "$BUILD_DIR/desktop/m-panel" "$ROOTFS_DIR/usr/bin/"
 cp "$BUILD_DIR/desktop/m-bloquear" "$ROOTFS_DIR/usr/bin/"
 cp "$BUILD_DIR/desktop/m-instalador" "$ROOTFS_DIR/usr/bin/"
 cp "$BUILD_DIR/desktop/m-arranque-instalar" "$ROOTFS_DIR/usr/bin/"
-cp "$BUILD_DIR/mcore/m-reintentar-drivers" "$ROOTFS_DIR/usr/bin/"
-chmod +x "$ROOTFS_DIR/usr/bin/m-reintentar-drivers"
-cp "$BUILD_DIR/mcore/m-discos-permisos" "$ROOTFS_DIR/usr/bin/"
-chmod +x "$ROOTFS_DIR/usr/bin/m-discos-permisos"
 # La configuración de iwd. Sin EnableNetworkConfiguration el wifi se asocia a
 # la red y se queda SIN DIRECCIÓN IP, porque nadie se la pide: el servicio de
 # red de MIKE OS no toca las interfaces inalámbricas a propósito (dos clientes
@@ -1398,8 +1438,6 @@ if [ -d "$BUILD_DIR/../build/etc-tree/etc/iwd" ] || [ -d "$PROJECT_ROOT/build/et
     chmod 700 "$ROOTFS_DIR/var/lib/iwd"
 fi
 
-cp "$BUILD_DIR/mcore/m-hardware" "$ROOTFS_DIR/usr/bin/"
-chmod +x "$ROOTFS_DIR/usr/bin/m-hardware"
 cp "$BUILD_DIR/mcore/resolvconf" "$ROOTFS_DIR/usr/bin/"
 chmod +x "$ROOTFS_DIR/usr/bin/resolvconf"
 ln -sf ../bin/resolvconf "$ROOTFS_DIR/usr/sbin/resolvconf"
@@ -1569,8 +1607,34 @@ if [ -n "${MIKEOS_SSH_AUTHORIZED_KEYS_FILE:-}" ] && [ -f "$MIKEOS_SSH_AUTHORIZED
 fi
 chmod 600 "$ROOTFS_DIR/root/.ssh/authorized_keys" "$ROOTFS_DIR/home/mike/.ssh/authorized_keys"
 
+# /etc/sv/energia/run — vigila la alimentación (cargador enchufado o no) y
+# aplica el perfil de energía. Sin udev nadie avisa de que cambió, así que se
+# mira solo. Estaba en la lista de servicios activos pero sus archivos no se
+# copiaban: el enlace en /var/service apuntaba a un directorio que no existía y
+# runsvdir se quejaba en cada arranque.
+mkdir -p "$ROOTFS_DIR/etc/sv/energia/log" "$ROOTFS_DIR/var/log/energia"
+install_etc etc/sv/energia/run 755
+install_etc etc/sv/energia/log/run 755
+
+# La configuración de bluetoothd. Sin ella el adaptador puede quedarse apagado
+# tras arrancar y no reconecta lo ya emparejado: los dos síntomas de "el
+# bluetooth no va" que no dejan ni un error en el registro.
+mkdir -p "$ROOTFS_DIR/etc/bluetooth"
+install_etc etc/bluetooth/main.conf 644
+
 # Habilitar servicios por defecto en /var/service
-for s in console syslog network dropbear seatd dbus-system iwd bluetoothd; do
+# Servicios activos por defecto.
+#
+# La lista está también en /etc/mikeos/services.conf, que NO la lee nadie: se
+# duplicaba aquí. Ahora se lee de allí si existe, para que editar ese archivo
+# sirva de algo.
+_SERVICIOS="console syslog network dropbear seatd dbus-system iwd bluetoothd energia"
+if [ -f "$PROJECT_ROOT/build/etc-tree/etc/mikeos/services.conf" ]; then
+    # shellcheck disable=SC1090
+    . "$PROJECT_ROOT/build/etc-tree/etc/mikeos/services.conf"
+    [ -n "${SERVICES:-}" ] && _SERVICIOS="$SERVICES"
+fi
+for s in $_SERVICIOS; do
     ln -sf "/etc/sv/$s" "$ROOTFS_DIR/var/service/$s"
 done
 

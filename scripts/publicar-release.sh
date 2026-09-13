@@ -13,6 +13,9 @@
 #
 #   ./scripts/publicar-release.sh v0.2.0
 #   ./scripts/publicar-release.sh v0.2.0 --borrador   para revisarla antes
+#
+# Las etiquetas que llevan -alpha, -beta o -rc se marcan solas como versión de
+# prueba en GitHub.
 # ==============================================================================
 set -uo pipefail
 
@@ -28,7 +31,22 @@ err()   { printf '\033[31mERROR:\033[0m %s\n' "$*" >&2; }
 ETIQUETA="${1:-}"
 [ -n "$ETIQUETA" ] || { err "falta la etiqueta. Ej: ./scripts/publicar-release.sh v0.2.0"; exit 1; }
 BORRADOR=""
-[ "${2:-}" = "--borrador" ] && BORRADOR="--draft"
+PRUEBA=""
+for _a in "$@"; do
+    case "$_a" in
+        --borrador) BORRADOR="--draft" ;;
+        # Una alpha tiene que ir marcada COMO alpha en GitHub, no sólo en el
+        # nombre. Sin esto, "la última versión" que ofrece la API --- y que usa
+        # generar-web.sh para montar el enlace de descarga --- sería una alpha
+        # presentada como si fuera estable.
+        --alpha|--prueba) PRUEBA="--prerelease" ;;
+    esac
+done
+# Y si la etiqueta ya lo dice, no hace falta repetirlo en la línea de órdenes:
+# olvidarse de la opción no debería poder convertir una alpha en estable.
+case "$ETIQUETA" in
+    *-alpha*|*-beta*|*-rc*) PRUEBA="--prerelease" ;;
+esac
 
 command -v gh >/dev/null 2>&1 || { err "falta gh (github-cli)"; exit 1; }
 gh auth status >/dev/null 2>&1 || { err "gh no está autenticado. Ejecuta: gh auth login"; exit 1; }
@@ -94,9 +112,24 @@ gris "  $TAM · kernel $KVER · commit $COMMIT"
 # --- Notas ------------------------------------------------------------------
 NOTAS="$(mktemp)"
 trap 'rm -f "$NOTAS"' EXIT
+# Las novedades de cada versión salen de docs/CAMBIOS.md, no se escriben aquí:
+# una lista de cambios pegada a mano en el script de publicar se queda con la
+# de la versión anterior el día que alguien tiene prisa.
+NOVEDADES=""
+if [ -f "$RAIZ/docs/CAMBIOS.md" ]; then
+    # Desde el primer "## " que nombre esta etiqueta hasta el siguiente "## ".
+    NOVEDADES="$(awk -v v="$ETIQUETA" '
+        $0 ~ "^## " && index($0, v) { dentro=1; next }
+        dentro && /^## / { exit }
+        dentro { print }
+    ' "$RAIZ/docs/CAMBIOS.md")"
+fi
+
 cat > "$NOTAS" <<NOTAS_FIN
 Imagen arrancable de MIKE OS. Arranca en memoria: puedes probar el sistema
 entero sin tocar el disco.
+
+$NOVEDADES
 
 ## Descargar
 
@@ -132,28 +165,25 @@ En otros equipos la tecla suele ser Supr, F2 o F12 nada más encender.
 
 ## Instalarlo
 
-Arranca el USB, abre una terminal con \`SUPER/ALT + Return\` y escribe:
+Arranca el USB y pulsa **Instalar** en la ventana de bienvenida: el instalador
+es gráfico, detecta el disco solo y avisa de lo que va a borrar antes de
+borrarlo. Si prefieres la terminal, \`m-install\` sigue ahí.
 
-\`\`\`sh
-m-install            # lista los discos que ve
-m-install /dev/nvme0n1
-\`\`\`
-
-Pide confirmación escribiendo \`BORRAR\` antes de tocar nada. Propone **btrfs**,
-porque es lo que permite que \`mpm\` tome una instantánea del sistema antes de
-cada instalación y que \`mpm rollback\` vuelva atrás de verdad.
+Propone **btrfs**, porque es lo que permite que \`mpm\` tome una instantánea del
+sistema antes de cada instalación y que \`mpm rollback\` vuelva atrás de verdad.
 
 ## Qué esperar
 
-En desarrollo. Arranca en hardware UEFI real, se instala y se actualiza, pero
-no hay versión estable ni promesa de que no se rompa nada entre una y otra.
-**Instálalo en un equipo que puedas formatear.**
+Versión **alpha**. Arranca en hardware UEFI real, se instala y se actualiza,
+pero no hay versión estable ni promesa de que no se rompa nada entre una y
+otra. **Instálalo en un equipo que puedas formatear.**
 
 Sin gestor de arranque: el kernel lleva \`CONFIG_EFI_STUB\` y es su propio
 ejecutable UEFI.
 
 ---
 
+[Web](https://m1keos.duckdns.org/) ·
 [Documentación](https://m1keos.duckdns.org/docs/) ·
 [Wiki](https://m1keos.duckdns.org/wiki/) ·
 [Reportar un fallo](https://github.com/$REPO/issues/new/choose)
@@ -169,7 +199,7 @@ else
         --repo "$REPO" \
         --title "MIKE OS $ETIQUETA" \
         --notes-file "$NOTAS" \
-        $BORRADOR || exit 1
+        $BORRADOR $PRUEBA || exit 1
 fi
 
 URL="https://github.com/$REPO/releases/download/$ETIQUETA/mikeos.iso"

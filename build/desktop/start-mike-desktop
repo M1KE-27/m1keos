@@ -21,6 +21,20 @@ export SEATD_SOCK="/run/seatd.sock"
 # y el texto con acentos se ve mal en GTK, Qt, Firefox y la barra. glibc 2.44
 # trae C.UTF-8 integrado: no hay que instalar datos de idioma.
 [ -n "${LANG:-}" ] || export LANG=C.UTF-8
+
+# El directorio de sockets de X11.
+#
+# XWayland avisa de "Owner of /tmp/.X11-unix should be set to root" y, si no
+# puede crearlo con los permisos que espera, no llega a escuchar. Tiene que ser
+# de root, para todo el mundo, y con el bit pegajoso: cualquiera puede crear su
+# socket ahí dentro, pero nadie puede borrar el de otro.
+if [ ! -d /tmp/.X11-unix ] || [ "$(stat -c %U /tmp/.X11-unix 2>/dev/null)" != "root" ]; then
+    if command -v m-sudo >/dev/null 2>&1; then
+        m-sudo mkdir -p /tmp/.X11-unix 2>/dev/null || true
+        m-sudo chown root:root /tmp/.X11-unix 2>/dev/null || true
+        m-sudo chmod 1777 /tmp/.X11-unix 2>/dev/null || true
+    fi
+fi
 mkdir -p "$XDG_RUNTIME_DIR" "$XDG_STATE_HOME" "$XDG_CACHE_HOME" "$XDG_DATA_HOME" /run /var/log
 chmod 700 "$XDG_RUNTIME_DIR"
 
