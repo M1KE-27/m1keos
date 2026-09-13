@@ -53,11 +53,17 @@ paso "Comprobando que la ISO corresponde al código"
 #
 # La pregunta de verdad es si algún archivo que va DENTRO de la imagen se ha
 # tocado después de construirla. Eso lo contesta la fecha de los archivos.
+#
+# Se excluye lo que GENERA el propio build (el firmware que empotra en el
+# kernel, el qmldir de quickshell, los paquetes): esos archivos son más nuevos
+# que la ISO por construcción, no porque nadie los haya editado, y avisar por
+# ellos es avisar siempre.
 RUTAS_DE_LA_IMAGEN="build .config scripts/build.sh scripts/build-repo.sh scripts/crear-iso.sh"
 FECHA_ISO=$(stat -c %Y "$ISO")
 # shellcheck disable=SC2086
 MAS_NUEVO=$(find $RUTAS_DE_LA_IMAGEN -newer "$ISO" -type f \
                  -not -path "build/firmware-kernel/*" \
+                 -not -name "qmldir" \
                  -not -path "build/repo/*" -not -path "build/repo_pkgs/*" \
                  -not -path "build/repo_mpm_tmp/*" \
                  -not -path "*/busybox-*" -not -path "*/dropbear-*" \
