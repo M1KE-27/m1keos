@@ -26,11 +26,7 @@ try{var _t=localStorage.getItem("mikeos-tema");
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
          stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 6l6 6-6 6"/><path d="M13 18h7"/></svg>
     MIKE OS</a>
-  <a class="enl " href="../en/index.html">Home</a>
-  <a class="enl " href="../capturas/index.html">Screenshots</a>
-  <a class="enl aqui" href="../docs/index.html">Docs</a>
-  <a class="enl " href="../wiki/index.html">Wiki</a>
-  <a class="enl derecha" href="https://github.com/M1KE-27/m1keos">Source</a>
+  <span class="derecha"></span>
   <a class="enl idioma" href="../index.html" hreflang="es" lang="es">Ver en español</a>
   <button class="tema" type="button" aria-label="Switch theme" title="Switch theme">
     <svg class="sol" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
@@ -40,6 +36,20 @@ try{var _t=localStorage.getItem("mikeos-tema");
          stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.5A8.5 8.5 0 019.5 4a8.5 8.5 0 1010.5 10.5z"/></svg>
   </button>
   <a class="btn " href="../en/downloads.html">Download</a>
+  <button class="hamburguesa" type="button" aria-label="Menu" title="Menu"
+          aria-expanded="false" aria-controls="menu-principal">
+    <span></span><span></span><span></span>
+  </button>
+</div>
+<div class="menu" id="menu-principal" hidden>
+  <div class="menu-lista">
+    <a class="" href="../en/index.html">Home</a>
+    <a class="" href="../capturas/index.html">Screenshots</a>
+    <a class="aqui" href="../docs/index.html">Docs</a>
+    <a class="" href="../wiki/index.html">Wiki</a>
+    <a href="https://github.com/M1KE-27/m1keos">Source</a>
+    <a class="solo-estrecho" href="../index.html" hreflang="es" lang="es">Ver en español</a>
+  </div>
 </div></nav>
 <div class="cont"><main>
 <header><h1>Arranque</h1></header>
@@ -79,10 +89,35 @@ Linux Kernel (bzImage)
 </ol></article></main></div>
 <footer><div class="cont">
 MIKE OS 0.6.0, MIT licence. Served from a mini PC at home.
-Updated on September 13, 2026.
+Updated on September 14, 2026.
 <a href="https://github.com/M1KE-27/m1keos">Source on GitHub</a>
 </div></footer>
 <script>
+/* El menú. Un botón que abre y cierra un panel.
+   Se usa el atributo "hidden" en vez de display:none desde JavaScript: así el
+   panel sigue estando oculto de verdad para un lector de pantalla, y si el
+   JavaScript no llega a ejecutarse nunca queda a medio abrir. */
+(function(){
+  var b=document.querySelector(".hamburguesa");
+  var m=document.getElementById("menu-principal");
+  if(!b||!m) return;
+  function cerrar(){ m.hidden=true; b.setAttribute("aria-expanded","false"); }
+  function abrir(){ m.hidden=false; b.setAttribute("aria-expanded","true"); }
+  b.addEventListener("click",function(e){
+    e.stopPropagation();
+    if(m.hidden) abrir(); else cerrar();
+  });
+  /* Pulsar fuera cierra. Sin esto, en escritorio el panel se queda abierto
+     tapando contenido y hay que volver al botón para quitarlo. */
+  document.addEventListener("click",function(e){
+    if(!m.hidden && !m.contains(e.target)) cerrar();
+  });
+  /* Y Escape, que es lo que prueba cualquiera que no use ratón. */
+  document.addEventListener("keydown",function(e){
+    if(e.key==="Escape" && !m.hidden){ cerrar(); b.focus(); }
+  });
+})();
+
 /* El botón de tema. Tres estados y no dos: claro, oscuro, y "lo que diga el
    sistema", que es donde empieza todo el mundo. Sin el tercero, quien tenga el
    móvil en automático pierde ese automático en cuanto toca el botón una vez y

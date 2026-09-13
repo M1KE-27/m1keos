@@ -206,6 +206,61 @@ nav .cont{display:flex;align-items:center;gap:28px;height:64px}
 .enl:hover{color:var(--texto)}
 .enl.aqui{color:var(--texto)}
 nav .derecha{margin-left:auto}
+
+/* --- El menú, detrás de un botón. También en escritorio. ---
+   La barra llevaba seis enlaces, el idioma, el tema y el botón de descargar:
+   nueve cosas compitiendo por la atención, y ninguna de ellas es a lo que
+   viene la gente. Ahora quedan tres --- idioma, tema y descargar --- y el
+   resto entra por el botón.
+   No se oculta sólo en el móvil a propósito: dos navegaciones distintas según
+   el ancho son dos navegaciones que hay que mantener, y la de escritorio
+   siempre acaba siendo la que nadie prueba. */
+.hamburguesa{width:34px;height:34px;flex:none;display:grid;place-content:center;
+  gap:4px;border:1px solid var(--borde);border-radius:999px;background:transparent;
+  cursor:pointer;padding:0 9px}
+.hamburguesa span{display:block;width:16px;height:1.5px;background:var(--tenue);
+  border-radius:2px;transition:transform .18s,opacity .18s,background .15s}
+.hamburguesa:hover{border-color:var(--borde-fuerte)}
+.hamburguesa:hover span{background:var(--texto)}
+/* Abierto, las tres rayas se convierten en una equis: dice que el mismo botón
+   cierra, sin tener que poner una segunda equis en el panel. */
+.hamburguesa[aria-expanded="true"] span:nth-child(1){transform:translateY(5.5px) rotate(45deg)}
+.hamburguesa[aria-expanded="true"] span:nth-child(2){opacity:0}
+.hamburguesa[aria-expanded="true"] span:nth-child(3){transform:translateY(-5.5px) rotate(-45deg)}
+
+.menu{border-top:1px solid var(--borde);background:var(--lienzo);
+      box-shadow:var(--sombra)}
+/* La lista NO reutiliza ".cont", y no es un capricho.
+   El panel vive dentro de <nav>, así que "nav .cont" --- que vale
+   "height:64px; align-items:center" para la barra --- le caía encima: el panel
+   se quedaba en 64 px de alto, recortando todos los enlaces menos el primero, y
+   con el texto centrado. Desde fuera parecía que el menú estaba a medio hacer.
+   Una clase propia y el problema no puede volver. */
+.menu-lista{display:flex;flex-direction:column;align-items:stretch;
+  max-width:1180px;margin:0 auto;padding:10px 32px 14px}
+/* La separación va ENTRE enlaces, no debajo de cada uno.
+   Con "border-bottom" + ":last-child{border:0}" quedaba una raya suelta bajo el
+   último enlace visible en escritorio: el de idioma es el último hijo pero está
+   oculto ahí, así que ":last-child" limpiaba el borde de un elemento que no se
+   ve y dejaba el del anterior puesto. */
+.menu a{color:var(--tenue);text-decoration:none;font-size:15px;font-weight:500;
+        padding:11px 0}
+.menu a + a{border-top:1px solid var(--borde)}
+.menu a:hover{color:var(--texto)}
+.menu a.aqui{color:var(--texto)}
+/* El idioma ya está en la barra cuando hay sitio; dentro del menú sólo hace
+   falta en pantallas donde se ha quitado de ahí. */
+.menu .solo-estrecho{display:none}
+
+/* En escritorio el panel no ocupa el ancho entero: una tarjeta a la derecha,
+   bajo el botón que lo abrió, que es de donde el ojo viene. */
+@media (min-width:901px){
+  .menu{position:absolute;right:max(32px,calc((100vw - 1180px) / 2 + 32px));
+        top:calc(100% - 1px);width:230px;border:1px solid var(--borde);
+        border-radius:var(--r-sup);overflow:hidden}
+  .menu-lista{max-width:none;margin:0;padding:6px 18px 10px}
+  nav{position:sticky}
+}
 /* El selector de idioma va escrito EN EL IDIOMA AL QUE LLEVA ("Read in
    English" en la página española). Un icono de globo o las siglas "EN/ES" no
    dicen nada a quien no sabe ya lo que va a pasar; la frase en el otro idioma
@@ -315,7 +370,16 @@ a:hover{text-decoration-color:var(--tenue)}
 /* Máquina frente a persona: mono para lo que escribió un ordenador. */
 code,kbd,.mono{font-family:var(--mono);font-size:.895em}
 code{background:var(--superficie);border:1px solid var(--borde);
-     border-radius:5px;padding:1.5px 6px}
+     border-radius:5px;padding:1.5px 6px;
+     /* Un nombre de orden partido por la mitad, con el borde cortado a mitad
+        de palabra, se lee como dos cosas distintas: "sftp-" y "server". */
+     white-space:nowrap}
+/* Dentro de una tarjeta el fondo ya es "superficie": el código tiene que
+   hundirse, no confundirse con ella. */
+.nuevo code{background:var(--hundido)}
+/* Y en una pantalla estrecha, antes de que una orden larga desborde la caja,
+   que se pueda arrastrar. */
+@media (max-width:480px){code{white-space:normal;word-break:break-word}}
 pre{font-family:var(--mono);font-size:13.5px;line-height:1.75;
     background:var(--hundido);border:1px solid var(--borde);border-radius:var(--r-sup);
     padding:18px 20px;overflow-x:auto;margin:0 0 18px}
@@ -329,10 +393,16 @@ figcaption{font-size:13.5px;color:var(--tenue);margin-top:9px}
 
 /* --- Novedades. Tarjetas, porque son cosas distintas entre sí y sin orden:
        una lista numerada prometería una secuencia que no existe. --- */
+/* Cada tarjeta lleva SU borde, y la separación es separación de verdad.
+   La primera versión usaba el truco de siempre --- rejilla con fondo del color
+   del borde y huecos de 1 px --- y con seis tarjetas en cuatro columnas
+   quedaban dos celdas vacías pintadas de gris: desde fuera, una tarjeta rota.
+   El truco sólo funciona cuando el número de tarjetas encaja justo con el de
+   columnas, o sea nunca después de añadir la séptima. */
 .nuevo{display:grid;grid-template-columns:repeat(auto-fit,minmax(268px,1fr));
-       gap:1px;background:var(--borde);border:1px solid var(--borde);
-       border-radius:var(--r-sup);overflow:hidden;margin-top:26px}
-.nuevo>div{background:var(--lienzo);padding:24px 22px}
+       gap:14px;margin-top:26px}
+.nuevo>div{background:var(--superficie);border:1px solid var(--borde);
+           border-radius:var(--r-sup);padding:22px 20px}
 .nuevo b{display:block;font-size:16px;letter-spacing:-0.015em;margin-bottom:7px}
 .nuevo p{margin:0;color:var(--tenue);font-size:15px;line-height:1.6}
 .nuevo .marca-nueva{display:inline-block;font-family:var(--mono);font-size:11px;
@@ -411,25 +481,21 @@ a:focus-visible,.btn:focus-visible,.tema:focus-visible{
   .cifras{grid-template-columns:repeat(2,1fr);gap:22px;margin-top:46px}
   .galeria{grid-template-columns:1fr}
   .limites div,.piezas div,.indice a{grid-template-columns:1fr;gap:5px}
-  nav .cont{gap:18px;overflow-x:auto}
-  /* En el móvil la navegación se desplaza a lo ancho; el botón de tema y el
-     de descargar tienen que quedarse quietos al final y no encogerse. */
-  .tema,nav .btn{flex:none}
+  nav .cont{gap:16px}
+  .tema,.hamburguesa,nav .btn{flex:none}
+  .menu-lista{padding-left:20px;padding-right:20px}
 }
 /* En pantallas estrechas de verdad, los enlaces del medio sobran: el logo
    lleva a inicio y el botón de descargar es lo que casi todo el mundo busca.
    Se ocultan en vez de dejar una barra que hay que arrastrar para usarla. */
 @media (max-width:560px){
-  nav .cont{gap:14px;overflow:visible}
-  nav .enl{display:none}
-  /* El idioma NO se oculta: en un móvil es donde más falta hace poder cambiarlo,
-     y es lo primero que busca quien abre la página y no entiende nada. Se queda
-     reducido a las dos letras para que quepa. */
-  nav .idioma{display:inline;margin-left:auto;font-size:13px}
-  nav .idioma{font-size:0}
-  nav .idioma::after{content:attr(lang);font-size:13px;text-transform:uppercase;
-                     font-family:var(--mono);letter-spacing:.03em}
-  nav .derecha{margin-left:0}
+  nav .cont{gap:12px;overflow:visible}
+  /* Aquí ya no cabe la frase entera ("Read in English"), así que el idioma
+     sale de la barra y entra en el menú, donde sí cabe escrito. Poner ahí
+     "EN/ES" para ganar sitio sería ahorrar dos centímetros a cambio de que no
+     lo entienda justo quien lo necesita. */
+  nav .idioma{display:none}
+  .menu .solo-estrecho{display:block}
 }
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 CSS
@@ -483,6 +549,7 @@ t() {
     nav.descargar)   [ "$L" = en ] && echo "Download"        || echo "Descargar" ;;
     nav.tema)        [ "$L" = en ] && echo "Switch theme"    || echo "Cambiar de tema" ;;
     nav.idioma)      [ "$L" = en ] && echo "Ver en español"  || echo "Read in English" ;;
+    nav.menu)        [ "$L" = en ] && echo "Menu"            || echo "Menú" ;;
 
     meta.desc)       [ "$L" = en ] \
         && echo "MIKE OS: an operating system built from the kernel up. No systemd, with its own package manager, shell and desktop." \
@@ -571,11 +638,7 @@ try{var _t=localStorage.getItem("mikeos-tema");
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
          stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 6l6 6-6 6"/><path d="M13 18h7"/></svg>
     MIKE OS</a>
-  <a class="enl $([ "$act" = inicio ] && echo aqui)" href="${pre_idioma}index.html">$(t nav.inicio)</a>
-  <a class="enl $([ "$act" = capturas ] && echo aqui)" href="${pre}capturas/index.html">$(t nav.capturas)</a>
-  <a class="enl $([ "$act" = docs ] && echo aqui)" href="${pre}docs/index.html">$(t nav.docs)</a>
-  <a class="enl $([ "$act" = wiki ] && echo aqui)" href="${pre}wiki/index.html">$(t nav.wiki)</a>
-  <a class="enl derecha" href="https://github.com/${MIKEOS_REPO_GITHUB:-M1KE-27/m1keos}">$(t nav.codigo)</a>
+  <span class="derecha"></span>
   <a class="enl idioma" href="$alt_href" hreflang="$otro" lang="$otro">$(t nav.idioma)</a>
   <button class="tema" type="button" aria-label="$(t nav.tema)" title="$(t nav.tema)">
     <svg class="sol" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
@@ -585,6 +648,20 @@ try{var _t=localStorage.getItem("mikeos-tema");
          stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.5A8.5 8.5 0 019.5 4a8.5 8.5 0 1010.5 10.5z"/></svg>
   </button>
   <a class="btn $([ "$act" = descargas ] && echo aqui)" href="${pre_idioma}$([ "$L" = en ] && echo downloads.html || echo descargas.html)">$(t nav.descargar)</a>
+  <button class="hamburguesa" type="button" aria-label="$(t nav.menu)" title="$(t nav.menu)"
+          aria-expanded="false" aria-controls="menu-principal">
+    <span></span><span></span><span></span>
+  </button>
+</div>
+<div class="menu" id="menu-principal" hidden>
+  <div class="menu-lista">
+    <a class="$([ "$act" = inicio ] && echo aqui)" href="${pre_idioma}index.html">$(t nav.inicio)</a>
+    <a class="$([ "$act" = capturas ] && echo aqui)" href="${pre}capturas/index.html">$(t nav.capturas)</a>
+    <a class="$([ "$act" = docs ] && echo aqui)" href="${pre}docs/index.html">$(t nav.docs)</a>
+    <a class="$([ "$act" = wiki ] && echo aqui)" href="${pre}wiki/index.html">$(t nav.wiki)</a>
+    <a href="https://github.com/${MIKEOS_REPO_GITHUB:-M1KE-27/m1keos}">$(t nav.codigo)</a>
+    <a class="solo-estrecho" href="$alt_href" hreflang="$otro" lang="$otro">$(t nav.idioma)</a>
+  </div>
 </div></nav>
 HTML
     # Sin esto, las páginas interiores salían pegadas al borde izquierdo: la
@@ -601,6 +678,31 @@ $(t pie.actualizado)
 <a href="https://github.com/${MIKEOS_REPO_GITHUB:-M1KE-27/m1keos}">$(t pie.codigo)</a>
 </div></footer>
 <script>
+/* El menú. Un botón que abre y cierra un panel.
+   Se usa el atributo "hidden" en vez de display:none desde JavaScript: así el
+   panel sigue estando oculto de verdad para un lector de pantalla, y si el
+   JavaScript no llega a ejecutarse nunca queda a medio abrir. */
+(function(){
+  var b=document.querySelector(".hamburguesa");
+  var m=document.getElementById("menu-principal");
+  if(!b||!m) return;
+  function cerrar(){ m.hidden=true; b.setAttribute("aria-expanded","false"); }
+  function abrir(){ m.hidden=false; b.setAttribute("aria-expanded","true"); }
+  b.addEventListener("click",function(e){
+    e.stopPropagation();
+    if(m.hidden) abrir(); else cerrar();
+  });
+  /* Pulsar fuera cierra. Sin esto, en escritorio el panel se queda abierto
+     tapando contenido y hay que volver al botón para quitarlo. */
+  document.addEventListener("click",function(e){
+    if(!m.hidden && !m.contains(e.target)) cerrar();
+  });
+  /* Y Escape, que es lo que prueba cualquiera que no use ratón. */
+  document.addEventListener("keydown",function(e){
+    if(e.key==="Escape" && !m.hidden){ cerrar(); b.focus(); }
+  });
+})();
+
 /* El botón de tema. Tres estados y no dos: claro, oscuro, y "lo que diga el
    sistema", que es donde empieza todo el mundo. Sin el tercero, quien tenga el
    móvil en automático pierde ese automático en cuanto toca el botón una vez y
@@ -1538,8 +1640,22 @@ paso "Subiendo a $SERVIDOR"
     fi
     verde "  subido"
     paso "Comprobando"
-    for ruta in "" "descargas.html" "docs/index.html" "wiki/index.html" "capturas/index.html"; do
+    # Las páginas en inglés también. Se quedaron fuera de esta lista el día
+    # que se añadieron, así que podían no haberse subido y la comprobación
+    # habría dicho que todo estaba bien.
+    _fallos=0
+    for ruta in "" "descargas.html" "docs/index.html" "wiki/index.html" \
+                "capturas/index.html" "en/index.html" "en/downloads.html" \
+                "estilo.css"; do
         cod="$(curl -fsS --max-time 15 -o /dev/null -w '%{http_code}' "https://m1keos.duckdns.org/$ruta" 2>/dev/null || echo ---)"
         printf '    %-24s %s\n' "/$ruta" "$cod"
+        [ "$cod" = "200" ] || _fallos=$((_fallos + 1))
     done
+    if [ "$_fallos" -gt 0 ]; then
+        # Y si algo no responde, se dice y se sale con error. Antes se
+        # imprimía el código y se terminaba en verde igual: un 404 pasaba
+        # desapercibido entre los 200 de al lado.
+        err "$_fallos de las páginas comprobadas no responden."
+        exit 1
+    fi
 fi
