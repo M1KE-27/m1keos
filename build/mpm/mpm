@@ -75,13 +75,34 @@ CMD="$1"
 
 find_pkg_file() {
     local name="$1"
-    for f in "$REPO_DIR"/$name*.mpk "$REPO_DIR"/*/$name*.mpk; do
-        if [ -f "$f" ]; then
-            echo "$f"
-            return 0
+    # Tres niveles: lo local va en "categoria/" y lo bajado de un repositorio
+    # remoto en "remote_xxxx/categoria/". Sin el tercero, un paquete recién
+    # descargado no se encontraba y "mpm upgrade" decía que no había nada.
+    #
+    # Y se devuelve EL MÁS RECIENTE, no el primero que aparezca.
+    #
+    # Devolver el primero era el último eslabón de por qué no funcionaban las
+    # actualizaciones por red: la imagen trae sus propios .mpk en
+    # "$REPO_DIR/categoria/", que en el orden del glob van ANTES que los
+    # descargados. Así que "mpm upgrade" comparaba la versión instalada con la
+    # que ya venía de fábrica -- la misma, claro -- y contestaba que todo
+    # estaba al día mientras la versión nueva esperaba descargada en el disco.
+    _mejor=""
+    _mejor_fecha=0
+    for f in "$REPO_DIR"/$name*.mpk "$REPO_DIR"/*/$name*.mpk "$REPO_DIR"/*/*/$name*.mpk; do
+        [ -f "$f" ] || continue
+        # El nombre tiene que ser EXACTO: sin esto, "mpm" encontraría también
+        # cualquier paquete que empezara por esas letras.
+        [ "$(basename "$f" .mpk | sed 's/-[0-9].*//')" = "$name" ] || continue
+        _fecha="$(stat -c %Y "$f" 2>/dev/null || echo 0)"
+        if [ "${_fecha:-0}" -ge "$_mejor_fecha" ]; then
+            _mejor="$f"
+            _mejor_fecha="${_fecha:-0}"
         fi
     done
-    return 1
+    [ -n "$_mejor" ] || return 1
+    echo "$_mejor"
+    return 0
 }
 
 valid_pkg_name() {
@@ -120,10 +141,19 @@ EOF_ARCHIVE
 repo_sha256() {
     _file="$1"
     [ -f "$REPO_INDEX" ] || return 0
-    awk -v wanted="$(basename "$_file")" '
-        $0 ~ "\"file\"[[:space:]]*:[[:space:]]*\"" wanted "\"" { found=1; next }
+    # Se compara por el final de la ruta: en el índice las entradas llevan
+    # ahora su categoría delante ("core/mcore-0.4.0.mpk"), pero a esta función
+    # se le puede pasar tanto la ruta completa en disco como el nombre suelto.
+    awk -v wanted="/$(basename "$_file")" '
+        /"file"[[:space:]]*:/ {
+            linea = $0
+            sub(/.*"file"[[:space:]]*:[[:space:]]*"/, "", linea)
+            sub(/".*/, "", linea)
+            found = (index("/" linea, wanted) > 0 &&
+                     substr("/" linea, length("/" linea) - length(wanted) + 1) == wanted)
+            next
+        }
         found && /"sha256"/ { gsub(/[",]/, "", $2); print $2; exit }
-        found && /"file"/ { exit }
     ' "$REPO_INDEX"
 }
 
@@ -284,8 +314,9 @@ case "$CMD" in
         RESULTADOS=""
 
         # Repositorio de MIKE OS: lo propio va primero, que es lo que está
-        # probado en este sistema.
-        for pkg in "$REPO_DIR"/*.mpk "$REPO_DIR"/*/*.mpk; do
+        # probado en este sistema. Tres niveles, para ver también lo que se ha
+        # descargado de un repositorio remoto ("remote_xxxx/categoria/").
+        for pkg in "$REPO_DIR"/*.mpk "$REPO_DIR"/*/*.mpk "$REPO_DIR"/*/*/*.mpk; do
             [ -f "$pkg" ] || continue
             pname="$(basename "$pkg" .mpk | sed 's/-[0-9].*//')"
             meta="$(package_meta "$pkg")"
@@ -626,6 +657,9 @@ case "$CMD" in
                 awk -F'"' '/"file"[[:space:]]*:/ {print $4}' "$remote_index" | while IFS= read -r remote_file; do
                     [ -n "$remote_file" ] || continue
                     remote_pkg="$remote_dir/$remote_file"
+                    # Las entradas del índice llevan su categoría delante, así
+                    # que hay que crear la carpeta antes de escribir dentro.
+                    mkdir -p "$(dirname "$remote_pkg")"
                     expected_remote="$(awk -v wanted="$remote_file" '
                         $0 ~ "\"file\"[[:space:]]*:[[:space:]]*\"" wanted "\"" {found=1; next}
                         found && /"sha256"/ {gsub(/[",]/, "", $2); print $2; exit}
@@ -644,7 +678,19 @@ case "$CMD" in
                     if command -v curl >/dev/null 2>&1; then curl -fsSL --retry 2 "$base_url/$remote_file" -o "$remote_pkg" 2>/dev/null || continue; else wget_silencioso "$remote_pkg" "$base_url/$remote_file" 2>/dev/null || continue; fi
                     actual_remote="$(sha256sum "$remote_pkg" | cut -d' ' -f1)"
                     if [ -n "$expected_remote" ] && [ "$expected_remote" != "$actual_remote" ]; then rm -f "$remote_pkg"; continue; fi
-                    verify_package "$remote_pkg" >/dev/null 2>&1 || rm -f "$remote_pkg"
+                    # Se valida SIN exigir que el paquete esté en el índice
+                    # local, porque su SHA256 ya se ha comprobado dos líneas
+                    # más arriba contra el índice REMOTO, que es la fuente
+                    # buena aquí.
+                    #
+                    # Exigirlo era un fallo precioso: verify_package busca el
+                    # hash en el índice LOCAL, y un paquete recién publicado no
+                    # está ahí todavía. Así que se descargaba bien, se
+                    # comprobaba bien... y se borraba a continuación por "no
+                    # verificable". Los que ya se habían bajado otras veces sí
+                    # estaban en el índice y sobrevivían, de modo que fallaba
+                    # exactamente el paquete NUEVO: el único que importaba.
+                    verify_package "$remote_pkg" no >/dev/null 2>&1 || rm -f "$remote_pkg"
                 done
             done < "$SOURCES_FILE"
         fi
@@ -653,14 +699,30 @@ case "$CMD" in
         echo '  "updated": "'$(date -u +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || echo "2026-08-23")'",' >> "$REPO_INDEX"
         echo '  "packages": [' >> "$REPO_INDEX"
         FIRST=1
-        for pkg in "$REPO_DIR"/*.mpk "$REPO_DIR"/*/*.mpk; do
+        # Tres niveles: los paquetes locales están en "$REPO_DIR/categoria/" y
+        # los bajados de un repositorio remoto en
+        # "$REPO_DIR/remote_xxxx/categoria/". Con sólo dos niveles, lo que se
+        # acababa de descargar no entraba en el índice y no servía de nada.
+        for pkg in "$REPO_DIR"/*.mpk "$REPO_DIR"/*/*.mpk "$REPO_DIR"/*/*/*.mpk; do
             [ -f "$pkg" ] || continue
             meta="$(package_meta "$pkg")"
             sha="$(sha256sum "$pkg" | cut -d' ' -f1)"
             if [ -n "$meta" ]; then
                 [ $FIRST -eq 0 ] && echo "    ," >> "$REPO_INDEX"
                 echo "    {" >> "$REPO_INDEX"
-                echo "      \"file\": \"$(basename "$pkg")\"," >> "$REPO_INDEX"
+                # La ruta RELATIVA al repositorio, no sólo el nombre.
+                #
+                # Aquí iba "basename", y eso rompía por completo las
+                # actualizaciones por red: los paquetes viven en subcarpetas
+                # por categoría (core/, desktop/...), así que el índice decía
+                # "mcore-0.4.0.mpk" y el archivo estaba en
+                # "core/mcore-0.4.0.mpk". "mpm update" pedía la ruta de la raíz,
+                # recibía un 404 y seguía adelante en silencio.
+                #
+                # Resultado: se publicaba una versión nueva, todos los equipos
+                # la veían en el índice, ninguno podía descargarla, y "mpm
+                # upgrade" contestaba tan tranquilo "todo está actualizado".
+                echo "      \"file\": \"${pkg#"$REPO_DIR"/}\"," >> "$REPO_INDEX"
                 echo "      \"sha256\": \"$sha\"," >> "$REPO_INDEX"
                 echo "      \"meta\": $meta" >> "$REPO_INDEX"
                 echo "    }" >> "$REPO_INDEX"

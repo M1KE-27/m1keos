@@ -18,6 +18,38 @@ mkdir -p "$REPO_DIR"/{core,system,network,development,tools,desktop}
 mkdir -p "$PKGS_BUILD_DIR" "$MPM_ROOT"/{installed,repo}
 
 # ------------------------------------------------------------------------------
+# La versión de cada paquete, y por qué no puede ser un número escrito a mano
+#
+# Cada paquete llevaba su versión clavada en el archivo: "0.1.0", "mike1". Eso
+# hacía IMPOSIBLE actualizar nada por red, y de la peor forma: en silencio.
+# "mpm upgrade" compara la versión instalada con la del repositorio y, si son
+# iguales, no hace nada. O sea que se podía cambiar medio sistema, publicarlo,
+# y todos los equipos seguirían diciendo "todo está actualizado" mientras se
+# quedaban con el código viejo.
+#
+# Ahora la versión sale de dos cosas:
+#
+#   · la versión del sistema (el archivo VERSION de la raíz), para que se
+#     entienda de un vistazo a qué entrega pertenece;
+#   · una huella del CONTENIDO del paquete, para que cualquier cambio en
+#     cualquiera de sus archivos produzca una versión distinta.
+#
+# Así, publicar algo cambiado se ve siempre, y publicar algo idéntico no genera
+# una actualización falsa que la gente se descarga para nada.
+VERSION_BASE="$(tr -d ' \n' < "$PROJECT_ROOT/VERSION" 2>/dev/null || echo 0.0.0)"
+
+sellar_version() {   # sellar_version <directorio del spec>
+    _spec="$1"
+    [ -f "$_spec/meta.json" ] || return 0
+    _huella="$(find "$_spec/root" -type f -print0 2>/dev/null \
+               | LC_ALL=C sort -z | xargs -0 sha256sum 2>/dev/null \
+               | sha256sum | cut -c1-8)"
+    [ -n "$_huella" ] || _huella="00000000"
+    sed -i "s|\"version\": \"[^\"]*\"|\"version\": \"$VERSION_BASE+$_huella\"|" \
+        "$_spec/meta.json"
+}
+
+# ------------------------------------------------------------------------------
 # 1. development.mpk
 # ------------------------------------------------------------------------------
 echo "=== [1/6] Creando development-0.9.27-mike1-x86_64.mpk ==="
@@ -111,6 +143,7 @@ echo ">> Toolchain C nativo instalado. Puedes compilar con: gcc archivo.c -o bin
 EOF
     chmod +x "$DEV_SPEC/POST_INSTALL"
 
+    sellar_version "$DEV_SPEC"
     (cd "$DEV_SPEC" && "$PROJECT_ROOT/build/mpm/mpm" build "$DEV_SPEC" >/dev/null)
     mv "$DEV_SPEC"/*.mpk "$REPO_DIR/development/"
     echo "  -> Paquete development generado."
@@ -165,6 +198,7 @@ cat << 'EOF' > "$MCORE_SPEC/meta.json"
 }
 EOF
 
+sellar_version "$MCORE_SPEC"
 (cd "$MCORE_SPEC" && "$PROJECT_ROOT/build/mpm/mpm" build "$MCORE_SPEC" >/dev/null)
 mv "$MCORE_SPEC"/*.mpk "$REPO_DIR/core/"
 echo "  -> Paquete mcore generado."
@@ -211,6 +245,7 @@ cat << EOF > "$MPM_SPEC/meta.json"
   "size": "1.1MB"
 }
 EOF
+sellar_version "$MPM_SPEC"
 (cd "$MPM_SPEC" && "$PROJECT_ROOT/build/mpm/mpm" build "$MPM_SPEC" >/dev/null)
 mv "$MPM_SPEC"/*.mpk "$REPO_DIR/core/"
 echo "  -> Paquete mpm generado ($MPM_VER)."
@@ -241,6 +276,7 @@ cat << 'EOF' > "$MKSHELL_SPEC/meta.json"
 }
 EOF
 
+sellar_version "$MKSHELL_SPEC"
 (cd "$MKSHELL_SPEC" && "$PROJECT_ROOT/build/mpm/mpm" build "$MKSHELL_SPEC" >/dev/null)
 mv "$MKSHELL_SPEC"/*.mpk "$REPO_DIR/core/"
 echo "  -> Paquete mkshell generado."
@@ -308,6 +344,7 @@ echo "=========================================================="
 EOF
 chmod +x "$DESK_SPEC/POST_INSTALL"
 
+sellar_version "$DESK_SPEC"
 (cd "$DESK_SPEC" && "$PROJECT_ROOT/build/mpm/mpm" build "$DESK_SPEC" >/dev/null)
 mv "$DESK_SPEC"/*.mpk "$REPO_DIR/desktop/"
 echo "  -> Paquete mike-desktop generado."
@@ -374,6 +411,7 @@ HOOK
 }
 EOF
     mkdir -p "$REPO_DIR/core"
+    sellar_version "$K_SPEC"
     (cd "$K_SPEC" && "$PROJECT_ROOT/build/mpm/mpm" build "$K_SPEC" >/dev/null)
     mv "$K_SPEC"/*.mpk "$REPO_DIR/core/"
     echo "  -> Paquete mikeos-kernel generado ($KVER, $K_SIZE)."
@@ -410,6 +448,7 @@ cat << 'EOF' > "$NET_SPEC/meta.json"
   "size": "10KB"
 }
 EOF
+sellar_version "$NET_SPEC"
 (cd "$NET_SPEC" && "$PROJECT_ROOT/build/mpm/mpm" build "$NET_SPEC" >/dev/null)
 mv "$NET_SPEC"/*.mpk "$REPO_DIR/network/"
 
@@ -449,6 +488,7 @@ cat << 'EOF' > "$TOOLS_SPEC/meta.json"
   "size": "10KB"
 }
 EOF
+sellar_version "$TOOLS_SPEC"
 (cd "$TOOLS_SPEC" && "$PROJECT_ROOT/build/mpm/mpm" build "$TOOLS_SPEC" >/dev/null)
 mv "$TOOLS_SPEC"/*.mpk "$REPO_DIR/tools/"
 

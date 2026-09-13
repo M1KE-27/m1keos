@@ -1210,6 +1210,36 @@ if [ -f "$BUILD_DIR/repo/repo.json" ]; then
     cp -a "$BUILD_DIR/repo/repo.json" "$ROOTFS_DIR/var/lib/mpm/repo/repo.json"
 fi
 
+# ------------------------------------------------------------------------------
+# Apuntar qué paquetes lleva la imagen, para que se pueda actualizar por red
+#
+# Esto es lo que hacía que "mpm upgrade" no sirviera de nada en un MIKE OS
+# recién instalado, y de la forma más desconcertante posible: contestaba
+# "todos los paquetes están actualizados a la última versión" y se quedaba tan
+# tranquilo.
+#
+# El motivo: "mpm upgrade" recorre los paquetes INSTALADOS y compara su versión
+# con la del repositorio. Pero la imagen no se monta instalando paquetes, se
+# monta copiando archivos, así que /var/lib/mpm/installed estaba VACÍO. Cero
+# paquetes instalados, cero que comparar, cero actualizaciones. Para siempre.
+#
+# Así que la imagen apunta lo que lleva dentro. Es verdad -- esos archivos
+# están ahí -- y es lo que convierte a MIKE OS en un sistema actualizable en
+# vez de una foto fija que hay que reinstalar entera por cada cambio.
+echo "Registrando los paquetes que lleva la imagen..."
+_reg=0
+for _mpk in "$BUILD_DIR"/repo/*/*.mpk; do
+    [ -f "$_mpk" ] || continue
+    _meta="$(tar -xzf "$_mpk" -O meta.json 2>/dev/null \
+             || tar -xzf "$_mpk" -O ./meta.json 2>/dev/null || true)"
+    [ -n "$_meta" ] || continue
+    _nombre="$(printf '%s' "$_meta" | sed -n 's/.*"name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)"
+    [ -n "$_nombre" ] || continue
+    printf '%s\n' "$_meta" > "$ROOTFS_DIR/var/lib/mpm/installed/$_nombre.json"
+    _reg=$((_reg + 1))
+done
+echo "  -> $_reg paquetes registrados como instalados."
+
 # Enlaces de compatibilidad de shell estándar. bash real ya se instaló
 # antes como /bin/bash -- NO pisarlo aquí con un symlink a mkshell.
 ln -sf busybox "$ROOTFS_DIR/bin/sh"
