@@ -367,13 +367,13 @@ ShellRoot {
             }
             Text {
                 visible: !root.vertical
-                text: "MIKE"; color: Paleta.texto; font.bold: true
+                text: Idioma.t("MIKE"); color: Paleta.texto; font.bold: true
                 font.pixelSize: root.fontSize
                 anchors.verticalCenter: parent.verticalCenter
             }
             Text {
                 visible: !root.vertical
-                text: "OS"; color: root.accent; font.bold: true
+                text: Idioma.t("OS"); color: root.accent; font.bold: true
                 font.pixelSize: root.fontSize
                 anchors.verticalCenter: parent.verticalCenter
             }
@@ -483,7 +483,7 @@ ShellRoot {
             // mudo, bajo y alto, que es lo que se mira de un vistazo.
             Text {
                 visible: !root.vertical
-                text: root.volNivel < 0 ? "sin audio"
+                text: root.volNivel < 0 ? Idioma.t("sin audio")
                     : (root.volMute ? "mudo" : root.volNivel + "%")
                 color: root.volNivel < 0 ? Paleta.textoTenue : Paleta.texto
                 font.pixelSize: root.fontSize
@@ -763,7 +763,7 @@ ShellRoot {
 
     function nombreModulo(id) {
         for (var i = 0; i < modulosDisponibles.length; i++)
-            if (modulosDisponibles[i].id === id) return modulosDisponibles[i].nombre
+            if (modulosDisponibles[i].id === id) return Idioma.t(modulosDisponibles[i].nombre)
         return id
     }
 
@@ -1329,12 +1329,12 @@ ShellRoot {
                 RowLayout {
                     Layout.fillWidth: true
                     Text {
-                        text: "Centro de Control"
+                        text: Idioma.t("Centro de Control")
                         color: Paleta.texto; font.pixelSize: 17; font.bold: true
                         Layout.fillWidth: true
                     }
                     CtlButton {
-                        text: "Cerrar"; small: true
+                        text: Idioma.t("Cerrar"); small: true
                         onClicked: root.panelOpen = false
                     }
                 }
@@ -1358,7 +1358,7 @@ ShellRoot {
 
                         CtlButton {
                             Layout.fillWidth: true
-                            text: "Editar a mano"
+                            text: Idioma.t("Editar a mano")
                             icono: "editar"
                             onClicked: abrirAjustes.running = true
                         }
@@ -1389,7 +1389,7 @@ ShellRoot {
                                         anchors.verticalCenter: parent.verticalCenter
                                     }
                                     Text {
-                                        text: modelData.nombre
+                                        text: Idioma.t(modelData.nombre)
                                         color: entrada.aqui ? Paleta.sobreAcento : Paleta.texto
                                         font.pixelSize: 12
                                         font.bold: entrada.aqui
@@ -1405,7 +1405,7 @@ ShellRoot {
                         Item { Layout.fillHeight: true }
 
                         Text {
-                            text: "MIKE OS " + root.versionSistema
+                            text: Idioma.t("MIKE OS ") + root.versionSistema
                             color: Paleta.textoTenue; font.pixelSize: 10
                             Layout.leftMargin: 12
                         }
@@ -1432,7 +1432,7 @@ ShellRoot {
                                 spacing: 16
                                 visible: root.seccion === "vistazo"
 
-                                Titulo { texto: "Sonido" }
+                                Titulo { texto: Idioma.t("Sonido") }
                                 RowLayout {
                                     Layout.fillWidth: true
                                     spacing: 10
@@ -1466,15 +1466,15 @@ ShellRoot {
                                 }
                                 Pendiente {
                                     visible: root.volNivel < 0
-                                    texto: "No hay ninguna salida de audio conectada."
+                                    texto: Idioma.t("No hay ninguna salida de audio conectada.")
                                 }
 
                                 Separador {}
 
                                 RowLayout {
                                     Layout.fillWidth: true
-                                    Titulo { texto: "Red"; Layout.fillWidth: true }
-                                    CtlButton { text: "Buscar"; small: true; onClicked: wifiScan.running = true }
+                                    Titulo { texto: Idioma.t("Red"); Layout.fillWidth: true }
+                                    CtlButton { text: Idioma.t("Buscar"); small: true; onClicked: wifiScan.running = true }
                                 }
                                 // Conexión actual, sea del tipo que sea. El
                                 // apartado sólo hablaba de WiFi y parecía que
@@ -1504,7 +1504,7 @@ ShellRoot {
                                 }
                                 Text {
                                     visible: wifiList.count === 0
-                                    text: "Redes inalámbricas: no se detecta adaptador."
+                                    text: Idioma.t("Redes inalámbricas: no se detecta adaptador.")
                                     color: Paleta.textoTenue; font.pixelSize: 10; font.italic: true
                                 }
 
@@ -1512,8 +1512,8 @@ ShellRoot {
 
                                 RowLayout {
                                     Layout.fillWidth: true
-                                    Titulo { texto: "Bluetooth"; Layout.fillWidth: true }
-                                    CtlButton { text: "Buscar"; small: true; onClicked: btScan.running = true }
+                                    Titulo { texto: Idioma.t("Bluetooth"); Layout.fillWidth: true }
+                                    CtlButton { text: Idioma.t("Buscar"); small: true; onClicked: btScan.running = true }
                                 }
                                 Repeater {
                                     id: btList
@@ -1528,15 +1528,15 @@ ShellRoot {
                                 }
                                 Text {
                                     visible: btList.count === 0
-                                    text: "No se detecta adaptador Bluetooth."
+                                    text: Idioma.t("No se detecta adaptador Bluetooth.")
                                     color: Paleta.textoTenue; font.pixelSize: 10; font.italic: true
                                 }
 
                                 Separador {}
 
-                                Titulo { texto: "Fondo de pantalla" }
+                                Titulo { texto: Idioma.t("Fondo de pantalla") }
                                 CtlButton {
-                                    text: "Elegir fondo..."
+                                    text: Idioma.t("Elegir fondo...")
                                     onClicked: { root.panelOpen = false; panelFondos.abrir() }
                                 }
                             }
@@ -1547,38 +1547,38 @@ ShellRoot {
                                 spacing: 14
                                 visible: root.seccion === "sistema"
 
-                                Titulo { texto: "Teclado" }
+                                Titulo { texto: Idioma.t("Teclado") }
                                 GridLayout {
                                     columns: 2; columnSpacing: 14; rowSpacing: 10
                                     Layout.fillWidth: true
-                                    Etiqueta { texto: "Distribución" }
+                                    Etiqueta { texto: Idioma.t("Distribución") }
                                     Row {
                                         spacing: 6
                                         Layout.alignment: Qt.AlignRight
-                                        CtlButton { text: "US"; small: true; active: settingsState.kbLayout === "us,es"; onClicked: settingsState.kbLayout = "us,es" }
-                                        CtlButton { text: "ES"; small: true; active: settingsState.kbLayout === "es,us"; onClicked: settingsState.kbLayout = "es,us" }
+                                        CtlButton { text: Idioma.t("US"); small: true; active: settingsState.kbLayout === "us,es"; onClicked: settingsState.kbLayout = "us,es" }
+                                        CtlButton { text: Idioma.t("ES"); small: true; active: settingsState.kbLayout === "es,us"; onClicked: settingsState.kbLayout = "es,us" }
                                     }
                                 }
 
                                 Separador {}
 
-                                Titulo { texto: "Hora" }
+                                Titulo { texto: Idioma.t("Hora") }
                                 GridLayout {
                                     columns: 2; columnSpacing: 14; rowSpacing: 10
                                     Layout.fillWidth: true
 
-                                    Etiqueta { texto: "Formato" }
+                                    Etiqueta { texto: Idioma.t("Formato") }
                                     Row {
                                         spacing: 6
                                         Layout.alignment: Qt.AlignRight
-                                        CtlButton { text: "24 h";     small: true; active: settingsState.clockFormat === "24h";     onClicked: settingsState.clockFormat = "24h" }
-                                        CtlButton { text: "12 h am";  small: true; active: settingsState.clockFormat === "12h-min"; onClicked: settingsState.clockFormat = "12h-min" }
-                                        CtlButton { text: "12 h AM";  small: true; active: settingsState.clockFormat === "12h-may"; onClicked: settingsState.clockFormat = "12h-may" }
+                                        CtlButton { text: Idioma.t("24 h");     small: true; active: settingsState.clockFormat === "24h";     onClicked: settingsState.clockFormat = "24h" }
+                                        CtlButton { text: Idioma.t("12 h am");  small: true; active: settingsState.clockFormat === "12h-min"; onClicked: settingsState.clockFormat = "12h-min" }
+                                        CtlButton { text: Idioma.t("12 h AM");  small: true; active: settingsState.clockFormat === "12h-may"; onClicked: settingsState.clockFormat = "12h-may" }
                                     }
 
-                                    Etiqueta { texto: "Mostrar segundos" }
+                                    Etiqueta { texto: Idioma.t("Mostrar segundos") }
                                     CtlButton {
-                                        text: settingsState.clockSeconds ? "Sí" : "No"
+                                        text: settingsState.clockSeconds ? Idioma.t("Sí") : Idioma.t("No")
                                         small: true
                                         active: settingsState.clockSeconds
                                         Layout.alignment: Qt.AlignRight
@@ -1587,7 +1587,46 @@ ShellRoot {
                                 }
 
                                 Separador {}
-                                Pendiente { texto: "Sonido, batería e idioma llegan en el Bloque 2." }
+
+                                // El idioma, que es lo que el instalador
+                                // lleva prometiendo desde su primera
+                                // pantalla: "You can change this later in the
+                                // Control Centre". Aquí es donde dijo que
+                                // estaría.
+                                //
+                                // El cambio se ve al instante y en toda la
+                                // ventana: todo lo que se pinta pasa por T(),
+                                // que depende de Idioma.actual, así que moverlo
+                                // vuelve a evaluar cada enlace. Sin
+                                // reiniciar la sesión, que es lo que suelen
+                                // pedir los sistemas que hacen esto a medias.
+                                Titulo { texto: Idioma.t("Idioma") }
+                                GridLayout {
+                                    columns: 2; columnSpacing: 14; rowSpacing: 10
+                                    Layout.fillWidth: true
+
+                                    Etiqueta { texto: Idioma.t("Idioma") }
+                                    Row {
+                                        spacing: 6
+                                        Layout.alignment: Qt.AlignRight
+                                        CtlButton {
+                                            text: "Español"; small: true
+                                            active: Idioma.actual === "es"
+                                            onClicked: Idioma.cambiar("es")
+                                        }
+                                        CtlButton {
+                                            text: "English"; small: true
+                                            active: Idioma.actual === "en"
+                                            onClicked: Idioma.cambiar("en")
+                                        }
+                                    }
+                                }
+                                Pendiente {
+                                    texto: Idioma.t("El sistema entero: esta ventana, la barra y la bienvenida.")
+                                }
+
+                                Separador {}
+                                Pendiente { texto: Idioma.t("Sonido y batería llegan en el Bloque 2.") }
                             }
 
                             // ===== ENERGÍA =====
@@ -1602,33 +1641,33 @@ ShellRoot {
                                 spacing: 14
                                 visible: root.seccion === "energia"
 
-                                Titulo { texto: "Perfil" }
+                                Titulo { texto: Idioma.t("Perfil") }
 
                                 GridLayout {
                                     columns: 2; columnSpacing: 14; rowSpacing: 10
                                     Layout.fillWidth: true
 
-                                    Etiqueta { texto: "Modo" }
+                                    Etiqueta { texto: Idioma.t("Modo") }
                                     Row {
                                         spacing: 6
                                         Layout.alignment: Qt.AlignRight
                                         CtlButton {
-                                            text: "Automático"; small: true
+                                            text: Idioma.t("Automático"); small: true
                                             active: root.perfilEnergia === "auto"
                                             onClicked: { ponerPerfil.cual = "auto"; ponerPerfil.running = true }
                                         }
                                         CtlButton {
-                                            text: "Ahorro"; small: true
+                                            text: Idioma.t("Ahorro"); small: true
                                             active: root.perfilEnergia === "ahorro"
                                             onClicked: { ponerPerfil.cual = "ahorro"; ponerPerfil.running = true }
                                         }
                                         CtlButton {
-                                            text: "Equilibrado"; small: true
+                                            text: Idioma.t("Equilibrado"); small: true
                                             active: root.perfilEnergia === "rendimiento"
                                             onClicked: { ponerPerfil.cual = "rendimiento"; ponerPerfil.running = true }
                                         }
                                         CtlButton {
-                                            text: "Máximo"; small: true
+                                            text: Idioma.t("Máximo"); small: true
                                             active: root.perfilEnergia === "maximo"
                                             onClicked: { ponerPerfil.cual = "maximo"; ponerPerfil.running = true }
                                         }
@@ -1653,51 +1692,51 @@ ShellRoot {
 
                                 Separador {}
 
-                                Titulo { texto: "Estado" }
+                                Titulo { texto: Idioma.t("Estado") }
                                 Text {
                                     Layout.fillWidth: true
                                     color: Paleta.texto
                                     font.pixelSize: 11
                                     font.family: "monospace"
-                                    text: root.energiaEstado === "" ? "Pulsa «Actualizar» para leerlo." : root.energiaEstado
+                                    text: root.energiaEstado === "" ? Idioma.t("Pulsa «Actualizar» para leerlo.") : root.energiaEstado
                                 }
                                 CtlButton {
-                                    text: "Actualizar"; small: true
+                                    text: Idioma.t("Actualizar"); small: true
                                     onClicked: leerEnergiaEstado.running = true
                                 }
 
                                 // Lo de la tapa sólo tiene sentido si hay tapa.
                                 Separador { visible: root.esPortatil }
-                                Titulo { texto: "Al cerrar la tapa"; visible: root.esPortatil }
+                                Titulo { texto: Idioma.t("Al cerrar la tapa"); visible: root.esPortatil }
 
                                 GridLayout {
                                     columns: 2; columnSpacing: 14; rowSpacing: 10
                                     Layout.fillWidth: true
                                     visible: root.esPortatil
 
-                                    Etiqueta { texto: "Hacer" }
+                                    Etiqueta { texto: Idioma.t("Hacer") }
                                     Row {
                                         spacing: 6
                                         Layout.alignment: Qt.AlignRight
                                         CtlButton {
-                                            text: "Apagar pantalla"; small: true
+                                            text: Idioma.t("Apagar pantalla"); small: true
                                             active: root.tapaAccion === "pantalla"
                                             onClicked: { ponerTapa.cual = "pantalla"; ponerTapa.running = true }
                                         }
                                         CtlButton {
-                                            text: "Suspender"; small: true
+                                            text: Idioma.t("Suspender"); small: true
                                             visible: root.energiaPuede.indexOf("suspender") >= 0
                                             active: root.tapaAccion === "suspender"
                                             onClicked: { ponerTapa.cual = "suspender"; ponerTapa.running = true }
                                         }
                                         CtlButton {
-                                            text: "Hibernar"; small: true
+                                            text: Idioma.t("Hibernar"); small: true
                                             visible: root.energiaPuede.indexOf("hibernar") >= 0
                                             active: root.tapaAccion === "hibernar"
                                             onClicked: { ponerTapa.cual = "hibernar"; ponerTapa.running = true }
                                         }
                                         CtlButton {
-                                            text: "Nada"; small: true
+                                            text: Idioma.t("Nada"); small: true
                                             active: root.tapaAccion === "nada"
                                             onClicked: { ponerTapa.cual = "nada"; ponerTapa.running = true }
                                         }
@@ -1710,7 +1749,7 @@ ShellRoot {
                                     wrapMode: Text.WordWrap
                                     color: Paleta.textoTenue
                                     font.pixelSize: 10
-                                    text: "La sesión se bloquea siempre al cerrar, hagas lo que hagas con el resto. "
+                                    text: Idioma.t("La sesión se bloquea siempre al cerrar, hagas lo que hagas con el resto. ")
                                         + (root.energiaPuede.indexOf("suspender") >= 0
                                            ? "Suspender depende del firmware del equipo: pruébalo con la tapa abierta antes de fiarte de él en la mochila."
                                            : "Este equipo no ofrece suspender: su firmware no lo publica en /sys/power/state.")
@@ -1721,9 +1760,9 @@ ShellRoot {
                                 Row {
                                     spacing: 8
                                     visible: root.energiaPuede.indexOf("suspender") >= 0
-                                    CtlButton { text: "Suspender ahora"; onClicked: dormirAhora.running = true }
+                                    CtlButton { text: Idioma.t("Suspender ahora"); onClicked: dormirAhora.running = true }
                                     CtlButton {
-                                        text: "Hibernar ahora"
+                                        text: Idioma.t("Hibernar ahora")
                                         visible: root.energiaPuede.indexOf("hibernar") >= 0
                                         onClicked: hibernarAhora.running = true
                                     }
@@ -1749,22 +1788,22 @@ ShellRoot {
                                 // para un apartado que casi nunca se abre.
                                 onVisibleChanged: if (visible && root.driversComp.length === 0 && !root.driversEscaneando) escanearDrivers.running = true
 
-                                Titulo { texto: "Este equipo" }
+                                Titulo { texto: Idioma.t("Este equipo") }
 
                                 Row {
                                     spacing: 8
                                     CtlButton {
-                                        text: root.driversEscaneando ? "Analizando…" : "Analizar de nuevo"
+                                        text: root.driversEscaneando ? Idioma.t("Analizando…") : Idioma.t("Analizar de nuevo")
                                         onClicked: if (!root.driversEscaneando) escanearDrivers.running = true
                                     }
-                                    CtlButton { text: "Informe completo"; onClicked: informeHardware.running = true }
+                                    CtlButton { text: Idioma.t("Informe completo"); onClicked: informeHardware.running = true }
                                 }
 
                                 Text {
                                     visible: root.driversCuando !== ""
                                     color: Paleta.textoTenue
                                     font.pixelSize: 10
-                                    text: "Último análisis: " + root.driversCuando
+                                    text: Idioma.t("Último análisis: ") + root.driversCuando
                                 }
 
                                 Text {
@@ -1773,7 +1812,7 @@ ShellRoot {
                                     wrapMode: Text.WordWrap
                                     color: Paleta.textoTenue
                                     font.pixelSize: 11
-                                    text: "Todavía no se ha analizado nada."
+                                    text: Idioma.t("Todavía no se ha analizado nada.")
                                 }
 
                                 // La lista, agrupada por categoría. El
@@ -1816,7 +1855,7 @@ ShellRoot {
                                                 spacing: 0
                                                 Text {
                                                     Layout.fillWidth: true
-                                                    text: modelData.nombre
+                                                    text: Idioma.t(modelData.nombre)
                                                     color: Paleta.texto
                                                     font.pixelSize: 11
                                                     elide: Text.ElideRight
@@ -1831,11 +1870,11 @@ ShellRoot {
                                             }
 
                                             Text {
-                                                text: modelData.estado === "ok"           ? "funciona"
-                                                    : modelData.estado === "sin-driver"   ? "sin driver"
-                                                    : modelData.estado === "sin-firmware" ? "falta firmware"
-                                                    : modelData.estado === "apagado"      ? "parado"
-                                                    : modelData.estado === "ausente"      ? "no hay"
+                                                text: modelData.estado === "ok"           ? Idioma.t("funciona")
+                                                    : modelData.estado === "sin-driver"   ? Idioma.t("sin driver")
+                                                    : modelData.estado === "sin-firmware" ? Idioma.t("falta firmware")
+                                                    : modelData.estado === "apagado"      ? Idioma.t("parado")
+                                                    : modelData.estado === "ausente"      ? Idioma.t("no hay")
                                                     : modelData.estado
                                                 color: Paleta.textoTenue
                                                 font.pixelSize: 10
@@ -1847,7 +1886,7 @@ ShellRoot {
                                 }
 
                                 Separador { visible: root.driversPaq.length > 0 }
-                                Titulo { texto: "Recomendado para este equipo"; visible: root.driversPaq.length > 0 }
+                                Titulo { texto: Idioma.t("Recomendado para este equipo"); visible: root.driversPaq.length > 0 }
 
                                 Repeater {
                                     model: root.driversPaq
@@ -1855,7 +1894,7 @@ ShellRoot {
                                         Layout.fillWidth: true
                                         spacing: 8
                                         Text {
-                                            text: modelData.nombre
+                                            text: Idioma.t(modelData.nombre)
                                             color: Paleta.texto
                                             font.pixelSize: 11
                                             font.bold: true
@@ -1873,7 +1912,7 @@ ShellRoot {
 
                                 CtlButton {
                                     visible: root.driversPaq.length > 0
-                                    text: "Instalar lo recomendado"
+                                    text: Idioma.t("Instalar lo recomendado")
                                     onClicked: instalarDrivers.running = true
                                 }
 
@@ -1883,7 +1922,7 @@ ShellRoot {
                                     wrapMode: Text.WordWrap
                                     color: Paleta.textoTenue
                                     font.pixelSize: 11
-                                    text: "No falta nada: el sistema ya cubre este equipo."
+                                    text: Idioma.t("No falta nada: el sistema ya cubre este equipo.")
                                 }
                             }
 
@@ -1893,40 +1932,40 @@ ShellRoot {
                                 spacing: 14
                                 visible: root.seccion === "barra"
 
-                                Titulo { texto: "Posición" }
+                                Titulo { texto: Idioma.t("Posición") }
                                 GridLayout {
                                     columns: 2; columnSpacing: 14; rowSpacing: 10
                                     Layout.fillWidth: true
-                                    Etiqueta { texto: "Lado de la pantalla" }
+                                    Etiqueta { texto: Idioma.t("Lado de la pantalla") }
                                     Row {
                                         spacing: 6
                                         Layout.alignment: Qt.AlignRight
-                                        CtlButton { text: "Arriba";    small: true; active: settingsState.barPosition === "top";    onClicked: settingsState.barPosition = "top" }
-                                        CtlButton { text: "Abajo";     small: true; active: settingsState.barPosition === "bottom"; onClicked: settingsState.barPosition = "bottom" }
-                                        CtlButton { text: "Izquierda"; small: true; active: settingsState.barPosition === "left";   onClicked: settingsState.barPosition = "left" }
-                                        CtlButton { text: "Derecha";   small: true; active: settingsState.barPosition === "right";  onClicked: settingsState.barPosition = "right" }
+                                        CtlButton { text: Idioma.t("Arriba");    small: true; active: settingsState.barPosition === "top";    onClicked: settingsState.barPosition = "top" }
+                                        CtlButton { text: Idioma.t("Abajo");     small: true; active: settingsState.barPosition === "bottom"; onClicked: settingsState.barPosition = "bottom" }
+                                        CtlButton { text: Idioma.t("Izquierda"); small: true; active: settingsState.barPosition === "left";   onClicked: settingsState.barPosition = "left" }
+                                        CtlButton { text: Idioma.t("Derecha");   small: true; active: settingsState.barPosition === "right";  onClicked: settingsState.barPosition = "right" }
                                     }
 
-                                    Etiqueta { texto: "Forma" }
+                                    Etiqueta { texto: Idioma.t("Forma") }
                                     Row {
                                         spacing: 6
                                         Layout.alignment: Qt.AlignRight
-                                        CtlButton { text: "Pegada";   small: true; active: settingsState.barShape === "pegada";   onClicked: settingsState.barShape = "pegada" }
-                                        CtlButton { text: "Isla";     small: true; active: settingsState.barShape === "isla";     onClicked: settingsState.barShape = "isla" }
-                                        CtlButton { text: "Completa"; small: true; active: settingsState.barShape === "completa"; onClicked: settingsState.barShape = "completa" }
+                                        CtlButton { text: Idioma.t("Pegada");   small: true; active: settingsState.barShape === "pegada";   onClicked: settingsState.barShape = "pegada" }
+                                        CtlButton { text: Idioma.t("Isla");     small: true; active: settingsState.barShape === "isla";     onClicked: settingsState.barShape = "isla" }
+                                        CtlButton { text: Idioma.t("Completa"); small: true; active: settingsState.barShape === "completa"; onClicked: settingsState.barShape = "completa" }
                                     }
 
-                                    Etiqueta { texto: "Agrupación" }
+                                    Etiqueta { texto: Idioma.t("Agrupación") }
                                     Row {
                                         spacing: 6
                                         Layout.alignment: Qt.AlignRight
-                                        CtlButton { text: "Islas";    small: true; active: settingsState.barGrouping === "islas";    onClicked: settingsState.barGrouping = "islas" }
-                                        CtlButton { text: "Continua"; small: true; active: settingsState.barGrouping === "continua"; onClicked: settingsState.barGrouping = "continua" }
+                                        CtlButton { text: Idioma.t("Islas");    small: true; active: settingsState.barGrouping === "islas";    onClicked: settingsState.barGrouping = "islas" }
+                                        CtlButton { text: Idioma.t("Continua"); small: true; active: settingsState.barGrouping === "continua"; onClicked: settingsState.barGrouping = "continua" }
                                     }
 
-                                    Etiqueta { texto: "Bordes de pantalla" }
+                                    Etiqueta { texto: Idioma.t("Bordes de pantalla") }
                                     CtlButton {
-                                        text: settingsState.screenCorners ? "Redondeados" : "Rectos"
+                                        text: settingsState.screenCorners ? Idioma.t("Redondeados") : Idioma.t("Rectos")
                                         small: true
                                         active: settingsState.screenCorners
                                         Layout.alignment: Qt.AlignRight
@@ -1936,49 +1975,49 @@ ShellRoot {
 
                                 Separador {}
 
-                                Titulo { texto: "Tamaños" }
+                                Titulo { texto: Idioma.t("Tamaños") }
                                 GridLayout {
                                     columns: 2; columnSpacing: 14; rowSpacing: 10
                                     Layout.fillWidth: true
 
-                                    Etiqueta { texto: "Alto de la barra" }
+                                    Etiqueta { texto: Idioma.t("Alto de la barra") }
                                     Numero {
                                         valor: settingsState.barHeight
                                         minimo: 24; maximo: 96; paso: 4; sufijo: " px"
                                         onCambiado: settingsState.barHeight = nuevo
                                     }
 
-                                    Etiqueta { texto: "Alto de los módulos" }
+                                    Etiqueta { texto: Idioma.t("Alto de los módulos") }
                                     Numero {
                                         valor: settingsState.barModuleHeight
                                         minimo: 18; maximo: 72; paso: 2; sufijo: " px"
                                         onCambiado: settingsState.barModuleHeight = nuevo
                                     }
 
-                                    Etiqueta { texto: "Tamaño de letra" }
+                                    Etiqueta { texto: Idioma.t("Tamaño de letra") }
                                     Numero {
                                         valor: settingsState.barFontSize
                                         minimo: 8; maximo: 24; paso: 1; sufijo: " px"
                                         onCambiado: settingsState.barFontSize = nuevo
                                     }
 
-                                    Etiqueta { texto: "Separación" }
+                                    Etiqueta { texto: Idioma.t("Separación") }
                                     Numero {
                                         valor: settingsState.barSpacing
                                         minimo: 0; maximo: 24; paso: 2; sufijo: " px"
                                         onCambiado: settingsState.barSpacing = nuevo
                                     }
 
-                                    Etiqueta { texto: "Opacidad" }
+                                    Etiqueta { texto: Idioma.t("Opacidad") }
                                     Numero {
                                         valor: settingsState.barOpacity
                                         minimo: 20; maximo: 100; paso: 5; sufijo: " %"
                                         onCambiado: settingsState.barOpacity = nuevo
                                     }
 
-                                    Etiqueta { texto: "Ocultar sola" }
+                                    Etiqueta { texto: Idioma.t("Ocultar sola") }
                                     CtlButton {
-                                        text: settingsState.barAutohide ? "Sí" : "No"
+                                        text: settingsState.barAutohide ? Idioma.t("Sí") : Idioma.t("No")
                                         small: true
                                         active: settingsState.barAutohide
                                         Layout.alignment: Qt.AlignRight
@@ -1988,59 +2027,59 @@ ShellRoot {
 
                                 Separador {}
 
-                                Titulo { texto: "Módulos de la barra" }
+                                Titulo { texto: Idioma.t("Módulos de la barra") }
                                 Text {
-                                    text: "‹ y › mueven dentro de la zona; ✕ quita de la barra."
+                                    text: Idioma.t("‹ y › mueven dentro de la zona; ✕ quita de la barra.")
                                     color: Paleta.textoTenue; font.pixelSize: 11
                                     Layout.fillWidth: true
                                     wrapMode: Text.WordWrap
                                 }
 
                                 ZonaEditor {
-                                    titulo: "Izquierda"; raiz: root
+                                    titulo: Idioma.t("Izquierda"); raiz: root
                                     lista: settingsState.zonaIzq
                                     onCambiada: settingsState.zonaIzq = nueva
                                 }
                                 ZonaEditor {
-                                    titulo: "Centro"; raiz: root
+                                    titulo: Idioma.t("Centro"); raiz: root
                                     lista: settingsState.zonaCentro
                                     onCambiada: settingsState.zonaCentro = nueva
                                 }
                                 ZonaEditor {
-                                    titulo: "Derecha"; raiz: root
+                                    titulo: Idioma.t("Derecha"); raiz: root
                                     lista: settingsState.zonaDer
                                     onCambiada: settingsState.zonaDer = nueva
                                 }
 
                                 Separador {}
 
-                                Titulo { texto: "Colocar un módulo" }
+                                Titulo { texto: Idioma.t("Colocar un módulo") }
                                 Repeater {
                                     model: root.modulosDisponibles
                                     RowLayout {
                                         Layout.fillWidth: true
                                         spacing: 8
                                         Text {
-                                            text: modelData.nombre
+                                            text: Idioma.t(modelData.nombre)
                                             color: Paleta.texto; font.pixelSize: 11
                                             Layout.fillWidth: true
                                         }
                                         CtlButton {
-                                            text: "Izq"; small: true
+                                            text: Idioma.t("Izq"); small: true
                                             onClicked: {
                                                 root.quitarDeTodas(modelData.id)
                                                 settingsState.zonaIzq = root.anadirA(settingsState.zonaIzq, modelData.id)
                                             }
                                         }
                                         CtlButton {
-                                            text: "Centro"; small: true
+                                            text: Idioma.t("Centro"); small: true
                                             onClicked: {
                                                 root.quitarDeTodas(modelData.id)
                                                 settingsState.zonaCentro = root.anadirA(settingsState.zonaCentro, modelData.id)
                                             }
                                         }
                                         CtlButton {
-                                            text: "Der"; small: true
+                                            text: Idioma.t("Der"); small: true
                                             onClicked: {
                                                 root.quitarDeTodas(modelData.id)
                                                 settingsState.zonaDer = root.anadirA(settingsState.zonaDer, modelData.id)
@@ -2056,12 +2095,12 @@ ShellRoot {
                                 spacing: 14
                                 visible: root.seccion === "escritorio"
 
-                                Titulo { texto: "Espacios y efectos" }
+                                Titulo { texto: Idioma.t("Espacios y efectos") }
                                 GridLayout {
                                     columns: 2; columnSpacing: 14; rowSpacing: 10
                                     Layout.fillWidth: true
 
-                                    Etiqueta { texto: "Espacios de trabajo" }
+                                    Etiqueta { texto: Idioma.t("Espacios de trabajo") }
                                     Row {
                                         spacing: 6
                                         Layout.alignment: Qt.AlignRight
@@ -2074,15 +2113,15 @@ ShellRoot {
                                         CtlButton { text: "+"; small: true; onClicked: if (settingsState.workspaceCount < 10) settingsState.workspaceCount++ }
                                     }
 
-                                    Etiqueta { texto: "Desenfoque" }
+                                    Etiqueta { texto: Idioma.t("Desenfoque") }
                                     CtlButton {
-                                        text: settingsState.blurEnabled ? "Sí" : "No"; small: true
+                                        text: settingsState.blurEnabled ? Idioma.t("Sí") : Idioma.t("No"); small: true
                                         active: settingsState.blurEnabled
                                         Layout.alignment: Qt.AlignRight
                                         onClicked: settingsState.blurEnabled = !settingsState.blurEnabled
                                     }
 
-                                    Etiqueta { texto: "Opacidad de la terminal" }
+                                    Etiqueta { texto: Idioma.t("Opacidad de la terminal") }
                                     Row {
                                         spacing: 6
                                         Layout.alignment: Qt.AlignRight
@@ -2095,16 +2134,16 @@ ShellRoot {
                                         CtlButton { text: "+"; small: true; onClicked: if (settingsState.opacity < 100) settingsState.opacity += 2 }
                                     }
 
-                                    Etiqueta { texto: "Animaciones" }
+                                    Etiqueta { texto: Idioma.t("Animaciones") }
                                     Row {
                                         spacing: 6
                                         Layout.alignment: Qt.AlignRight
-                                        CtlButton { text: "Sin"; small: true; active: settingsState.animSpeed === "instant"; onClicked: settingsState.animSpeed = "instant" }
-                                        CtlButton { text: "Rápidas"; small: true; active: settingsState.animSpeed === "fast"; onClicked: settingsState.animSpeed = "fast" }
-                                        CtlButton { text: "Suaves"; small: true; active: settingsState.animSpeed === "normal"; onClicked: settingsState.animSpeed = "normal" }
+                                        CtlButton { text: Idioma.t("Sin"); small: true; active: settingsState.animSpeed === "instant"; onClicked: settingsState.animSpeed = "instant" }
+                                        CtlButton { text: Idioma.t("Rápidas"); small: true; active: settingsState.animSpeed === "fast"; onClicked: settingsState.animSpeed = "fast" }
+                                        CtlButton { text: Idioma.t("Suaves"); small: true; active: settingsState.animSpeed === "normal"; onClicked: settingsState.animSpeed = "normal" }
                                     }
 
-                                    Etiqueta { texto: "Color de acento" }
+                                    Etiqueta { texto: Idioma.t("Color de acento") }
                                     Row {
                                         spacing: 6
                                         Layout.alignment: Qt.AlignRight
@@ -2126,8 +2165,8 @@ ShellRoot {
                             ColumnLayout {
                                 Layout.fillWidth: true
                                 visible: root.seccion === "interfaz"
-                                Titulo { texto: "Interfaz" }
-                                Pendiente { texto: "Avisos, vista general y tipografías llegan en el Bloque 4. La pantalla de bloqueo tiene apartado propio." }
+                                Titulo { texto: Idioma.t("Interfaz") }
+                                Pendiente { texto: Idioma.t("Avisos, vista general y tipografías llegan en el Bloque 4. La pantalla de bloqueo tiene apartado propio.") }
                             }
 
                             // ===== BLOQUEO =====
@@ -2135,18 +2174,18 @@ ShellRoot {
                                 Layout.fillWidth: true
                                 visible: root.seccion === "bloqueo"
 
-                                Titulo { texto: "Pantalla de bloqueo" }
+                                Titulo { texto: Idioma.t("Pantalla de bloqueo") }
 
                                 GridLayout {
                                     columns: 2; columnSpacing: 14; rowSpacing: 10
                                     Layout.fillWidth: true
 
-                                    Etiqueta { texto: "Contraseña de la cuenta" }
+                                    Etiqueta { texto: Idioma.t("Contraseña de la cuenta") }
                                     Row {
                                         spacing: 8
                                         Layout.alignment: Qt.AlignRight
                                         Text {
-                                            text: root.estadoClave === "puesta"  ? "Puesta"
+                                            text: root.estadoClave === Idioma.t("puesta")  ? Idioma.t("Puesta")
                                                 : root.estadoClave === "debil"    ? "Débil (DES)"
                                                 : root.estadoClave === "sin-clave" ? "Sin contraseña"
                                                 : "Sin averiguar"
@@ -2157,7 +2196,7 @@ ShellRoot {
                                             anchors.verticalCenter: parent.verticalCenter
                                         }
                                         CtlButton {
-                                            text: root.estadoClave === "puesta" ? "Cambiar" : "Poner"
+                                            text: root.estadoClave === Idioma.t("puesta") ? Idioma.t("Cambiar") : Idioma.t("Poner")
                                             small: true
                                             // Cerrar el panel ANTES de abrir la
                                             // terminal.
@@ -2183,9 +2222,9 @@ ShellRoot {
                                         }
                                     }
 
-                                    Etiqueta { texto: "Bloquear ahora" }
+                                    Etiqueta { texto: Idioma.t("Bloquear ahora") }
                                     CtlButton {
-                                        text: "Bloquear"; small: true
+                                        text: Idioma.t("Bloquear"); small: true
                                         Layout.alignment: Qt.AlignRight
                                         onClicked: { root.panelOpen = false; bloquearAhora.running = true }
                                     }
@@ -2198,9 +2237,9 @@ ShellRoot {
                                     // salida era una terminal, y allí "reboot"
                                     // tampoco funcionaba. Así que el sistema no
                                     // se podía apagar bien de ninguna manera.
-                                    Etiqueta { texto: "Reiniciar el equipo" }
+                                    Etiqueta { texto: Idioma.t("Reiniciar el equipo") }
                                     CtlButton {
-                                        text: "Reiniciar"; small: true
+                                        text: Idioma.t("Reiniciar"); small: true
                                         Layout.alignment: Qt.AlignRight
                                         onClicked: {
                                             root.panelOpen = false
@@ -2208,9 +2247,9 @@ ShellRoot {
                                         }
                                     }
 
-                                    Etiqueta { texto: "Apagar el equipo" }
+                                    Etiqueta { texto: Idioma.t("Apagar el equipo") }
                                     CtlButton {
-                                        text: "Apagar"; small: true
+                                        text: Idioma.t("Apagar"); small: true
                                         Layout.alignment: Qt.AlignRight
                                         onClicked: {
                                             root.panelOpen = false
@@ -2224,17 +2263,17 @@ ShellRoot {
                                 // más vale saberlo antes que creerse protegido.
                                 Pendiente {
                                     visible: root.estadoClave === "sin-clave"
-                                    texto: "Esta cuenta no tiene contraseña, así que el bloqueo deja entrar sin preguntar. Ponle una aquí arriba."
+                                    texto: Idioma.t("Esta cuenta no tiene contraseña, así que el bloqueo deja entrar sin preguntar. Ponle una aquí arriba.")
                                 }
                                 Pendiente {
                                     visible: root.estadoClave === "debil"
-                                    texto: "La contraseña está cifrada con DES, que sólo mira sus 8 primeros caracteres. Vuelve a ponerla desde aquí para pasarla a sha512."
+                                    texto: Idioma.t("La contraseña está cifrada con DES, que sólo mira sus 8 primeros caracteres. Vuelve a ponerla desde aquí para pasarla a sha512.")
                                 }
                                 Pendiente {
-                                    texto: "Aviso: con la cuenta en el grupo «wheel», m-sudo da root sin pedir contraseña. El bloqueo protege de miradas, no de alguien con tiempo y teclado."
+                                    texto: Idioma.t("Aviso: con la cuenta en el grupo «wheel», m-sudo da root sin pedir contraseña. El bloqueo protege de miradas, no de alguien con tiempo y teclado.")
                                 }
                                 Pendiente {
-                                    texto: "El bloqueo automático por inactividad todavía no está: Quickshell 0.3.1 no expone el aviso de inactividad de Wayland. De momento se bloquea a mano con SUPER+L."
+                                    texto: Idioma.t("El bloqueo automático por inactividad todavía no está: Quickshell 0.3.1 no expone el aviso de inactividad de Wayland. De momento se bloquea a mano con SUPER+L.")
                                 }
                             }
 
@@ -2242,16 +2281,16 @@ ShellRoot {
                             ColumnLayout {
                                 Layout.fillWidth: true
                                 visible: root.seccion === "servicios"
-                                Titulo { texto: "Servicios" }
-                                Pendiente { texto: "Frecuencia de medición, carpetas de destino y buscador llegan en el Bloque 5." }
+                                Titulo { texto: Idioma.t("Servicios") }
+                                Pendiente { texto: Idioma.t("Frecuencia de medición, carpetas de destino y buscador llegan en el Bloque 5.") }
                             }
 
                             // ===== AVANZADO =====
                             ColumnLayout {
                                 Layout.fillWidth: true
                                 visible: root.seccion === "avanzado"
-                                Titulo { texto: "Avanzado" }
-                                Pendiente { texto: "Aplicar la paleta a la shell, a las aplicaciones Qt y a la terminal llega en el Bloque 6." }
+                                Titulo { texto: Idioma.t("Avanzado") }
+                                Pendiente { texto: Idioma.t("Aplicar la paleta a la shell, a las aplicaciones Qt y a la terminal llega en el Bloque 6.") }
                             }
 
                             // ===== ACERCA DE =====
@@ -2260,7 +2299,7 @@ ShellRoot {
                                 spacing: 14
                                 visible: root.seccion === "acercade"
 
-                                Titulo { texto: "Distribución" }
+                                Titulo { texto: Idioma.t("Distribución") }
                                 RowLayout {
                                     spacing: 14
                                     Rectangle {
@@ -2275,31 +2314,31 @@ ShellRoot {
                                     }
                                     ColumnLayout {
                                         spacing: 3
-                                        Text { text: "MIKE OS"; color: Paleta.texto; font.pixelSize: 18; font.bold: true }
-                                        Text { text: "Versión " + root.versionSistema + " · x86_64"; color: Paleta.textoTenue; font.pixelSize: 11 }
+                                        Text { text: Idioma.t("MIKE OS"); color: Paleta.texto; font.pixelSize: 18; font.bold: true }
+                                        Text { text: Idioma.t("Versión ") + root.versionSistema + Idioma.t(" · x86_64"); color: Paleta.textoTenue; font.pixelSize: 11 }
                                     }
                                 }
 
                                 Separador {}
 
-                                Titulo { texto: "Sistema" }
+                                Titulo { texto: Idioma.t("Sistema") }
                                 GridLayout {
                                     columns: 2; columnSpacing: 20; rowSpacing: 6
-                                    Etiqueta { texto: "Arranque" }
-                                    Dato { texto: "runit" }
-                                    Etiqueta { texto: "Paquetes" }
-                                    Dato { texto: "mpm" }
-                                    Etiqueta { texto: "Compositor" }
-                                    Dato { texto: "Hyprland" }
-                                    Etiqueta { texto: "Intérprete" }
-                                    Dato { texto: "bash" }
+                                    Etiqueta { texto: Idioma.t("Arranque") }
+                                    Dato { texto: Idioma.t("runit") }
+                                    Etiqueta { texto: Idioma.t("Paquetes") }
+                                    Dato { texto: Idioma.t("mpm") }
+                                    Etiqueta { texto: Idioma.t("Compositor") }
+                                    Dato { texto: Idioma.t("Hyprland") }
+                                    Etiqueta { texto: Idioma.t("Intérprete") }
+                                    Dato { texto: Idioma.t("bash") }
                                 }
 
                                 Separador {}
 
-                                Titulo { texto: "Se apoya en" }
+                                Titulo { texto: Idioma.t("Se apoya en") }
                                 Text {
-                                    text: "Hyprland · Quickshell · BusyBox · runit · Mesa"
+                                    text: Idioma.t("Hyprland · Quickshell · BusyBox · runit · Mesa")
                                     color: Paleta.textoTenue; font.pixelSize: 11
                                     Layout.fillWidth: true
                                     wrapMode: Text.WordWrap
@@ -2320,7 +2359,7 @@ ShellRoot {
                         Layout.fillWidth: true
                     }
                     Text {
-                        text: "Los cambios se guardan solos"
+                        text: Idioma.t("Los cambios se guardan solos")
                         color: Paleta.textoTenue; font.pixelSize: 11
                     }
                 }
@@ -2373,6 +2412,14 @@ ShellRoot {
             if (root.seccion === "drivers" && !root.driversEscaneando)
                 escanearDrivers.running = true
         }
+
+        // Cerrarlo desde fuera. Lo pide scripts/capturas.sh, que abre el
+        // panel para fotografiar cada apartado y luego necesita el escritorio
+        // limpio: el clic en el hueco de al lado dependía de que ahí no
+        // hubiera ninguna ventana, y en cuanto una prueba abría la terminal
+        // antes, ese clic caía dentro de la terminal y el panel se quedaba
+        // abierto en todas las capturas siguientes.
+        function cerrar(): void { root.panelOpen = false }
 
         // Para poder PREGUNTARLE a la barra en qué estado está.
         //

@@ -7,13 +7,13 @@
 **Un sistema operativo hecho desde cero.**
 
 Kernel Linux propio · init con runit · gestor de paquetes propio · shell propia
-· escritorio propio · **cero systemd**
+· escritorio propio · español e inglés · **cero systemd**
 
 [![Release](https://img.shields.io/github/v/release/M1KE-27/m1keos?include_prereleases&label=versi%C3%B3n&color=00d4ff)](https://github.com/M1KE-27/m1keos/releases/latest)
 [![Licencia](https://img.shields.io/badge/licencia-MIT-00d4ff)](LICENSE)
 [![Kernel](https://img.shields.io/badge/kernel-7.2-00d4ff)](docs/kernel.md)
 [![Plataforma](https://img.shields.io/badge/x86__64-UEFI-00d4ff)](docs/boot.md)
-[![Pruebas](https://img.shields.io/badge/pruebas-39%20%2B%2011%20en%20verde-4cc38a)](#comprobar-que-funciona)
+[![Pruebas](https://img.shields.io/badge/pruebas-47%20%2B%2011%20%2B%2016%20en%20verde-4cc38a)](#comprobar-que-funciona)
 
 [**Web**](https://m1keos.duckdns.org/) ·
 [Descargar](https://m1keos.duckdns.org/descargas.html) ·
@@ -38,7 +38,8 @@ Kernel Linux propio · init con runit · gestor de paquetes propio · shell prop
 | Memoria | **324 MB** con el escritorio en pie |
 | Compilar el sistema entero | **25 s** |
 | systemd | **0 líneas** |
-| Imagen | **479 MB** |
+| Idiomas | **español e inglés**, el sistema entero |
+| Imagen | **489 MB** |
 
 ![El escritorio de MIKE OS](build/web/capturas/escritorio.png)
 
@@ -163,8 +164,9 @@ desarrollo dentro de una imagen distribuida es acceso root para quien la mire.
 ## Comprobar que funciona
 
 ```sh
-./tests/humo.sh                    # 39 comprobaciones sobre una máquina arrancada
+./tests/humo.sh                    # 47 comprobaciones sobre una máquina arrancada
 ./tests/raton-real.sh              # 11 comprobaciones con pulsaciones arrastradas
+./tests/traducciones.sh            # 16 comprobaciones, sin arrancar nada
 ./tests/probar-arranque-uefi.sh    # arranca con firmware UEFI, sin trampas
 ./tests/arrancar-como-ventoy.sh    # la ISO como ARCHIVO dentro de una partición
 ./tests/actualizacion.sh           # editar código -> paquete -> mpm upgrade
@@ -192,6 +194,11 @@ pena explicar, porque explican también cómo se trabaja aquí:
   partición exFAT**, que es como la lleva mucha gente en el USB. Con la ISO
   grabada en crudo todo pasaba; en un pendrive con Ventoy el arranque llegaba
   al final y moría sin encontrar el sistema.
+
+- **`traducciones.sh`** compara, archivo por archivo, lo que se **pinta**
+  contra lo que está **traducido**, sin arrancar nada. Una traducción rota no
+  da ningún error: sale una frase en español en mitad de una ventana en inglés,
+  y sólo se nota si alguien que habla ese idioma mira esa pantalla concreta.
 
 ## Actualizaciones
 

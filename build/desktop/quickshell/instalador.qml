@@ -661,7 +661,17 @@ ShellRoot {
     // se encontraba discoSel a null y salía sin hacer nada. discoSel sólo
     // cambia cuando la selección ya se puede resolver.
     onDiscoSelChanged: refrescarDisco()
-    onIdiomaChanged: refrescarDisco()
+    onIdiomaChanged: {
+        refrescarDisco()
+        // Y el resto del escritorio con él: la barra y la pantalla de
+        // bienvenida están detrás de esta ventana, y que el instalador esté
+        // en inglés mientras el reloj y el Centro de Control siguen en
+        // español es peor que no ofrecer el idioma.
+        ponerIdioma.command = ["m-idioma", idioma]
+        ponerIdioma.running = true
+    }
+
+    Process { id: ponerIdioma; command: ["m-idioma", "en"] }
     onModoChanged: revisar()
     onParticionObjetivoChanged: revisar()
 
@@ -701,7 +711,11 @@ ShellRoot {
                      "--disco", discoSel.ruta,
                      "--modo", modo,
                      "--fs", fs,
-                     "--equipo", equipo]
+                     "--equipo", equipo,
+                     // La elección de la primera pantalla, para que el
+                     // sistema instalado arranque en el idioma que se pidió
+                     // en vez de en español pasara lo que pasara.
+                     "--idioma", idioma]
         if (modo === "reemplazar" && particionObjetivo !== "")
             orden = orden.concat(["--particion", particionObjetivo])
         orden = orden.concat(["--clave-por-entrada", "--si"])

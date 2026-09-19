@@ -88,12 +88,14 @@ SOLO_LISTAR=0
 MODO_DISCO="borrar"
 PARTICION_OBJETIVO=""
 ARG_DISCO=""; ARG_FS=""; ARG_EQUIPO=""; ARG_TECLADO=""; ARG_ZONA=""
+ARG_IDIOMA=""
 while [ $# -gt 0 ]; do
     case "$1" in
         --disco)   ARG_DISCO="${2:-}"; shift 2 ;;
         --fs)      ARG_FS="${2:-}"; shift 2 ;;
         --equipo)  ARG_EQUIPO="${2:-}"; shift 2 ;;
         --teclado) ARG_TECLADO="${2:-}"; shift 2 ;;
+        --idioma)  ARG_IDIOMA="${2:-}"; shift 2 ;;
         --zona)    ARG_ZONA="${2:-}"; shift 2 ;;
         --clave-por-entrada) CLAVE_ENTRADA=1; shift ;;
         --si|--sin-preguntar) AUTOMATICO=1; shift ;;
@@ -103,7 +105,8 @@ while [ $# -gt 0 ]; do
         --ayuda|-h)
             echo "Uso: m-install [disco]"
             echo "     m-install --disco DISCO [--fs btrfs|ext4] [--equipo NOMBRE]"
-            echo "               [--teclado ES] [--zona ZONA] [--clave-por-entrada] --si"
+            echo "               [--teclado ES] [--zona ZONA] [--idioma es|en]"
+            echo "               [--clave-por-entrada] --si"
             echo "     m-install --listar-discos     una línea por disco utilizable"
             echo
             echo "  --modo borrar       rehace el disco entero (por defecto)"
@@ -214,6 +217,13 @@ if [ "$SOLO_LISTAR" = "1" ]; then
     done
     exit 0
 fi
+
+# El menú del disco, al contrario que el del USB, sale en UN idioma: aquí ya
+# se sabe cuál se pidió en la primera pantalla del instalador. Un menú de
+# arranque bilingüe es ruido permanente cuando la respuesta ya se tiene.
+m_entrada() {  # m_entrada <es> <en>
+    if [ "${ARG_IDIOMA:-es}" = "en" ]; then printf '%s' "$2"; else printf '%s' "$1"; fi
+}
 
 DESTINO="$ARG_DISCO"
 if [ -z "$DESTINO" ]; then
@@ -780,7 +790,8 @@ if [ -f "$GRUB_ORIGEN/grubx64.efi" ]; then
         echo
         # Sin "quiet": cuando algo falla al arrancar, lo que hace falta es ver
         # los mensajes, no una pantalla limpia.
-        echo "menuentry \"MIKE OS (ver mensajes de arranque)\" {"
+        echo "menuentry \"$(m_entrada 'MIKE OS (ver mensajes de arranque)' \
+                              'MIKE OS (show boot messages)')\" {"
         echo "    linux /EFI/mikeos/vmlinuz.efi ${CMDLINE% quiet}"
         [ -f "$MONTAJE/boot/efi/EFI/mikeos/initramfs.cpio.gz" ] \
             && echo "    initrd /EFI/mikeos/initramfs.cpio.gz"
@@ -788,7 +799,8 @@ if [ -f "$GRUB_ORIGEN/grubx64.efi" ]; then
         echo
         # A consola pelada. Es la red de seguridad cuando el escritorio no
         # levanta: sin esto, un fallo en Hyprland deja el equipo inservible.
-        echo "menuentry \"MIKE OS (sólo consola, sin escritorio)\" {"
+        echo "menuentry \"$(m_entrada 'MIKE OS (sólo consola, sin escritorio)' \
+                              'MIKE OS (console only, no desktop)')\" {"
         echo "    linux /EFI/mikeos/vmlinuz.efi ${CMDLINE% quiet} mikeos_gui=0"
         [ -f "$MONTAJE/boot/efi/EFI/mikeos/initramfs.cpio.gz" ] \
             && echo "    initrd /EFI/mikeos/initramfs.cpio.gz"
@@ -868,7 +880,8 @@ if [ -f "$GRUB_ORIGEN/grubx64.efi" ]; then
                     bootmgfw.efi) _nombre="Windows" ;;
                     refind_x64.efi) _nombre="rEFInd" ;;
                     systemd-bootx64.efi) _nombre="systemd-boot" ;;
-                    *) _nombre="Otro sistema ($(basename "$(dirname "$_efi")"))" ;;
+                    *) _nombre="$(m_entrada 'Otro sistema' 'Another system')\
+ ($(basename "$(dirname "$_efi")"))" ;;
                 esac
 
                 echo "menuentry \"$_nombre\" {"
@@ -887,11 +900,12 @@ if [ -f "$GRUB_ORIGEN/grubx64.efi" ]; then
             [ "$_propio" = "si" ] || umount "$_tmp" 2>/dev/null || true
         done
 
-        echo "menuentry \"Configuración de la UEFI\" {"
+        echo "menuentry \"$(m_entrada 'Configuración de la UEFI' \
+                              'UEFI settings')\" {"
         echo "    fwsetup"
         echo "}"
         echo
-        echo "menuentry \"Apagar\" {"
+        echo "menuentry \"$(m_entrada Apagar 'Shut down')\" {"
         echo "    halt"
         echo "}"
     } > "$MONTAJE/boot/efi/EFI/mikeos/grub-disco.cfg"
@@ -941,6 +955,17 @@ UUID_EFI="$(blkid -s UUID -o value "$P1" 2>/dev/null || true)"
     echo "tmpfs  /tmp   tmpfs  defaults,mode=1777  0 0"
 } > "$MONTAJE/etc/fstab"
 
+# El idioma que se eligió en la PRIMERA pantalla del instalador.
+#
+# Hasta ahora esa elección se usaba sólo para los avisos de m-particiones
+# durante la propia instalación y se perdía al terminar: elegías English,
+# arrancabas el sistema recién instalado y estaba entero en español. La
+# pantalla que lo pregunta promete literalmente "You can change this later in
+# the Control Centre", así que además de perderse, mentía dos veces.
+if [ -n "$ARG_IDIOMA" ]; then
+    printf '%s\n' "$ARG_IDIOMA" > "$MONTAJE/etc/mikeos/idioma"
+fi
+
 if [ -f "$MONTAJE/etc/mikeos/system.conf" ]; then
     sed -i "s/^KEYMAP=.*/KEYMAP=\"$TECLADO\"/; s/^TIMEZONE=.*/TIMEZONE=\"$ZONA\"/" \
         "$MONTAJE/etc/mikeos/system.conf" 2>/dev/null || true
@@ -954,8 +979,9 @@ PARTICION_RAIZ="$P2"
 SISTEMA_ARCHIVOS="$FS"
 TECLADO="$TECLADO"
 ZONA_HORARIA="$ZONA"
+IDIOMA="${ARG_IDIOMA:-es}"
 EOF
-ok "fstab, teclado, zona horaria y nombre del equipo"
+ok "fstab, teclado, idioma, zona horaria y nombre del equipo"
 
 # La contraseña, si la puso. -c sha512 NO es opcional: busybox cifra con DES
 # si no se le dice otra cosa, y DES se queda con los ocho primeros caracteres

@@ -22,7 +22,13 @@ DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../build/desktop/quickshell" && pwd)"
         case "$tipo" in
             [a-z]*) continue ;;
         esac
-        if [ "$tipo" = "Paleta" ]; then
+        # Se mira el archivo en vez de llevar la lista escrita aquí. Cuando
+        # sólo había un singleton (Paleta) el nombre estaba puesto a mano, y
+        # al añadir el segundo (Idioma) salía declarado como componente
+        # normal: QML lo instancia entonces por cada uso, cada copia lanza su
+        # propio "m-idioma", y el valor deja de ser compartido --- que es lo
+        # único que un singleton tiene que garantizar.
+        if head -1 "$f" | grep -q "^pragma Singleton"; then
             echo "singleton $tipo 1.0 $tipo.qml"
         else
             echo "$tipo 1.0 $tipo.qml"

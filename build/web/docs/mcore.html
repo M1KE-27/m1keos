@@ -44,7 +44,7 @@ try{var _t=localStorage.getItem("mikeos-tema");
 <div class="menu" id="menu-principal" hidden>
   <div class="menu-lista">
     <a class="" href="../en/index.html">Home</a>
-    <a class="" href="../capturas/index.html">Screenshots</a>
+    <a class="" href="../en/screenshots.html">Screenshots</a>
     <a class="aqui" href="../docs/index.html">Docs</a>
     <a class="" href="../wiki/index.html">Wiki</a>
     <a href="https://github.com/M1KE-27/m1keos">Source</a>
@@ -141,6 +141,11 @@ try{var _t=localStorage.getItem("mikeos-tema");
 <td style="text-align: left;">Qué hacer al cerrar y abrir la tapa del portátil.</td>
 <td style="text-align: left;"><code>m-tapa cerrar</code></td>
 </tr>
+<tr>
+<td style="text-align: left;"><code>m-idioma</code></td>
+<td style="text-align: left;">En qué idioma habla el sistema (<code>es</code> o <code>en</code>). Lo leen la bienvenida, la barra, el Centro de Control, el bloqueo y <code>m-drivers</code>.</td>
+<td style="text-align: left;"><code>m-idioma en</code></td>
+</tr>
 </tbody>
 </table></div>
 <hr>
@@ -185,6 +190,83 @@ despierta cuando en realidad se va a apagar con el trabajo dentro.</p>
 <p>Qué hace la tapa se guarda en <code>/etc/mikeos/tapa</code> (<code>pantalla</code>, <code>suspender</code>,
 <code>hibernar</code>, <code>nada</code>) y se elige en el Centro de Control. La sesión se bloquea
 siempre al cerrar, sea cual sea la opción.</p>
+<hr>
+<h2 id="idioma-m-idioma">Idioma — <code>m-idioma</code></h2>
+<p>Desde la primera versión, el instalador abría preguntando <em>"Choose your
+language"</em>, ofrecía English y Español, y debajo prometía que se podía cambiar
+luego en el Centro de Control. Las dos cosas eran mentira: la elección se usaba
+sólo para los avisos del particionado durante la instalación y no se guardaba
+en ninguna parte, y en el Centro de Control no había dónde cambiarla. Elegías
+English, instalabas, arrancabas, y tenías un sistema entero en español.</p>
+<p><code>m-idioma</code> es el único sitio donde vive la respuesta:</p>
+<pre><code class="language-sh">m-idioma            # dice el idioma actual: &quot;es&quot; o &quot;en&quot;
+m-idioma en         # lo cambia (escribe en /etc, re-entra por m-sudo)
+m-idioma locale     # el locale correspondiente, para LANG
+m-idioma idiomas    # la lista, para no escribirla a mano en un menú
+</code></pre>
+<p>El orden en que se resuelve importa:</p>
+<ol>
+<li><code>$MIKEOS_LANG</code>, si trae un valor válido. Va primero para poder sacar una
+   captura en inglés sin tocar la configuración del equipo — que es como se
+   sacan las de la web inglesa.</li>
+<li><code>/etc/mikeos/idioma</code>, que es donde vive de verdad. Está en <code>/etc</code> y no en el
+   <code>$HOME</code> de nadie por lo mismo que la preferencia de energía: lo escribe
+   quien usa el escritorio, pero también lo leen procesos que corren como root.</li>
+<li>Español, que es el valor por defecto — no como opinión, sino porque es el
+   único con el que no falta ninguna traducción.</li>
+</ol>
+<h3 id="donde-se-traduce-cada-cosa">Dónde se traduce cada cosa</h3>
+<div class="tabla-ancha"><table>
+<thead>
+<tr>
+<th style="text-align: left;">Programa</th>
+<th style="text-align: left;">Dónde está el diccionario</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">Barra, Centro de Control, bloqueo, fondos</td>
+<td style="text-align: left;"><code>quickshell/Idioma.qml</code> (<em>singleton</em>)</td>
+</tr>
+<tr>
+<td style="text-align: left;">Pantalla de bienvenida</td>
+<td style="text-align: left;">tabla <code>TRADUCCIONES</code> en <code>m-welcome.c</code></td>
+</tr>
+<tr>
+<td style="text-align: left;">Informe de hardware</td>
+<td style="text-align: left;">función <code>t()</code> en <code>m-drivers</code></td>
+</tr>
+<tr>
+<td style="text-align: left;">Instalador</td>
+<td style="text-align: left;">sus dos diccionarios propios, que ya existían</td>
+</tr>
+</tbody>
+</table></div>
+<p>Sin gettext, y a propósito: son dos idiomas: un catálogo binario, su compilador
+y un <code>/usr/share/locale</code> es más infraestructura de la que paga hoy. La <strong>clave
+del diccionario es el texto en español</strong> — el que ya estaba escrito — y no un
+identificador, así que cada diccionario se lee como una lista de equivalencias
+en vez de obligar a saltar a otro archivo para saber qué dice cada cadena.</p>
+<p>El diccionario del escritorio es un <em>singleton</em> y no una propiedad de la barra
+porque la pantalla de bloqueo es <strong>otro programa</strong>: Quickshell la carga aparte
+y no ve las propiedades de la barra. Con el diccionario dentro de <code>shell.qml</code>,
+el Centro de Control se traducía y el bloqueo — que es justo la pantalla que ve
+alguien que todavía no ha entrado — se quedaba en español.</p>
+<h3 id="lo-que-no-se-traduce">Lo que NO se traduce</h3>
+<p>Los <strong>estados</strong> que publica <code>m-drivers</code> (<code>ok</code>, <code>sin-driver</code>, <code>sin-firmware</code>,
+<code>apagado</code>, <code>ausente</code>, <code>mejorable</code>) son identificadores, no texto para leer:
+<code>m-welcome.c</code> y el Centro de Control los comparan para decidir qué icono
+pintar. Traducirlos rompería a los dos sin un solo error visible.</p>
+<h3 id="la-prueba">La prueba</h3>
+<p><code>tests/traducciones.sh</code> compara, archivo por archivo, lo que se <strong>pinta</strong>
+contra lo que está <strong>traducido</strong>. Hace falta porque una traducción se rompe en
+silencio: nadie ve un error, simplemente una frase sale en español en mitad de
+una ventana en inglés, y sólo se nota si alguien que habla inglés mira esa
+pantalla concreta.</p>
+<p>Lo que se decide dejar igual — nombres propios, siglas, nombres de teclas — va
+en el diccionario con su traducción idéntica, para que la prueba distinga
+<em>"decidido que se queda igual"</em> de <em>"se olvidó traducirlo"</em>. Esa diferencia no
+se ve en pantalla.</p>
 <hr>
 <h2 id="controladores-m-drivers">Controladores — <code>m-drivers</code></h2>
 <p>Recorre PCI y USB leyendo los identificadores que publica el propio hardware, y
@@ -234,8 +316,8 @@ decir cosas distintas:</p>
 línea que empezara por <code>Recomendado:</code>. Cualquier cambio de formato la dejaba
 mostrando datos vacíos o viejos sin un solo error.</p></article></main></div>
 <footer><div class="cont">
-MIKE OS 0.6.0, MIT licence. Served from a mini PC at home.
-Updated on September 14, 2026.
+MIKE OS 0.7.0, MIT licence. Served from a mini PC at home.
+Updated on September 19, 2026.
 <a href="https://github.com/M1KE-27/m1keos">Source on GitHub</a>
 </div></footer>
 <script>

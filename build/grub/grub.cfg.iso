@@ -1,0 +1,142 @@
+# Menú del USB/ISO de MIKE OS.
+#
+# Con gestor de arranque, la línea de órdenes se pasa aquí de forma explícita.
+# Sin él, el kernel sólo podía usar la que lleva compilada dentro, y eso hacía
+# imposible tener dos opciones distintas en el mismo medio.
+
+# Dónde está el medio de verdad.
+#
+# grub-mkstandalone mete esta configuración dentro de un disco en memoria, y
+# GRUB arranca con la raíz apuntando ahí. Sin esta búsqueda, cada "linux
+# /EFI/..." se resolvía contra ese disco en memoria y fallaba con
+#   fs/archelp.c:grub_archelp_open: file `/EFI/mikeos/vmlinuz.efi' not found
+# aunque el archivo estuviera perfectamente en el USB.
+#
+# "search --file" recorre los dispositivos hasta encontrar el que lo tiene, así
+# que funciona igual si el medio es la ISO, la partición FAT o un USB grabado.
+search --no-floppy --file /EFI/mikeos/vmlinuz.efi --set=root
+
+set default=0
+set timeout=8
+set timeout_style=menu
+
+# Los colores del sistema, para que el arranque no parezca de otro sitio.
+set menu_color_normal=light-gray/black
+set menu_color_highlight=black/cyan
+set color_normal=light-gray/black
+
+insmod all_video
+insmod gfxterm
+insmod serial
+set gfxmode=auto
+
+# El tema propio. Si por lo que sea no se puede cargar, GRUB sigue con su menú
+# de texto: un arranque feo funciona, y uno bonito que no arranca no sirve.
+insmod gfxmenu
+if [ -d ($root)/boot/grub/tema ]; then
+    set theme=($root)/boot/grub/tema/theme.txt
+    export theme
+fi
+
+# La pantalla Y el puerto serie a la vez. El serie no es un adorno: es lo que
+# permite que una prueba automática compruebe que el menú salió, sin que haya
+# una persona mirando. Sin él, un GRUB que no arranca y uno que arranca bien
+# se ven exactamente igual desde fuera: nada.
+serial --unit=0 --speed=115200
+terminal_output gfxterm serial
+terminal_input  console serial
+
+# Ajustes que dependen del equipo concreto
+# ----------------------------------------
+# En la Surface Laptop 4 con AMD, la unidad de gestión de memoria de entrada y
+# salida (IOMMU) bloquea al procesador de seguridad de la gráfica mientras
+# carga su firmware. El resultado es que amdgpu no arranca y el equipo se
+# queda con el framebuffer de la firmware: consola sí, escritorio no. Está
+# documentado por el proyecto linux-surface, que es quien mantiene este
+# hardware:
+#
+#   https://github.com/linux-surface/linux-surface/wiki/Surface-Laptop-4
+#
+# Se apaga SÓLO en equipos Surface, leyendo el fabricante de la tabla SMBIOS
+# antes de arrancar. Apagar la IOMMU en todas partes sería quitarle a cualquier
+# otro equipo una protección real contra accesos directos a memoria, para
+# arreglar un fallo que sólo tiene este.
+set ajustes_equipo=""
+if smbios --type 1 --get-string 4 --set fabricante; then
+    if regexp -- "Microsoft" "$fabricante"; then
+        set ajustes_equipo="amd_iommu=off iommu=off"
+    fi
+fi
+
+# En dos idiomas, y aquí no hay otra forma.
+#
+# GRUB no sabe en qué idioma habla quien acaba de meter el USB: la elección
+# vive en /etc/mikeos/idioma, dentro de un sistema que todavía no se ha
+# montado. Traducirlo de verdad pediría los catálogos de gettext de GRUB
+# dentro de la imagen para un menú de tres líneas.
+#
+# El separador es un guión ASCII y no un "·". La fuente que carga GRUB antes
+# de que exista ningún sistema no tiene ese carácter, así que salía un cuadro
+# vacío en mitad de cada entrada: "Try MIKE OS ▯ Probar MIKE OS sin instalar".
+# Aquí no vale suponer que hay UTF-8; hay que verlo en pantalla.
+#
+# Así que la misma ISO lo dice en los dos. El inglés va primero porque es el
+# idioma en el que arranca el instalador, y porque un USB se pasa de mano en
+# mano sin saber a dónde va. El menú del sistema YA INSTALADO no tiene este
+# problema y sale en un solo idioma: ahí sí se sabe cuál se eligió.
+#
+# Tres entradas y ni una más.
+#
+# Antes había siete: probar, instalar, modo seguro, sólo terminal, rescate, una
+# en blanco y apagar. Un menú de arranque no es un panel de opciones: es lo
+# primero que ve alguien que acaba de meter el USB, y cada entrada de más es
+# una decisión que no sabe tomar. "Modo seguro", "sólo terminal" y "rescate"
+# son cosas que sólo entiende quien ya sabe lo que busca, y ese sabe pulsar «e»
+# para editar la línea de arranque y añadir lo que quiera (nomodeset,
+# mikeos_recovery=1, o quitar mikeos_gui=1 para quedarse en consola).
+
+menuentry "Try MIKE OS  -  Probar MIKE OS sin instalar" --class mikeos {
+    # Se dice lo que va a pasar ANTES de que la pantalla se quede quieta.
+    #
+    # Antes esto era un "Cargando MIKE OS..." y ya: entre que GRUB entrega el
+    # control y el kernel enciende su propia consola pasan unos segundos en los
+    # que no se mueve nada, y desde fuera es indistinguible de un cuelgue.
+    echo ""
+    echo "  MIKE OS is loading into memory. You will see the boot messages as"
+    echo "  soon as the kernel takes the screen; if something fails, it shows there."
+    echo "  MIKE OS se va a cargar en memoria. Verás los mensajes del arranque"
+    echo "  en cuanto el kernel tome la pantalla; si algo falla, saldrá ahí."
+    echo ""
+    echo "  Loading the kernel  -  Cargando el kernel..."
+    # Sin "quiet". En una versión alpha que se arranca en equipos que nadie ha
+    # probado, esconder los mensajes del arranque es esconder justo lo que hace
+    # falta cuando algo falla: con "quiet" un fallo al encontrar el USB se veía
+    # como una pantalla negra durante horas, sin una sola pista.
+    linux  /EFI/mikeos/vmlinuz.efi root=vivo rw mikeos_gui=1 $ajustes_equipo
+    echo "  Loading the boot system (a few seconds)  -  Cargando el sistema de arranque..."
+    initrd /EFI/mikeos/initramfs.cpio.gz
+}
+
+# Instalar, con su propia entrada.
+#
+# Antes no estaba y la única forma de llegar al instalador era arrancar "probar
+# sin instalar", esperar al escritorio y encontrar el botón en la ventana de
+# bienvenida. Eso hay que adivinarlo: quien viene a instalar mira el menú de
+# arranque y, si no ve "instalar", da por hecho que no se puede.
+#
+# Por dentro es el mismo arranque en vivo (no hay otra forma: el instalador
+# necesita el sistema en marcha para copiarlo). Lo único que cambia es que al
+# llegar al escritorio abre el instalador solo, sin que haya que buscarlo.
+menuentry "Install MIKE OS  -  Instalar MIKE OS en este equipo" --class mikeos {
+    echo ""
+    echo "  MIKE OS will load into memory and open the installer by itself."
+    echo "  MIKE OS se cargará en memoria y abrirá el instalador solo."
+    echo ""
+    echo "  Loading the kernel  -  Cargando el kernel..."
+    linux  /EFI/mikeos/vmlinuz.efi root=vivo rw mikeos_gui=1 mikeos_instalar=1 $ajustes_equipo
+    initrd /EFI/mikeos/initramfs.cpio.gz
+}
+
+menuentry "Shut down  -  Salir y apagar" {
+    halt
+}

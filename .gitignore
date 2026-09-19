@@ -17,6 +17,13 @@ kernel/
 *.iso
 *.mpk
 
+# ...pero "*.iso" también estaba tapando el menú de arranque del USB, que se
+# llama grub.cfg.iso y es FUENTE, no un producto de la compilación. Ha estado
+# fuera del repositorio desde el principio: el menú que ve todo el que arranca
+# MIKE OS no tenía copia ni historia, y se habría perdido entero con un
+# "git clean".
+!build/grub/grub.cfg.iso
+
 # ── Terceros: se descargan y compilan, no son fuente del proyecto ────────────
 build/admin/
 build/bash-*/
@@ -64,7 +71,20 @@ servidor/_build/
 servidor/deps/
 
 # La web es salida generada: se reconstruye con scripts/generar-web.sh.
-build/web/
+# El asterisco es necesario: con "build/web/" a secas, git excluye la CARPETA
+# y ni siquiera entra a mirar, así que ninguna regla de dentro puede
+# rescatar nada ("use -f if you really want to add them"). Excluyendo su
+# contenido, en cambio, sí se puede hacer una excepción.
+build/web/*
+
+# Las capturas NO. Salen de una máquina arrancada con scripts/capturas.sh, no
+# del generador, así que nadie las puede rehacer sin levantar una VM entera y
+# volver a pulsar por dentro. Estaban dentro de "build/web/" por vivir en la
+# misma carpeta, y el resultado era que seis de ellas estaban en el
+# repositorio (de antes de esa regla) y el resto --- el instalador entero, el
+# menú de arranque, la pantalla de bloqueo --- existían sólo en este disco.
+!build/web/capturas/
+!build/web/capturas/**
 
 # Dónde publica cada uno: es asunto suyo, no del repositorio.
 .publicar.conf

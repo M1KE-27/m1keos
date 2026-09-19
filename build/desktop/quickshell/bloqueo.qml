@@ -297,7 +297,7 @@ ShellRoot {
                                 width: parent.width
                                 horizontalAlignment: Text.AlignHCenter
                                 wrapMode: Text.WordWrap
-                                text: "Esta cuenta no tiene contraseña, así que no hay nada que comprobar."
+                                text: Idioma.t("Esta cuenta no tiene contraseña, así que no hay nada que comprobar.")
                                 color: raiz.textoTenue
                                 font.pixelSize: 13
                             }
@@ -308,7 +308,7 @@ ShellRoot {
                                        ? Qt.lighter(raiz.acento, 1.1) : raiz.acento
                                 Text {
                                     anchors.centerIn: parent
-                                    text: "Desbloquear"
+                                    text: Idioma.t("Desbloquear")
                                     color: "#04121a"
                                     font.pixelSize: 13
                                     font.bold: true
@@ -323,7 +323,7 @@ ShellRoot {
                                 width: parent.width
                                 horizontalAlignment: Text.AlignHCenter
                                 wrapMode: Text.WordWrap
-                                text: "Pulsa Intro para abrir. Ponle una contraseña con «m-clave poner» y el bloqueo empezará a servir de algo."
+                                text: Idioma.t("Pulsa Intro para abrir. Ponle una contraseña con «m-clave poner» y el bloqueo empezará a servir de algo.")
                                 color: Qt.rgba(raiz.textoTenue.r, raiz.textoTenue.g,
                                                raiz.textoTenue.b, 0.7)
                                 font.pixelSize: 11
@@ -404,7 +404,7 @@ ShellRoot {
                                     anchors.leftMargin: 22
                                     anchors.verticalCenter: parent.verticalCenter
                                     visible: raiz.clave.length === 0 && !raiz.comprobando
-                                    text: "Contraseña"
+                                    text: Idioma.t("Contraseña")
                                     color: Qt.rgba(raiz.textoTenue.r, raiz.textoTenue.g,
                                                    raiz.textoTenue.b, 0.8)
                                     font.pixelSize: 15
@@ -496,7 +496,7 @@ ShellRoot {
                                 font.pixelSize: 13
                             }
                             Text {
-                                text: "Bloq Mayús está activado"
+                                text: Idioma.t("Bloq Mayús está activado")
                                 color: "#ffb454"
                                 font.pixelSize: 13
                             }
@@ -507,7 +507,7 @@ ShellRoot {
                         Text {
                             visible: raiz.distribucion !== "" && !raiz.sinClave
                             anchors.horizontalCenter: parent.horizontalCenter
-                            text: "Teclado: " + raiz.distribucion
+                            text: Idioma.t("Teclado: ") + raiz.distribucion
                             color: Qt.rgba(raiz.textoTenue.r, raiz.textoTenue.g,
                                            raiz.textoTenue.b, 0.75)
                             font.pixelSize: 12
@@ -521,7 +521,7 @@ ShellRoot {
                 anchors.bottom: parent.bottom
                 anchors.horizontalCenter: parent.horizontalCenter
                 anchors.bottomMargin: 26
-                text: "MIKE OS"
+                text: Idioma.t("MIKE OS")
                 color: Qt.rgba(raiz.textoTenue.r, raiz.textoTenue.g,
                                raiz.textoTenue.b, 0.45)
                 font.pixelSize: 11

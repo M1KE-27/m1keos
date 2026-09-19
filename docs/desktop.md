@@ -90,3 +90,41 @@ Para probar la aceleración VirtIO-GPU y la ventana gráfica de MIKE OS:
 ```bash
 ./scripts/run-qemu.sh --gui
 ```
+
+---
+
+## 6. Reglas de ventana de Hyprland
+
+Hyprland **rechaza una regla mal escrita y sigue arrancando**. Lo dice una vez
+en su registro, que nadie lee, y nunca más: en pantalla, una regla inválida y
+una regla que no hace falta se ven exactamente igual.
+
+Dos trampas, las dos encontradas a la vez y las dos con meses de antigüedad:
+
+- **`windowrulev2` ya no existe.** Hyprland 0.56 lo eliminó; todo es
+  `windowrule` con `match:`. Las líneas que quedaron escritas con la sintaxis
+  vieja no dan error al arrancar: simplemente no están.
+- **Las reglas booleanas necesitan un valor.** `float` se rechaza con
+  *"invalid field float: missing a value"*; lo correcto es `float true`. Lo
+  mismo con `center`.
+
+Juntas produjeron esto: la pantalla de bienvenida tenía **dos** juegos de
+reglas, en dos sitios del mismo archivo, para flotarla y centrarla — y no
+funcionaba ninguno. Salía tileada a pantalla completa, con el contenido en la
+mitad de arriba y un vacío enorme debajo, durante meses. Es la primera pantalla
+del sistema y la foto de portada de la web. `m-welcome.c` tenía el arreglo
+puesto y comentado; el compositor lo deshacía desde otro archivo.
+
+`tests/humo.sh` ahora le pasa a Hyprland **cada `windowrule` del archivo** y
+comprueba que las acepte todas, y además que la bienvenida acabe con
+`floating: 1`. Que una regla se acepte no garantiza que gane: cuando había dos,
+ganaba la equivocada.
+
+Para comprobar una regla a mano, contra un Hyprland en marcha:
+
+```sh
+hyprctl keyword windowrule "match:class ^(m-welcome)$, float true"
+# "ok" o el motivo del rechazo
+hyprctl clients | grep -B7 'class: m-welcome' | grep -E 'at:|size:|floating:'
+```
+

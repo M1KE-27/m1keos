@@ -88,7 +88,7 @@ PanelWindow {
                 spacing: 10
 
                 Text {
-                    text: "Fondos de pantalla"
+                    text: Idioma.t("Fondos de pantalla")
                     color: Paleta.texto; font.pixelSize: 17; font.bold: true
                 }
 
@@ -114,7 +114,7 @@ PanelWindow {
 
                         Text {
                             anchors.verticalCenter: parent.verticalCenter
-                            text: "Buscar en Wallhaven: montañas, espacio, minimal..."
+                            text: Idioma.t("Buscar en Wallhaven: montañas, espacio, minimal...")
                             color: Paleta.textoTenue
                             font.pixelSize: 12
                             visible: campo.text.length === 0 && !campo.activeFocus
@@ -123,11 +123,11 @@ PanelWindow {
                 }
 
                 CtlButton {
-                    text: "Buscar"; small: true
+                    text: Idioma.t("Buscar"); small: true
                     onClicked: ventanaFondos.cargar(campo.text.trim(), 1, false)
                 }
                 CtlButton {
-                    text: "Cerrar"; small: true
+                    text: Idioma.t("Cerrar"); small: true
                     onClicked: ventanaFondos.abierto = false
                 }
             }
@@ -188,7 +188,7 @@ PanelWindow {
                             anchors.left: parent.left
                             anchors.bottom: parent.bottom
                             anchors.margins: 10
-                            text: "El de MIKE OS"
+                            text: Idioma.t("El de MIKE OS")
                             color: Paleta.texto
                             font.pixelSize: 12
                             font.bold: true
@@ -308,7 +308,7 @@ PanelWindow {
                     Layout.fillWidth: true
                 }
                 CtlButton {
-                    text: "Ver más"; small: true
+                    text: Idioma.t("Ver más"); small: true
                     onClicked: ventanaFondos.cargar(ventanaFondos.consulta,
                                                     ventanaFondos.pagina + 1, true)
                 }

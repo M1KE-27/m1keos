@@ -80,7 +80,7 @@ Item {
                     color: Paleta.aviso
                 }
                 Text {
-                    text: "Sin conexión a internet"
+                    text: Idioma.t("Sin conexión a internet")
                     color: Paleta.texto
                     font.pixelSize: 14
                     font.bold: true
@@ -102,7 +102,7 @@ Item {
                 Layout.fillWidth: true
             }
             CtlButton {
-                text: "Reintentar"
+                text: Idioma.t("Reintentar")
                 Layout.topMargin: 6
                 onClicked: {
                     raiz.comprobar()

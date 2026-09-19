@@ -44,7 +44,7 @@ try{var _t=localStorage.getItem("mikeos-tema");
 <div class="menu" id="menu-principal" hidden>
   <div class="menu-lista">
     <a class="" href="../en/index.html">Home</a>
-    <a class="" href="../capturas/index.html">Screenshots</a>
+    <a class="" href="../en/screenshots.html">Screenshots</a>
     <a class="aqui" href="../docs/index.html">Docs</a>
     <a class="" href="../wiki/index.html">Wiki</a>
     <a href="https://github.com/M1KE-27/m1keos">Source</a>
@@ -183,10 +183,39 @@ Desde MKShell usa <code>m-desktop start</code>; para cambiar el comportamiento p
 usa <code>m-desktop enable</code> o <code>m-desktop disable</code>.</p>
 <p>Para probar la aceleración VirtIO-GPU y la ventana gráfica de MIKE OS:</p>
 <pre><code class="language-bash">./scripts/run-qemu.sh --gui
+</code></pre>
+<hr>
+<h2 id="6-reglas-de-ventana-de-hyprland">6. Reglas de ventana de Hyprland</h2>
+<p>Hyprland <strong>rechaza una regla mal escrita y sigue arrancando</strong>. Lo dice una vez
+en su registro, que nadie lee, y nunca más: en pantalla, una regla inválida y
+una regla que no hace falta se ven exactamente igual.</p>
+<p>Dos trampas, las dos encontradas a la vez y las dos con meses de antigüedad:</p>
+<ul>
+<li><strong><code>windowrulev2</code> ya no existe.</strong> Hyprland 0.56 lo eliminó; todo es
+  <code>windowrule</code> con <code>match:</code>. Las líneas que quedaron escritas con la sintaxis
+  vieja no dan error al arrancar: simplemente no están.</li>
+<li><strong>Las reglas booleanas necesitan un valor.</strong> <code>float</code> se rechaza con
+  <em>"invalid field float: missing a value"</em>; lo correcto es <code>float true</code>. Lo
+  mismo con <code>center</code>.</li>
+</ul>
+<p>Juntas produjeron esto: la pantalla de bienvenida tenía <strong>dos</strong> juegos de
+reglas, en dos sitios del mismo archivo, para flotarla y centrarla — y no
+funcionaba ninguno. Salía tileada a pantalla completa, con el contenido en la
+mitad de arriba y un vacío enorme debajo, durante meses. Es la primera pantalla
+del sistema y la foto de portada de la web. <code>m-welcome.c</code> tenía el arreglo
+puesto y comentado; el compositor lo deshacía desde otro archivo.</p>
+<p><code>tests/humo.sh</code> ahora le pasa a Hyprland <strong>cada <code>windowrule</code> del archivo</strong> y
+comprueba que las acepte todas, y además que la bienvenida acabe con
+<code>floating: 1</code>. Que una regla se acepte no garantiza que gane: cuando había dos,
+ganaba la equivocada.</p>
+<p>Para comprobar una regla a mano, contra un Hyprland en marcha:</p>
+<pre><code class="language-sh">hyprctl keyword windowrule &quot;match:class ^(m-welcome)$, float true&quot;
+# &quot;ok&quot; o el motivo del rechazo
+hyprctl clients | grep -B7 'class: m-welcome' | grep -E 'at:|size:|floating:'
 </code></pre></article></main></div>
 <footer><div class="cont">
-MIKE OS 0.6.0, MIT licence. Served from a mini PC at home.
-Updated on September 14, 2026.
+MIKE OS 0.7.0, MIT licence. Served from a mini PC at home.
+Updated on September 19, 2026.
 <a href="https://github.com/M1KE-27/m1keos">Source on GitHub</a>
 </div></footer>
 <script>

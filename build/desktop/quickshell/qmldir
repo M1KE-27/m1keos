@@ -8,6 +8,7 @@ Deslizador 1.0 Deslizador.qml
 Etiqueta 1.0 Etiqueta.qml
 Fondos 1.0 Fondos.qml
 Icono 1.0 Icono.qml
+singleton Idioma 1.0 Idioma.qml
 Numero 1.0 Numero.qml
 singleton Paleta 1.0 Paleta.qml
 Pendiente 1.0 Pendiente.qml

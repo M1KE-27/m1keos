@@ -1,0 +1,106 @@
+#!/bin/sh
+# m-idioma - en qué idioma habla el sistema.
+#
+# Por qué hace falta
+# ------------------
+# El instalador pregunta "Choose your language", ofrece English y Español, y
+# debajo pone "You can change this later in the Control Centre". Las dos cosas
+# eran mentira: la elección sólo se usaba para los avisos de m-particiones
+# durante la propia instalación, no se guardaba en ninguna parte, y en el
+# Centro de Control no había ningún sitio donde cambiarla. Elegías English,
+# instalabas, arrancabas, y el sistema entero estaba en español.
+#
+# Esto es el único sitio donde vive la respuesta. Lo leen la pantalla de
+# bienvenida, la barra, el Centro de Control y m-drivers; lo escriben el
+# instalador y el propio Centro de Control.
+#
+#   m-idioma            dice el idioma actual ("es" o "en")
+#   m-idioma es|en      lo cambia
+#   m-idioma locale     dice el locale correspondiente, para LANG
+#
+# Sólo dos idiomas, y a propósito. Con dos, un diccionario en cada programa se
+# lee de un vistazo y se ve lo que falta por traducir. Con diez haría falta
+# gettext, catálogos, y una infraestructura que hoy no paga lo que cuesta.
+set -u
+
+PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
+export PATH
+
+# Vive en /etc por lo mismo que la preferencia de energía: quien lo escribe es
+# la persona que usa el escritorio, pero quien lo lee también son procesos de
+# arranque que corren como root y no tienen $HOME de nadie.
+PREF="/etc/mikeos/idioma"
+
+# El idioma por defecto es el español, y eso no es una opinión sobre qué idioma
+# es mejor: es que hoy TODO el sistema está escrito en español, así que es el
+# único valor con el que no falta ninguna traducción. Cuando el inglés esté
+# igual de completo, el valor por defecto pasa a ser lo que diga $LANG.
+POR_DEFECTO="es"
+
+valido() {
+    case "$1" in es|en) return 0 ;; *) return 1 ;; esac
+}
+
+# El orden importa. La variable de entorno va primero para que se pueda probar
+# una pantalla en inglés sin tocar la configuración del equipo --- que es como
+# se sacan las capturas de la web inglesa.
+actual() {
+    if [ -n "${MIKEOS_LANG:-}" ] && valido "$MIKEOS_LANG"; then
+        printf '%s\n' "$MIKEOS_LANG"
+        return
+    fi
+    if [ -r "$PREF" ]; then
+        # La primera línea que no sea un comentario ni esté vacía. El archivo
+        # lleva encima una explicación de para qué sirve y qué valores acepta:
+        # una configuración que no dice nada de sí misma obliga a leer el
+        # código fuente para cambiar una palabra.
+        _v="$(sed -n 's/[[:space:]]*#.*$//; /^[[:space:]]*$/d; s/[[:space:]]//g; p; q' \
+              "$PREF" 2>/dev/null)"
+        if valido "$_v"; then printf '%s\n' "$_v"; return; fi
+    fi
+    printf '%s\n' "$POR_DEFECTO"
+}
+
+guardar() {
+    mkdir -p "$(dirname "$PREF")" 2>/dev/null || true
+    printf '%s\n' "$1" > "$PREF" 2>/dev/null || return 1
+    return 0
+}
+
+case "${1:-}" in
+    ''|actual|estado)
+        actual
+        ;;
+    locale)
+        # glibc 2.44 trae C.UTF-8 de serie, pero no es lo mismo que un locale
+        # de idioma: sólo garantiza que el texto sea UTF-8. Se devuelve el
+        # locale completo si está generado y C.UTF-8 si no, que es lo que hay
+        # hoy en la imagen.
+        case "$(actual)" in
+            en) _l="en_US.UTF-8" ;;
+            *)  _l="es_ES.UTF-8" ;;
+        esac
+        if [ -d /usr/lib/locale ] && [ -e "/usr/lib/locale/$_l" ]; then
+            printf '%s\n' "$_l"
+        else
+            printf '%s\n' "C.UTF-8"
+        fi
+        ;;
+    es|en)
+        # Escribir en /etc necesita ser root; quien pulsa el botón no lo es.
+        if [ "$(id -u)" != "0" ] && command -v m-sudo >/dev/null 2>&1; then
+            exec m-sudo "$0" "$1"
+        fi
+        guardar "$1" || { echo "No se pudo guardar el idioma en $PREF" >&2; exit 1; }
+        printf '%s\n' "$1"
+        ;;
+    idiomas)
+        # Para que un menú no tenga que llevar la lista escrita a mano.
+        echo "es	Español"
+        echo "en	English"
+        ;;
+    *)
+        echo "Uso: m-idioma [actual|es|en|locale|idiomas]" >&2
+        exit 1
+        ;;
+esac

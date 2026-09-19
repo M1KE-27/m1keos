@@ -1,0 +1,9 @@
+# En qué idioma habla MIKE OS: "es" o "en".
+#
+# Lo escribe el instalador con lo que se eligió en su primera pantalla, y el
+# Centro de Control (Sistema → Idioma) al cambiarlo. Se puede editar a mano:
+# el escritorio lo está vigilando y el cambio se ve sin reiniciar la sesión.
+#
+# Lo leen la pantalla de bienvenida, la barra, el Centro de Control, la
+# pantalla de bloqueo y m-drivers, todos a través de "m-idioma".
+es

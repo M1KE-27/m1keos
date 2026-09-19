@@ -10,6 +10,170 @@
 #include <gtk/gtk.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+
+/* ---- Idioma --------------------------------------------------------------
+ *
+ * El instalador lleva desde el primer día preguntando "Choose your language"
+ * y prometiendo debajo que se puede cambiar luego en el Centro de Control.
+ * Ninguna de las dos cosas era verdad: el sistema instalado salía en español
+ * eligieras lo que eligieras. Esto es la mitad de arreglarlo (la otra mitad
+ * está en shell.qml y en m-idioma).
+ *
+ * Sin gettext y a propósito. Son dos idiomas y un programa de una pantalla:
+ * un catálogo binario, su compilador y un directorio /usr/share/locale es más
+ * infraestructura de la que paga. La clave es el texto en español, que es el
+ * que ya estaba escrito, así que el diccionario se lee como una lista de
+ * equivalencias y no como una lista de identificadores que hay que ir a
+ * buscar a otro archivo.
+ *
+ * Lo que no esté traducido sale en español. Es feo, pero un hueco vacío o un
+ * identificador crudo en mitad de la pantalla es peor, y la prueba
+ * tests/traducciones.sh no deja que eso llegue a una imagen.
+ */
+typedef struct { const char *es; const char *en; } Trad;
+
+static const Trad TRADUCCIONES[] = {
+    { "Abrir terminal",
+      "Open a terminal" },
+    { "Abrir terminal (alternativo)",
+      "Open a terminal (alternative)" },
+    { "Lanzador rápido (fuzzel)",
+      "Quick launcher (fuzzel)" },
+    { "Lanzador alternativo",
+      "Alternative launcher" },
+    { "Fondos de pantalla (Wallhaven, en vivo)",
+      "Wallpapers (Wallhaven, live)" },
+    { "Estado de red",
+      "Network status" },
+    { "Información del sistema",
+      "System information" },
+    { "Cerrar ventana activa",
+      "Close the active window" },
+    { "Pantalla completa",
+      "Fullscreen" },
+    { "Alternar flotante",
+      "Toggle floating" },
+    { "Mover el foco",
+      "Move the focus" },
+    { "Mover / redimensionar (clic der.)",
+      "Move / resize (right click)" },
+    { "Cambiar de workspace",
+      "Switch workspace" },
+    { "Enviar ventana al workspace",
+      "Send the window to a workspace" },
+    { "Ciclar entre workspaces",
+      "Cycle through workspaces" },
+    { "Captura de pantalla",
+      "Screenshot" },
+    { "Subir / bajar volumen",
+      "Volume up / down" },
+    { "Diagnóstico del sistema",
+      "System diagnostics" },
+    { "Lista de servicios",
+      "Service list" },
+    { "Salir de la sesión",
+      "Log out" },
+    { "Buscar y abrir aplicaciones",
+      "Find and open applications" },
+    { "Cerrar la ventana activa",
+      "Close the active window" },
+    { "Cambiar de escritorio",
+      "Switch desktop" },
+    { "SUPER/ALT + arrastrar",
+      "SUPER/ALT + drag" },
+    { "SUPER + rueda del ratón",
+      "SUPER + mouse wheel" },
+    { "Para empezar",
+      "To get started" },
+    { "Aplicaciones",
+      "Applications" },
+    { "Ventanas",
+      "Windows" },
+    { "Sistema",
+      "System" },
+    { "Tu equipo",
+      "Your hardware" },
+    { "Faltan por instalar: %s",
+      "Still to install: %s" },
+    { "No se pudo leer el hardware de este equipo.",
+      "Could not read this machine's hardware." },
+    { "Instalar controladores",
+      "Install drivers" },
+    { "Ver todo",
+      "See everything" },
+    { "Nada pendiente de instalar.",
+      "Nothing left to install." },
+    { "Ver todo el equipo",
+      "See the whole machine" },
+    { "Pulsa Intro para cerrar.",
+      "Press Enter to close." },
+    { "Bienvenido a MIKE OS",
+      "Welcome to MIKE OS" },
+    { "Cinco atajos y ya te manejas.",
+      "Five shortcuts and you can find your way around." },
+    { "Ver todos los atajos",
+      "See every shortcut" },
+    { "Instalar en este equipo",
+      "Install on this machine" },
+    { "Ahora mismo MIKE OS corre en memoria: al apagar no queda nada.\nEl instalador te pregunta disco, sistema de archivos y contraseña\nantes de tocar nada, y avisa de lo que va a borrar.",
+      "Right now MIKE OS is running in memory: nothing is left when you\nshut down. The installer asks you for the disk, the filesystem and\na password before touching anything, and says what it will erase." },
+    { "A tu gusto",
+      "Make it yours" },
+    { "Barra, colores, fondo, teclado y sonido.",
+      "Bar, colours, wallpaper, keyboard and sound." },
+    { "Abrir el Centro de Control",
+      "Open the Control Centre" },
+    { "Esta ventana sólo aparece la primera vez.",
+      "This window only appears the first time." },
+    { "Empezar",
+      "Get started" },
+    { "Esto es una versión de prueba",
+      "This is a trial run" },
+    { "MIKE OS está corriendo entero en la memoria de este equipo.\nTu disco no se ha tocado y no se va a tocar solo.\n\nPuedes abrirlo todo, romper lo que quieras y probar sin miedo:\nal apagar no queda nada y el equipo vuelve a estar como estaba.\nPor lo mismo, lo que hagas aquí tampoco se guarda.\n\nEs una alpha. Hay cosas que fallan y hardware sin probar.\nSi algo se rompe, cuéntalo: para eso está esta versión.",
+      "MIKE OS is running entirely in this machine's memory.\nYour disk has not been touched and will not be touched on its own.\n\nOpen everything, break whatever you like, try it without worrying:\nnothing survives the shutdown and the machine goes back as it was.\nFor the same reason, nothing you do here is saved either.\n\nThis is an alpha. Things fail and there is untested hardware.\nIf something breaks, say so: that is what this version is for." },
+    { "MIKE OS — versión de prueba",
+      "MIKE OS — trial version" },
+    { "Siguiente",
+      "Next" },
+
+    /* No se traducen: son nombres de teclas, nombres propios o palabras que
+     * se escriben igual en los dos idiomas. Están en la lista para que
+     * tests/traducciones.sh distinga "decidido que se queda igual" de "se
+     * olvidó traducirlo", que es la diferencia que no se ve en pantalla. */
+    { "SUPER/ALT + Return",
+      "SUPER/ALT + Return" },
+    { "SUPER/ALT + Space",
+      "SUPER/ALT + Space" },
+    { "Terminal",
+      "Terminal" },
+    { "Workspaces",
+      "Workspaces" },
+    { "Instalar MIKE OS",
+      "Instalar MIKE OS" },
+};
+
+static gboolean en_ingles = FALSE;
+
+static const char *T(const char *es) {
+    if (!en_ingles || !es) return es;
+    for (guint i = 0; i < G_N_ELEMENTS(TRADUCCIONES); i++)
+        if (g_strcmp0(TRADUCCIONES[i].es, es) == 0)
+            return TRADUCCIONES[i].en;
+    return es;
+}
+
+/* En qué idioma hablamos. La variable de entorno manda sobre el archivo para
+ * poder sacar una captura en inglés sin cambiar la configuración del equipo. */
+static void detectar_idioma(void) {
+    const char *env = g_getenv("MIKEOS_LANG");
+    if (env && *env) { en_ingles = (g_strcmp0(env, "en") == 0); return; }
+    char *c = NULL;
+    if (g_file_get_contents("/etc/mikeos/idioma", &c, NULL, NULL)) {
+        en_ingles = g_str_has_prefix(g_strstrip(c), "en");
+        g_free(c);
+    }
+}
 
 static char *flag_path(void) {
     return g_strdup_printf("%s/.config/mike/.welcomed", g_get_home_dir());
@@ -91,7 +255,7 @@ static const Section SECTIONS[] = {
 static GtkWidget *build_section(const Section *sec) {
     GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
 
-    GtkWidget *h = gtk_label_new(sec->title);
+    GtkWidget *h = gtk_label_new(T(sec->title));
     gtk_widget_set_name(h, "sechdr");
     gtk_widget_set_halign(h, GTK_ALIGN_START);
     gtk_box_pack_start(GTK_BOX(box), h, FALSE, FALSE, 2);
@@ -100,11 +264,11 @@ static GtkWidget *build_section(const Section *sec) {
     gtk_grid_set_row_spacing(GTK_GRID(grid), 8);
     gtk_grid_set_column_spacing(GTK_GRID(grid), 14);
     for (guint i = 0; i < sec->count; i++) {
-        GtkWidget *k = gtk_label_new(sec->binds[i].keys);
+        GtkWidget *k = gtk_label_new(T(sec->binds[i].keys));
         gtk_widget_set_name(k, "key");
         gtk_widget_set_halign(k, GTK_ALIGN_START);
         gtk_label_set_line_wrap(GTK_LABEL(k), TRUE);
-        GtkWidget *d = gtk_label_new(sec->binds[i].desc);
+        GtkWidget *d = gtk_label_new(T(sec->binds[i].desc));
         gtk_widget_set_name(d, "desc");
         gtk_widget_set_halign(d, GTK_ALIGN_START);
         gtk_label_set_line_wrap(GTK_LABEL(d), TRUE);
@@ -143,7 +307,7 @@ static char *texto_drivers(void) {
     pclose(p);
     char *resultado = NULL;
     if (faltan->len > 0)
-        resultado = g_strdup_printf("Faltan por instalar: %s", faltan->str);
+        resultado = g_strdup_printf(T("Faltan por instalar: %s"), faltan->str);
     g_string_free(faltan, TRUE);
     return resultado;
 }
@@ -171,14 +335,20 @@ static void on_instalar_drivers(GtkWidget *w, gpointer data) {
      * errores, no una barra opaca. */
     char *argv[] = { (char *)"/usr/bin/m-terminal", (char *)"-e",
                      (char *)"sh", (char *)"-c",
-                     (char *)"m-drivers --instalar; echo; "
-                             "echo 'Pulsa Intro para cerrar.'; read x", NULL };
+                     NULL, NULL };
+    /* La orden se arma aquí porque su último mensaje va en el idioma del
+     * sistema: la terminal se queda abierta esperando y, si el aviso está en
+     * un idioma que no se entiende, parece colgada. */
+    char *orden = g_strdup_printf("m-drivers --instalar; echo; echo '%s'; read x",
+                                  T("Pulsa Intro para cerrar."));
+    argv[4] = orden;
     GPid pid = 0;
     if (g_spawn_async(NULL, argv, NULL,
                       G_SPAWN_DO_NOT_REAP_CHILD | G_SPAWN_SEARCH_PATH,
                       NULL, NULL, &pid, NULL)) {
         g_child_watch_add(pid, drivers_terminados, NULL);
     }
+    g_free(orden);
 }
 
 /* ¿Estamos arrancados desde el USB en vivo, o desde un disco ya instalado?
@@ -227,9 +397,27 @@ static void on_instalar_sistema(GtkWidget *w, gpointer data) {
 /* Abre el Centro de Control. Sustituye al párrafo que explicaba dónde estaba:
  * si hay que explicar con palabras dónde se pulsa algo, es que falta el
  * botón. */
+/* La orden de IPC lleva SIEMPRE la ruta de la configuración.
+ *
+ * "quickshell ipc call ..." a secas busca una configuración llamada "default"
+ * en <XDG_CONFIG_HOME>/quickshell/shell.qml. La de MIKE OS vive en
+ * ~/.config/mike/quickshell/shell.qml y la sesión no exporta XDG_CONFIG_HOME,
+ * así que fallaba con "Could not find default config directory" --- por la
+ * salida de error de un proceso lanzado en segundo plano, o sea: a ningún
+ * sitio. Los dos botones de esta ventana que abren el Centro de Control
+ * llevaban desde que se escribieron sin hacer absolutamente nada al pulsarlos.
+ */
+static char *orden_ipc(const char *llamada) {
+    return g_strdup_printf(
+        "quickshell ipc --path %s/.config/mike/quickshell/shell.qml call %s",
+        g_get_home_dir(), llamada);
+}
+
 static void on_abrir_ajustes(GtkWidget *w, gpointer data) {
     (void)w; (void)data;
-    g_spawn_command_line_async("quickshell ipc call ajustes abrir", NULL);
+    char *orden = orden_ipc("ajustes abrir");
+    g_spawn_command_line_async(orden, NULL);
+    g_free(orden);
 }
 
 /* Lleva al apartado "Controladores" del Centro de Control, que es donde está
@@ -237,7 +425,9 @@ static void on_abrir_ajustes(GtkWidget *w, gpointer data) {
  * Aquí caben unas líneas; allí cabe todo. */
 static void on_ver_controladores(GtkWidget *w, gpointer data) {
     (void)w; (void)data;
-    g_spawn_command_line_async("quickshell ipc call ajustes seccion drivers", NULL);
+    char *orden = orden_ipc("ajustes seccion drivers");
+    g_spawn_command_line_async(orden, NULL);
+    g_free(orden);
 }
 
 static GtkWidget *build_hardware(void) {
@@ -245,7 +435,7 @@ static GtkWidget *build_hardware(void) {
     gtk_widget_set_name(caja, "customizebox");
     gtk_container_set_border_width(GTK_CONTAINER(caja), 16);
 
-    GtkWidget *tit = gtk_label_new("Tu equipo");
+    GtkWidget *tit = gtk_label_new(T("Tu equipo"));
     gtk_widget_set_name(tit, "customizetitle");
     gtk_widget_set_halign(tit, GTK_ALIGN_START);
     gtk_box_pack_start(GTK_BOX(caja), tit, FALSE, FALSE, 0);
@@ -325,7 +515,7 @@ static GtkWidget *build_hardware(void) {
         pclose(p);
     }
     if (detectado->len == 0)
-        g_string_assign(detectado, "No se pudo leer el hardware de este equipo.");
+        g_string_assign(detectado, T("No se pudo leer el hardware de este equipo."));
 
     GtkWidget *lst = gtk_label_new(detectado->str);
     gtk_widget_set_name(lst, "customizetext");
@@ -337,7 +527,7 @@ static GtkWidget *build_hardware(void) {
     if (recomendado->len > 0) {
         /* El botón de abajo dice lo que hace; no hace falta un párrafo que
          * además tranquilice sobre cuándo pulsarlo. */
-        char *txt = g_strdup_printf("Faltan por instalar: %s", recomendado->str);
+        char *txt = g_strdup_printf(T("Faltan por instalar: %s"), recomendado->str);
         GtkWidget *rec = gtk_label_new(txt);
         g_free(txt);
         /* Se guarda para poder rehacerla cuando termine la instalación: antes
@@ -351,19 +541,19 @@ static GtkWidget *build_hardware(void) {
         gtk_box_pack_start(GTK_BOX(caja), rec, FALSE, FALSE, 6);
 
         GtkWidget *fila = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
-        GtkWidget *btn = gtk_button_new_with_label("Instalar controladores");
+        GtkWidget *btn = gtk_button_new_with_label(T("Instalar controladores"));
         gtk_widget_set_name(btn, "gobtn");
         g_signal_connect(btn, "clicked", G_CALLBACK(on_instalar_drivers), NULL);
         gtk_box_pack_start(GTK_BOX(fila), btn, FALSE, FALSE, 0);
 
-        GtkWidget *ver = gtk_button_new_with_label("Ver todo");
+        GtkWidget *ver = gtk_button_new_with_label(T("Ver todo"));
         g_signal_connect(ver, "clicked", G_CALLBACK(on_ver_controladores), NULL);
         gtk_box_pack_start(GTK_BOX(fila), ver, FALSE, FALSE, 0);
 
         gtk_widget_set_halign(fila, GTK_ALIGN_START);
         gtk_box_pack_start(GTK_BOX(caja), fila, FALSE, FALSE, 6);
     } else {
-        GtkWidget *ok = gtk_label_new("Nada pendiente de instalar.");
+        GtkWidget *ok = gtk_label_new(T("Nada pendiente de instalar."));
         gtk_widget_set_name(ok, "customizetext");
         gtk_widget_set_halign(ok, GTK_ALIGN_START);
         gtk_label_set_line_wrap(GTK_LABEL(ok), TRUE);
@@ -372,7 +562,7 @@ static GtkWidget *build_hardware(void) {
 
         /* Aunque no falte nada, el análisis completo sigue teniendo valor:
          * es donde se ve si algo está detectado pero parado. */
-        GtkWidget *ver = gtk_button_new_with_label("Ver todo el equipo");
+        GtkWidget *ver = gtk_button_new_with_label(T("Ver todo el equipo"));
         gtk_widget_set_halign(ver, GTK_ALIGN_START);
         g_signal_connect(ver, "clicked", G_CALLBACK(on_ver_controladores), NULL);
         gtk_box_pack_start(GTK_BOX(caja), ver, FALSE, FALSE, 6);
@@ -391,6 +581,7 @@ int main(int argc, char **argv) {
     }
     g_free(path);
 
+    detectar_idioma();
     gtk_init(&argc, &argv);
 
     GtkCssProvider *css = gtk_css_provider_new();
@@ -444,7 +635,7 @@ int main(int argc, char **argv) {
         GTK_STYLE_PROVIDER(css), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
 
     GtkWidget *win = gtk_window_new(GTK_WINDOW_TOPLEVEL);
-    gtk_window_set_title(GTK_WINDOW(win), "Bienvenido a MIKE OS");
+    gtk_window_set_title(GTK_WINDOW(win), T("Bienvenido a MIKE OS"));
     /* Tamaño relativo a la pantalla. Estaba fijo en 1728x950, que en un
      * portátil de 1366x768 se sale por los cuatro lados y deja el botón de
      * cerrar fuera de la vista. */
@@ -465,10 +656,18 @@ int main(int argc, char **argv) {
                 mon = gdk_display_get_monitor(disp, 0);
             if (mon) gdk_monitor_get_geometry(mon, &pantalla);
         }
-        int an = 880, al = 580;
-        /* En pantallas pequeñas manda la pantalla, no la cifra fija. */
-        if (an > pantalla.width  - 80) an = pantalla.width  - 80;
-        if (al > pantalla.height - 80) al = pantalla.height - 80;
+        /* 760 y no 580: 580 era el alto que se pedía cuando el contenido
+         * podía estirar la ventana por su cuenta. Ahora que el cuerpo va
+         * dentro de una zona desplazable, la ventana hace caso de esta cifra
+         * al pie de la letra --- y con 580 salía un panel con barra de
+         * desplazamiento en una pantalla donde cabía entero. 760 es lo que
+         * mide el contenido con holgura. */
+        int an = 880, al = 760;
+        /* En pantallas pequeñas manda la pantalla, no la cifra fija. Y el
+         * margen de alto es mayor que el de ancho porque arriba está la barra
+         * del sistema, que también ocupa. */
+        if (an > pantalla.width  - 80)  an = pantalla.width  - 80;
+        if (al > pantalla.height - 120) al = pantalla.height - 120;
         gtk_window_set_default_size(GTK_WINDOW(win), an, al);
         gtk_container_set_border_width(GTK_CONTAINER(win), 0);
     }
@@ -506,7 +705,7 @@ int main(int argc, char **argv) {
     gtk_widget_set_halign(title, GTK_ALIGN_START);
     gtk_box_pack_start(GTK_BOX(cabecera), title, FALSE, FALSE, 0);
 
-    GtkWidget *subtitle = gtk_label_new("Cinco atajos y ya te manejas.");
+    GtkWidget *subtitle = gtk_label_new(T("Cinco atajos y ya te manejas."));
     gtk_widget_set_name(subtitle, "subtitle");
     gtk_widget_set_halign(subtitle, GTK_ALIGN_START);
     gtk_box_pack_start(GTK_BOX(cabecera), subtitle, FALSE, FALSE, 0);
@@ -518,7 +717,27 @@ int main(int argc, char **argv) {
     /* ---- Dos columnas del mismo peso --------------------------------- */
     GtkWidget *cuerpo = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 24);
     gtk_container_set_border_width(GTK_CONTAINER(cuerpo), 28);
-    gtk_box_pack_start(GTK_BOX(outer), cuerpo, TRUE, TRUE, 0);
+    /* El cuerpo va dentro de una zona que se puede desplazar, y el pie NO.
+     *
+     * gtk_window_set_default_size() es un TAMAÑO POR DEFECTO, no un máximo:
+     * GTK nunca encoge una ventana por debajo del tamaño natural de su
+     * contenido. Aquí el contenido mide unos 750 px de alto, así que en una
+     * pantalla de 1280x800 --- menos la barra --- la ventana se salía por
+     * abajo y el botón "Siguiente"/"Empezar" quedaba FUERA DE LA PANTALLA.
+     * En el USB en vivo eso es quedarse encallado en la primera pantalla del
+     * sistema, sin nada que pulsar.
+     *
+     * No se vio antes porque la máquina de pruebas corre a 1920x1080, donde
+     * sí cabe de sobra, y porque la pantalla de "versión de prueba" sólo
+     * aparece arrancando en vivo --- justo el camino que no se probaba.
+     *
+     * Con esto la ventana puede encogerse hasta donde haga falta: lo que no
+     * cabe se desplaza, y el pie con el botón se queda siempre visible. */
+    GtkWidget *desplaza_cuerpo = gtk_scrolled_window_new(NULL, NULL);
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(desplaza_cuerpo),
+                                   GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
+    gtk_container_add(GTK_CONTAINER(desplaza_cuerpo), cuerpo);
+    gtk_box_pack_start(GTK_BOX(outer), desplaza_cuerpo, TRUE, TRUE, 0);
 
     GtkWidget *izq = gtk_box_new(GTK_ORIENTATION_VERTICAL, 14);
     GtkWidget *der = gtk_box_new(GTK_ORIENTATION_VERTICAL, 14);
@@ -534,7 +753,7 @@ int main(int argc, char **argv) {
     gtk_box_pack_start(GTK_BOX(izq), tarjeta_atajos, FALSE, FALSE, 0);
     gtk_box_pack_start(GTK_BOX(tarjeta_atajos), build_section(&ESENCIAL), FALSE, FALSE, 0);
 
-    GtkWidget *todos = gtk_expander_new("Ver todos los atajos");
+    GtkWidget *todos = gtk_expander_new(T("Ver todos los atajos"));
     gtk_widget_set_name(todos, "expander");
     GtkWidget *desplaza = gtk_scrolled_window_new(NULL, NULL);
     gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(desplaza),
@@ -560,16 +779,16 @@ int main(int argc, char **argv) {
         GtkWidget *tarjeta_inst = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
         gtk_widget_set_name(tarjeta_inst, "tarjeta");
         gtk_container_set_border_width(GTK_CONTAINER(tarjeta_inst), 18);
-        GtkWidget *t_in = gtk_label_new("Instalar en este equipo");
+        GtkWidget *t_in = gtk_label_new(T("Instalar en este equipo"));
         gtk_widget_set_name(t_in, "tarjetatitulo");
         gtk_widget_set_halign(t_in, GTK_ALIGN_START);
-        GtkWidget *d_in = gtk_label_new(
+        GtkWidget *d_in = gtk_label_new(T(
             "Ahora mismo MIKE OS corre en memoria: al apagar no queda nada.\n"
             "El instalador te pregunta disco, sistema de archivos y contraseña\n"
-            "antes de tocar nada, y avisa de lo que va a borrar.");
+            "antes de tocar nada, y avisa de lo que va a borrar."));
         gtk_widget_set_name(d_in, "customizetext");
         gtk_widget_set_halign(d_in, GTK_ALIGN_START);
-        GtkWidget *b_in = gtk_button_new_with_label("Instalar MIKE OS");
+        GtkWidget *b_in = gtk_button_new_with_label(T("Instalar MIKE OS"));
         gtk_widget_set_name(b_in, "gobtn");
         gtk_widget_set_halign(b_in, GTK_ALIGN_START);
         g_signal_connect(b_in, "clicked", G_CALLBACK(on_instalar_sistema), NULL);
@@ -584,13 +803,13 @@ int main(int argc, char **argv) {
     GtkWidget *tarjeta_ajustes = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
     gtk_widget_set_name(tarjeta_ajustes, "tarjeta");
     gtk_container_set_border_width(GTK_CONTAINER(tarjeta_ajustes), 18);
-    GtkWidget *t_aj = gtk_label_new("A tu gusto");
+    GtkWidget *t_aj = gtk_label_new(T("A tu gusto"));
     gtk_widget_set_name(t_aj, "tarjetatitulo");
     gtk_widget_set_halign(t_aj, GTK_ALIGN_START);
-    GtkWidget *d_aj = gtk_label_new("Barra, colores, fondo, teclado y sonido.");
+    GtkWidget *d_aj = gtk_label_new(T("Barra, colores, fondo, teclado y sonido."));
     gtk_widget_set_name(d_aj, "customizetext");
     gtk_widget_set_halign(d_aj, GTK_ALIGN_START);
-    GtkWidget *b_aj = gtk_button_new_with_label("Abrir el Centro de Control");
+    GtkWidget *b_aj = gtk_button_new_with_label(T("Abrir el Centro de Control"));
     gtk_widget_set_name(b_aj, "botonsec");
     gtk_widget_set_halign(b_aj, GTK_ALIGN_START);
     g_signal_connect(b_aj, "clicked", G_CALLBACK(on_abrir_ajustes), NULL);
@@ -608,12 +827,12 @@ int main(int argc, char **argv) {
     gtk_container_set_border_width(GTK_CONTAINER(pie), 20);
     gtk_box_pack_start(GTK_BOX(outer), pie, FALSE, FALSE, 0);
 
-    GtkWidget *aviso = gtk_label_new("Esta ventana sólo aparece la primera vez.");
+    GtkWidget *aviso = gtk_label_new(T("Esta ventana sólo aparece la primera vez."));
     gtk_widget_set_name(aviso, "customizetext");
     gtk_widget_set_halign(aviso, GTK_ALIGN_START);
     gtk_box_pack_start(GTK_BOX(pie), aviso, TRUE, TRUE, 0);
 
-    GtkWidget *btn = gtk_button_new_with_label("Empezar");
+    GtkWidget *btn = gtk_button_new_with_label(T("Empezar"));
     gtk_widget_set_name(btn, "gobtn");
     g_signal_connect(btn, "clicked", G_CALLBACK(on_close), NULL);
     gtk_box_pack_end(GTK_BOX(pie), btn, FALSE, FALSE, 0);
@@ -628,13 +847,19 @@ int main(int argc, char **argv) {
         gtk_widget_set_halign(centro, GTK_ALIGN_CENTER);
         gtk_widget_set_margin_start(centro, 64);
         gtk_widget_set_margin_end(centro, 64);
-        gtk_box_pack_start(GTK_BOX(prueba), centro, TRUE, TRUE, 0);
+        /* Por lo mismo que arriba: el texto se desplaza si no cabe, pero el
+         * botón "Siguiente" no se va nunca de la pantalla. */
+        GtkWidget *desplaza_prueba = gtk_scrolled_window_new(NULL, NULL);
+        gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(desplaza_prueba),
+                                       GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
+        gtk_container_add(GTK_CONTAINER(desplaza_prueba), centro);
+        gtk_box_pack_start(GTK_BOX(prueba), desplaza_prueba, TRUE, TRUE, 0);
 
-        GtkWidget *t = gtk_label_new("Esto es una versión de prueba");
+        GtkWidget *t = gtk_label_new(T("Esto es una versión de prueba"));
         gtk_widget_set_name(t, "pruebatitulo");
         gtk_box_pack_start(GTK_BOX(centro), t, FALSE, FALSE, 0);
 
-        GtkWidget *d = gtk_label_new(
+        GtkWidget *d = gtk_label_new(T(
             "MIKE OS está corriendo entero en la memoria de este equipo.\n"
             "Tu disco no se ha tocado y no se va a tocar solo.\n"
             "\n"
@@ -643,7 +868,7 @@ int main(int argc, char **argv) {
             "Por lo mismo, lo que hagas aquí tampoco se guarda.\n"
             "\n"
             "Es una alpha. Hay cosas que fallan y hardware sin probar.\n"
-            "Si algo se rompe, cuéntalo: para eso está esta versión.");
+            "Si algo se rompe, cuéntalo: para eso está esta versión."));
         gtk_label_set_justify(GTK_LABEL(d), GTK_JUSTIFY_CENTER);
         gtk_widget_set_name(d, "pruebatexto");
         gtk_box_pack_start(GTK_BOX(centro), d, FALSE, FALSE, 0);
@@ -652,12 +877,12 @@ int main(int argc, char **argv) {
         gtk_widget_set_name(pie2, "pie");
         gtk_box_pack_start(GTK_BOX(prueba), pie2, FALSE, FALSE, 0);
 
-        GtkWidget *ver = gtk_label_new("MIKE OS — versión de prueba");
+        GtkWidget *ver = gtk_label_new(T("MIKE OS — versión de prueba"));
         gtk_widget_set_name(ver, "customizetext");
         gtk_widget_set_halign(ver, GTK_ALIGN_START);
         gtk_box_pack_start(GTK_BOX(pie2), ver, TRUE, TRUE, 0);
 
-        GtkWidget *sig = gtk_button_new_with_label("Siguiente");
+        GtkWidget *sig = gtk_button_new_with_label(T("Siguiente"));
         gtk_widget_set_name(sig, "gobtn");
         g_signal_connect_swapped(sig, "clicked",
                                  G_CALLBACK(ir_a_bienvenida), pila);

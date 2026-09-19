@@ -111,11 +111,28 @@ fi
 # detrás. Sin esta espera, las comprobaciones gráficas fallan por llegar
 # pronto, no por estar rotas.
 printf "Esperando al escritorio"
+HAY_BARRA=0
 for _ in $(seq 1 40); do
-    if [ -n "$(vm 'pgrep -x quickshell')" ]; then break; fi
+    if [ -n "$(vm 'pgrep -x quickshell')" ]; then HAY_BARRA=1; break; fi
     printf "."
     sleep 3
 done
+echo
+# Si no llegó, PREGUNTARLE POR QUÉ antes de seguir.
+#
+# Sin esto, un error de carga de QML se veía como dos minutos de puntitos y
+# luego trece comprobaciones gráficas en rojo, ninguna de las cuales decía la
+# causa. Quickshell la dice entera en una línea --- el archivo, la línea y el
+# motivo --- pero sólo si alguien se la pide. Y como el módulo de QML se
+# invalida ENTERO cuando falla un componente, el error señala el primer
+# archivo que lo usa y no el que está roto: hay que leer la cadena completa de
+# "caused by", que es justo lo que esto enseña.
+if [ "$HAY_BARRA" -eq 0 ]; then
+    echo "$(rojo "El escritorio no llegó a levantarse.") Esto dice Quickshell:"
+    vm 'export XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-1; \
+        timeout 20 quickshell -p ~/.config/mike/quickshell/shell.qml 2>&1 \
+        | grep -i "error\|caused by" | head -10' | sed 's/^/    /'
+fi
 # El servidor de audio va por detrás de la barra: preguntarle antes de que
 # esté montado daba un fallo que no era tal.
 for _ in $(seq 1 20); do
@@ -220,6 +237,109 @@ if [ -n "$_hay" ]; then
 else
     echo "$(rojo ✗)"; FALLAN=$((FALLAN + 1)); FALLOS+=("m-hardware no dejó su informe")
 fi
+echo
+
+# --- Reglas del compositor ------------------------------------------------
+#
+# Hyprland RECHAZA una regla mal escrita y sigue arrancando tan campante: lo
+# dice una vez en su registro y nunca más. Aquí se le pasa cada regla del
+# archivo y se comprueba que las acepte todas.
+#
+# Existe porque la pantalla de bienvenida llevaba meses saliendo estirada de
+# lado a lado. Tenía DOS juegos de reglas para centrarla y dimensionarla, en
+# dos sitios del mismo archivo, y no funcionaba ninguno: tres líneas usaban
+# "windowrulev2", que Hyprland 0.56 eliminó, y las otras escribían "float" sin
+# valor, que esta versión rechaza ("invalid field float: missing a value").
+# Cuatro líneas que parecían hacer algo y no hacían nada, en la primera
+# pantalla que ve cualquiera y en la foto de portada de la web.
+echo "Reglas del compositor"
+_malas=0
+_detalle=""
+while IFS= read -r _regla; do
+    [ -n "$_regla" ] || continue
+    _r="$(vm "export HYPRLAND_INSTANCE_SIGNATURE=\$(ls /run/user/1000/hypr/ | head -1); \
+          hyprctl keyword windowrule '$_regla'")"
+    case "$_r" in
+        ok*) ;;
+        *) _malas=$((_malas + 1)); _detalle="$_detalle
+     $_regla → $_r" ;;
+    esac
+done <<EOF
+$(sed -n 's/^windowrule = //p' "$RAIZ/build/desktop/hyprland.conf")
+EOF
+printf '  %-46s' "Hyprland acepta todas sus windowrule"
+if [ "$_malas" -eq 0 ]; then
+    echo "$(verde ✓)"; PASAN=$((PASAN + 1))
+else
+    echo "$(rojo ✗)$_detalle"
+    FALLAN=$((FALLAN + 1)); FALLOS+=("$_malas windowrule que Hyprland rechaza")
+fi
+
+# Y que la bienvenida acabe donde se le pide: que la regla se acepte no
+# garantiza que gane. Antes había dos, y ganaba la equivocada.
+printf '  %-46s' "la bienvenida sale flotante, no a pantalla completa"
+vm 'pkill m-welcome; rm -f ~/.config/mike/.welcomed; sleep 1; \
+    (m-welcome >/dev/null 2>&1 &)' >/dev/null 2>&1
+sleep 6
+_geo="$(vm "export HYPRLAND_INSTANCE_SIGNATURE=\$(ls /run/user/1000/hypr/ | head -1); \
+        hyprctl clients | grep -B7 'class: m-welcome' | grep -E 'floating:'")"
+case "$_geo" in
+    *"floating: 1"*) echo "$(verde ✓)"; PASAN=$((PASAN + 1)) ;;
+    *) echo "$(rojo ✗)  $(gris "${_geo:-no se encontró la ventana}")"
+       FALLAN=$((FALLAN + 1)); FALLOS+=("la bienvenida no sale flotante") ;;
+esac
+
+# Y que QUEPA. Es distinto de flotar: la ventana puede estar flotante y aun
+# así ser más alta que la pantalla.
+#
+# gtk_window_set_default_size() es un tamaño por DEFECTO, no un máximo: GTK
+# nunca encoge una ventana por debajo del tamaño natural de su contenido. El
+# contenido mide unos 750 px, así que en un portátil de 1280x800 la ventana se
+# salía por abajo y el botón de continuar quedaba fuera de la pantalla: en el
+# USB en vivo, encallado en la primera pantalla del sistema sin nada que
+# pulsar. No se vio nunca porque esta máquina corre a 1920x1080.
+printf '  %-46s' "y cabe entera en la pantalla"
+_alto_p="$(vm "export HYPRLAND_INSTANCE_SIGNATURE=\$(ls /run/user/1000/hypr/ | head -1); \
+           hyprctl monitors | grep -m1 -oE '[0-9]+x[0-9]+' | cut -dx -f2 | head -1")"
+_geo="$(vm "export HYPRLAND_INSTANCE_SIGNATURE=\$(ls /run/user/1000/hypr/ | head -1); \
+        hyprctl clients | grep -A1 -B7 'class: m-welcome' | grep -E '^\s+(at|size):'")"
+_y="$(printf '%s' "$_geo" | sed -n 's/.*at: *[0-9]*,\([0-9]*\).*/\1/p')"
+_h="$(printf '%s' "$_geo" | sed -n 's/.*size: *[0-9]*,\([0-9]*\).*/\1/p')"
+if [ -n "$_y" ] && [ -n "$_h" ] && [ -n "$_alto_p" ] \
+   && [ "$((_y + _h))" -le "$_alto_p" ]; then
+    echo "$(verde ✓)  $(gris "$_h px de alto en $_alto_p")"
+    PASAN=$((PASAN + 1))
+else
+    echo "$(rojo ✗)  $(gris "llega a ${_y:-?}+${_h:-?} en una pantalla de ${_alto_p:-?}")"
+    FALLAN=$((FALLAN + 1)); FALLOS+=("la bienvenida no cabe en la pantalla")
+fi
+vm 'pkill m-welcome' >/dev/null 2>&1
+echo
+
+# --- Idioma ------------------------------------------------------------------
+#
+# Esto sólo se puede comprobar en un sistema arrancado. tests/traducciones.sh
+# mira los fuentes y no puede saber si "m-idioma en" funciona de verdad:
+# escribe en /etc, y quien pulsa el botón es "mike", que no es root. Todo
+# depende de que m-idioma vuelva a entrar por m-sudo y de que m-sudo conserve
+# su bit setuid --- que es justo lo que una actualización por red ya rompió una
+# vez.
+echo "Idioma"
+comprobar "el sistema dice en qué idioma habla" 'm-idioma' '^(es|en)$'
+comprobar "el usuario del escritorio puede cambiarlo" \
+          'm-idioma en >/dev/null 2>&1; m-idioma' '^en$'
+comprobar "y queda escrito en /etc, no en un \$HOME" \
+          'grep -v "^#" /etc/mikeos/idioma | grep -v "^$"' '^en$'
+# Se comprueba que NO quede ninguna categoría en español, en vez de buscar una
+# concreta en inglés: qué componentes tiene la máquina depende de la máquina, y
+# una prueba que espera "Graphics" falla en un equipo sin gráfica en vez de
+# decir lo que de verdad quería saber.
+comprobar "el informe de hardware lo sigue" \
+          'm-drivers --breve | grep -c "^COMP|\(Gráfica\|Red\|Sonido\|Entrada\|Cámara\|Almacenamiento\|Procesador\|Batería\)|"' \
+          '^0$'
+# Y se deja como estaba: las capturas en español salen después, y un sistema
+# que se queda en inglés porque lo probó una prueba es una sorpresa.
+comprobar "se puede volver al español"       'm-idioma es' '^es$'
 echo
 
 # --- Gestor de paquetes -----------------------------------------------------

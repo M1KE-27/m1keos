@@ -1340,6 +1340,12 @@ install_etc etc/profile 644
 # /etc/mikeos/network.conf
 install_etc etc/mikeos/network.conf 644
 
+# /etc/mikeos/idioma
+#
+# Escribible por quien usa el escritorio a través de m-idioma, que re-entra
+# por m-sudo: el Centro de Control corre como "mike" y /etc no es suyo.
+install_etc etc/mikeos/idioma 644
+
 # /etc/mikeos/services.conf
 install_etc etc/mikeos/services.conf 644
 

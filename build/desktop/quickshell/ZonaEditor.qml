@@ -86,7 +86,7 @@ ColumnLayout {
 
         Text {
             visible: !editor.lista || editor.lista.length === 0
-            text: "vacía"
+            text: Idioma.t("vacía")
             color: Paleta.textoTenue
             font.pixelSize: 11
             font.italic: true

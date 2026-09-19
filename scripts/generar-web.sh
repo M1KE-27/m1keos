@@ -515,6 +515,25 @@ except Exception:
 PY
 }
 
+# Ruta de una captura en el idioma que se está generando.
+#
+# La web inglesa enseñaba capturas en español. Era lo único que delataba que la
+# versión inglesa era una traducción y no un sitio propio: los textos estaban
+# bien, y debajo una foto de una ventana que decía "Centro de Control".
+#
+# El respaldo es deliberado. No todas las pantallas se sacan en los dos
+# idiomas --- el menú de GRUB es el mismo para todo el mundo, y hay capturas
+# viejas que todavía no se han vuelto a sacar --- y una imagen en español es
+# infinitamente mejor que un hueco roto. Cuando exista la inglesa, se usa sola,
+# sin tocar una línea de aquí.
+cap() {  # cap <nombre.png>  ->  ruta relativa a build/web
+    if [ "${L:-es}" = "en" ] && [ -f "$WEB/capturas/en/$1" ]; then
+        printf 'capturas/en/%s' "$1"
+    else
+        printf 'capturas/%s' "$1"
+    fi
+}
+
 # --- Idiomas ------------------------------------------------------------------
 #
 # El sitio se publica en dos idiomas, y como DOS ÁRBOLES DE PÁGINAS ESTÁTICAS:
@@ -656,7 +675,7 @@ try{var _t=localStorage.getItem("mikeos-tema");
 <div class="menu" id="menu-principal" hidden>
   <div class="menu-lista">
     <a class="$([ "$act" = inicio ] && echo aqui)" href="${pre_idioma}index.html">$(t nav.inicio)</a>
-    <a class="$([ "$act" = capturas ] && echo aqui)" href="${pre}capturas/index.html">$(t nav.capturas)</a>
+    <a class="$([ "$act" = capturas ] && echo aqui)" href="$([ "$L" = en ] && echo "${pre}en/screenshots.html" || echo "${pre}capturas/index.html")">$(t nav.capturas)</a>
     <a class="$([ "$act" = docs ] && echo aqui)" href="${pre}docs/index.html">$(t nav.docs)</a>
     <a class="$([ "$act" = wiki ] && echo aqui)" href="${pre}wiki/index.html">$(t nav.wiki)</a>
     <a href="https://github.com/${MIKEOS_REPO_GITHUB:-M1KE-27/m1keos}">$(t nav.codigo)</a>
@@ -789,7 +808,7 @@ portada() {  # portada <es|en>
     <p class="bajo-boton">x86_64 &nbsp;·&nbsp; UEFI only &nbsp;·&nbsp; Secure Boot off</p>
   </div>
   <div class="captura-portada">
-    <img src="${pre}capturas/bienvenida.png" $(dim capturas/bienvenida.png)
+    <img src="${pre}$(cap bienvenida.png)" $(dim "$(cap bienvenida.png)")
          alt="The MIKE OS desktop with the welcome window open">
   </div>
 
@@ -871,7 +890,7 @@ portada() {  # portada <es|en>
   </div>
 
   <figure>
-    <img src="${pre}capturas/instalador-disco.png" $(dim capturas/instalador-disco.png)
+    <img src="${pre}$(cap instalador-disco.png)" $(dim "$(cap instalador-disco.png)")
          alt="The installer showing the disk, its partitions and the warning about what will be erased">
     <figcaption>It detects the disk, lists its partitions with whatever system is
       on each one, and warns in amber about what will be lost. If something would
@@ -892,7 +911,7 @@ portada() {  # portada <es|en>
   </div>
 
   <figure>
-    <img src="${pre}capturas/instalador-red.png" $(dim capturas/instalador-red.png)
+    <img src="${pre}$(cap instalador-red.png)" $(dim "$(cap instalador-red.png)")
          alt="The installer's network step, with the remote help card">
     <figcaption>English by default, Spanish one click away.</figcaption>
   </figure>
@@ -946,12 +965,12 @@ portada() {  # portada <es|en>
     wallpaper can tint the whole palette, terminal included.</p>
   </div>
   <div class="galeria">
-    <a href="${pre}capturas/centro-de-control.png"><img $(dim capturas/centro-de-control.png) src="${pre}capturas/centro-de-control.png" alt="The MIKE OS Control Centre" loading="lazy"><span>The Control Centre</span></a>
-    <a href="${pre}capturas/bloqueo.png"><img $(dim capturas/bloqueo.png) src="${pre}capturas/bloqueo.png" alt="The lock screen" loading="lazy"><span>The lock screen</span></a>
-    <a href="${pre}capturas/terminal.png"><img $(dim capturas/terminal.png) src="${pre}capturas/terminal.png" alt="The MIKE OS terminal" loading="lazy"><span>The terminal</span></a>
-    <a href="${pre}capturas/grub.png"><img $(dim capturas/grub.png) src="${pre}capturas/grub.png" alt="The MIKE OS boot menu" loading="lazy"><span>The boot menu</span></a>
+    <a href="${pre}$(cap centro-de-control.png)"><img $(dim "$(cap centro-de-control.png)") src="${pre}$(cap centro-de-control.png)" alt="The MIKE OS Control Centre" loading="lazy"><span>The Control Centre</span></a>
+    <a href="${pre}$(cap bloqueo.png)"><img $(dim "$(cap bloqueo.png)") src="${pre}$(cap bloqueo.png)" alt="The lock screen" loading="lazy"><span>The lock screen</span></a>
+    <a href="${pre}$(cap terminal.png)"><img $(dim "$(cap terminal.png)") src="${pre}$(cap terminal.png)" alt="The MIKE OS terminal" loading="lazy"><span>The terminal</span></a>
+    <a href="${pre}$(cap grub.png)"><img $(dim "$(cap grub.png)") src="${pre}$(cap grub.png)" alt="The MIKE OS boot menu" loading="lazy"><span>The boot menu</span></a>
   </div>
-  <p style="margin-top:22px"><a href="${pre}capturas/index.html">See every screenshot</a></p>
+  <p style="margin-top:22px"><a href="${pre}en/screenshots.html">See every screenshot</a></p>
 </section>
 
 </div>
@@ -1054,7 +1073,7 @@ HTML
   </div>
 
   <figure>
-    <img src="${pre}capturas/instalador-disco.png" $(dim capturas/instalador-disco.png)
+    <img src="${pre}$(cap instalador-disco.png)" $(dim "$(cap instalador-disco.png)")
          alt="El instalador enseñando el disco, las particiones y el aviso de lo que se va a borrar">
     <figcaption>Detecta el disco, lista sus particiones con el sistema que hay en
       cada una, y avisa en ámbar de lo que se va a perder. Si algo impediría que
@@ -1075,7 +1094,7 @@ HTML
   </div>
 
   <figure>
-    <img src="${pre}capturas/instalador-red.png" $(dim capturas/instalador-red.png)
+    <img src="${pre}$(cap instalador-red.png)" $(dim "$(cap instalador-red.png)")
          alt="El paso de red del instalador, con la tarjeta de ayuda remota">
     <figcaption>En inglés por defecto, con español a un clic.</figcaption>
   </figure>
@@ -1130,10 +1149,10 @@ HTML
     lleva. El fondo de pantalla puede teñir la paleta entera, terminal incluida.</p>
   </div>
   <div class="galeria">
-    <a href="${pre}capturas/centro-de-control.png"><img $(dim capturas/centro-de-control.png) src="${pre}capturas/centro-de-control.png" alt="El Centro de Control de MIKE OS" loading="lazy"><span>El Centro de Control</span></a>
-    <a href="${pre}capturas/bloqueo.png"><img $(dim capturas/bloqueo.png) src="${pre}capturas/bloqueo.png" alt="La pantalla de bloqueo" loading="lazy"><span>La pantalla de bloqueo</span></a>
-    <a href="${pre}capturas/terminal.png"><img $(dim capturas/terminal.png) src="${pre}capturas/terminal.png" alt="La terminal de MIKE OS" loading="lazy"><span>La terminal</span></a>
-    <a href="${pre}capturas/grub.png"><img $(dim capturas/grub.png) src="${pre}capturas/grub.png" alt="El menú de arranque de MIKE OS" loading="lazy"><span>El menú de arranque</span></a>
+    <a href="${pre}$(cap centro-de-control.png)"><img $(dim "$(cap centro-de-control.png)") src="${pre}$(cap centro-de-control.png)" alt="El Centro de Control de MIKE OS" loading="lazy"><span>El Centro de Control</span></a>
+    <a href="${pre}$(cap bloqueo.png)"><img $(dim "$(cap bloqueo.png)") src="${pre}$(cap bloqueo.png)" alt="La pantalla de bloqueo" loading="lazy"><span>La pantalla de bloqueo</span></a>
+    <a href="${pre}$(cap terminal.png)"><img $(dim "$(cap terminal.png)") src="${pre}$(cap terminal.png)" alt="La terminal de MIKE OS" loading="lazy"><span>La terminal</span></a>
+    <a href="${pre}$(cap grub.png)"><img $(dim "$(cap grub.png)") src="${pre}$(cap grub.png)" alt="El menú de arranque de MIKE OS" loading="lazy"><span>El menú de arranque</span></a>
   </div>
   <p style="margin-top:22px"><a href="${pre}capturas/index.html">Ver todas las capturas</a></p>
 </section>
@@ -1563,52 +1582,95 @@ pie
 verde "  wiki"
 
 # --- Capturas -----------------------------------------------------------------
+#
+# En dos idiomas, como el resto. La galería era la única página que se
+# generaba una sola vez, así que la navegación inglesa llevaba a una página de
+# capturas en español: pies de foto, títulos y menú. Con la portada traducida
+# y esta no, el sitio inglés se rompía justo al pulsar "Screenshots".
 paso "Galería"
-{
-cabecera "Capturas · MIKE OS" capturas "../"
-cat <<'HTML'
+
+galeria() {  # galeria <es|en>
+    L="$1"
+    local pre alt
+    if [ "$L" = en ]; then pre="../"; alt="../capturas/index.html"
+    else                   pre="../"; alt="../en/screenshots.html"; fi
+    ALTERNA="$alt"
+
+    if [ "$L" = en ]; then
+        cabecera "Screenshots · MIKE OS" capturas "$pre"
+        cat <<'HTML'
+<header><h1>Screenshots</h1>
+<p class="lema">Taken from the freshly built system while it runs, not from a
+mock-up. If the desktop changes, these change with it on the next build.</p></header>
+<h2>The desktop</h2>
+HTML
+    else
+        cabecera "Capturas · MIKE OS" capturas "$pre"
+        cat <<'HTML'
 <header><h1>Capturas</h1>
 <p class="lema">Sacadas del sistema recién construido y en marcha, no de un
 montaje. Si el escritorio cambia, estas cambian con él en la siguiente
 compilación.</p></header>
 <h2>El escritorio</h2>
 HTML
-# La lista va aquí y no repartida por el script: añadir una captura es añadir
-# una línea. Formato  archivo:pie de foto
-for par in "escritorio:El escritorio con el fondo del sistema" \
-           "bienvenida:La ventana de bienvenida, la primera vez que arranca" \
-           "centro-de-control:El Centro de Control" \
-           "ajustes-barra:Ajustes de la barra: posición, forma y qué módulos lleva" \
-           "ajustes-bloqueo:Ajustes del bloqueo, con lo que aún no hace dicho a las claras" \
-           "terminal:La terminal" \
-           "bloqueo:La pantalla de bloqueo, con el fondo desenfocado detrás"; do
-    n="${par%%:*}"; d="${par#*:}"
-    [ -f "$WEB/capturas/$n.png" ] || continue
-    printf '<figure><img %s src="%s.png" alt="%s" loading="lazy"><figcaption>%s</figcaption></figure>\n' \
-        "$(dim capturas/$n.png)" "$n" "$d" "$d"
-done
-echo '<h2>El instalador</h2>'
-for par in "instalador-idioma:Empieza en inglés, con español a un clic" \
-           "instalador-red:El paso de red, con la ayuda remota por SSH" \
-           "instalador-disco:El disco: qué hay dentro y qué se va a borrar" \
-           "instalador-cuenta:Nombre del equipo y contraseña" \
-           "instalador-aspecto:El fondo se elige antes de instalar" \
-           "instalador-resumen:Lo último que se ve antes de que algo sea irreversible"; do
-    n="${par%%:*}"; d="${par#*:}"
-    [ -f "$WEB/capturas/$n.png" ] || continue
-    printf '<figure><img %s src="%s.png" alt="%s" loading="lazy"><figcaption>%s</figcaption></figure>\n' \
-        "$(dim capturas/$n.png)" "$n" "$d" "$d"
-done
-echo '<h2>El arranque</h2>'
-if [ -f "$WEB/capturas/grub.png" ]; then
-    printf '<figure><img %s src="grub.png" alt="%s" loading="lazy"><figcaption>%s</figcaption></figure>\n' \
-        "$(dim capturas/grub.png)" \
-        "El menú de arranque de MIKE OS" \
-        "El menú de GRUB con el tema del sistema. Si hay otro sistema operativo en el equipo, aparece aquí."
-fi
-pie
-} > "$WEB/capturas/index.html"
-verde "  galería"
+    fi
+
+    # La lista va aquí y no repartida por el script: añadir una captura es
+    # añadir una línea. Formato  archivo:pie en español:pie en inglés
+    local par n d_es d_en d
+    for par in \
+      "escritorio:El escritorio con el fondo del sistema:The desktop with the system wallpaper" \
+      "bienvenida:La ventana de bienvenida, la primera vez que arranca:The welcome window, the first time it boots" \
+      "centro-de-control:El Centro de Control:The Control Centre" \
+      "ajustes-barra:Ajustes de la barra: posición, forma y qué módulos lleva:Bar settings: position, shape and which modules it carries" \
+      "ajustes-energia:Energía: perfil, qué hace al cerrar la tapa y qué sabe hacer el equipo:Power: profile, what the lid does and what the machine can actually do" \
+      "ajustes-drivers:Controladores: cada componente con su estado, no sólo su nombre:Drivers: every component with its state, not just its name" \
+      "ajustes-bloqueo:Ajustes del bloqueo, con lo que aún no hace dicho a las claras:Lock screen settings, with what it still cannot do said plainly" \
+      "terminal:La terminal:The terminal" \
+      "bloqueo:La pantalla de bloqueo, con el fondo desenfocado detrás:The lock screen, with the wallpaper blurred behind it"; do
+        n="${par%%:*}"; d_es="${par#*:}"; d_en="${d_es#*:}"; d_es="${d_es%%:*}"
+        [ "$L" = en ] && d="$d_en" || d="$d_es"
+        [ -f "$WEB/$(cap "$n.png")" ] || continue
+        printf '<figure><img %s src="%s" alt="%s" loading="lazy"><figcaption>%s</figcaption></figure>\n' \
+            "$(dim "$(cap "$n.png")")" "${pre}$(cap "$n.png")" "$d" "$d"
+    done
+
+    [ "$L" = en ] && echo '<h2>The installer</h2>' || echo '<h2>El instalador</h2>'
+    for par in \
+      "instalador-idioma:Empieza en inglés, con español a un clic:It starts in English, with Spanish one click away" \
+      "instalador-red:El paso de red, con la ayuda remota por SSH:The network step, with remote help over SSH" \
+      "instalador-disco:El disco: qué hay dentro y qué se va a borrar:The disk: what is on it and what will be erased" \
+      "instalador-cuenta:Nombre del equipo y contraseña:Machine name and password" \
+      "instalador-aspecto:El fondo se elige antes de instalar:The wallpaper is chosen before installing" \
+      "instalador-resumen:Lo último que se ve antes de que algo sea irreversible:The last thing you see before anything is irreversible"; do
+        n="${par%%:*}"; d_es="${par#*:}"; d_en="${d_es#*:}"; d_es="${d_es%%:*}"
+        [ "$L" = en ] && d="$d_en" || d="$d_es"
+        [ -f "$WEB/$(cap "$n.png")" ] || continue
+        printf '<figure><img %s src="%s" alt="%s" loading="lazy"><figcaption>%s</figcaption></figure>\n' \
+            "$(dim "$(cap "$n.png")")" "${pre}$(cap "$n.png")" "$d" "$d"
+    done
+
+    [ "$L" = en ] && echo '<h2>Booting</h2>' || echo '<h2>El arranque</h2>'
+    if [ -f "$WEB/capturas/grub.png" ]; then
+        # El menú de arranque no tiene versión por idioma y no la va a tener:
+        # GRUB corre antes de que exista el sistema donde vive la elección, así
+        # que la misma ISO lo dice en los dos idiomas a la vez.
+        if [ "$L" = en ]; then
+            d="The GRUB menu with the system theme. It says everything in both languages: GRUB runs before the system that knows which one you chose."
+        else
+            d="El menú de GRUB con el tema del sistema. Lo dice todo en los dos idiomas: GRUB corre antes de que exista el sistema que sabe cuál elegiste."
+        fi
+        printf '<figure><img %s src="%scapturas/grub.png" alt="%s" loading="lazy"><figcaption>%s</figcaption></figure>\n' \
+            "$(dim capturas/grub.png)" "$pre" "$d" "$d"
+    fi
+    pie
+}
+
+mkdir -p "$WEB/capturas" "$WEB/en"
+galeria es > "$WEB/capturas/index.html"
+galeria en > "$WEB/en/screenshots.html"
+L=es
+verde "  galería, en español y en inglés"
 
 # --- La ISO -------------------------------------------------------------------
 # La ISO ya no se copia al servidor: son 175 MB que tardarían casi cuatro
@@ -1646,6 +1708,7 @@ paso "Subiendo a $SERVIDOR"
     _fallos=0
     for ruta in "" "descargas.html" "docs/index.html" "wiki/index.html" \
                 "capturas/index.html" "en/index.html" "en/downloads.html" \
+                "en/screenshots.html" \
                 "estilo.css"; do
         cod="$(curl -fsS --max-time 15 -o /dev/null -w '%{http_code}' "https://m1keos.duckdns.org/$ruta" 2>/dev/null || echo ---)"
         printf '    %-24s %s\n' "/$ruta" "$cod"
