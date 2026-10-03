@@ -3,7 +3,10 @@
  *
  * This is intentionally small: VTE supplies the battle-tested terminal
  * emulation and GTK supplies the Wayland window. The shell itself is always
- * /bin/mkshell; Kitty and other terminal front-ends are not required.
+ * /bin/bash (login shell, so /etc/profile sets PATH/LANG/PS1 and launches
+ * fastfetch); Kitty and other terminal front-ends are not required. MKShell
+ * exists as MIKE OS's own shell but is not what MTerminal spawns today --
+ * mkshell.rc only carries two aliases, none of the login-shell setup below.
  */
 #include <gtk/gtk.h>
 #include <vte/vte.h>
@@ -31,9 +34,18 @@ typedef struct {
 
 static gboolean key_press(GtkWidget *widget, GdkEventKey *event, gpointer user_data);
 
+/* Si HOME no llega (por ejemplo, una sesión gráfica que perdiera el entorno
+ * por el camino entre start-mike-desktop y este proceso), "/root" era el
+ * respaldo -- y "/root" es 700 de root: el usuario "mike", que es quien
+ * lanza la sesión gráfica, no puede ni entrar ahí. vte_terminal_spawn_async()
+ * falla si el directorio de trabajo no es accesible, y antes de este cambio
+ * fallaba EN SILENCIO (ver spawn_callback más abajo): la terminal se abría
+ * completamente en blanco, sin prompt, sin fastfetch, sin ningún error --
+ * exactamente como si no hiciera nada. "/" siempre es accesible para
+ * cualquier usuario, así que es el respaldo que de verdad funciona. */
 static const char *initial_cwd(void) {
     const char *home = g_getenv("HOME");
-    return (home && *home) ? home : "/root";
+    return (home && *home) ? home : "/";
 }
 
 /* Opacidad configurable desde m-settings (~/.config/mike/terminal-opacity,
@@ -147,6 +159,22 @@ static void hijo_terminado(VteTerminal *terminal, gint estado, gpointer datos) {
         gtk_widget_destroy(app->window);
 }
 
+/* Si vte_terminal_spawn_async() falla, esto es lo único que se entera: antes
+ * se pasaba NULL como callback y un fallo de spawn (shell no encontrada,
+ * directorio de trabajo inaccesible, PTY que no se pudo crear...) dejaba la
+ * pestaña en blanco para siempre, indistinguible de una terminal colgada.
+ * Ahora al menos se ve el motivo. */
+static void spawn_callback(VteTerminal *terminal, GPid pid, GError *error, gpointer user_data) {
+    (void)user_data;
+    if (pid > 0) return; /* fue bien */
+    char *msg = g_strdup_printf(
+        "\r\n\x1b[1;31m✗ No se pudo iniciar la shell:\x1b[0m %s\r\n"
+        "\x1b[90mComprueba /bin/bash y el directorio inicial de la terminal.\x1b[0m\r\n",
+        error ? error->message : "motivo desconocido");
+    vte_terminal_feed(terminal, msg, -1);
+    g_free(msg);
+}
+
 static void terminal_spawn(VteTerminal *terminal, const char *cwd) {
     char *login_argv[] = { (char *)"/bin/bash", (char *)"-l", NULL };
     /* Se pasa por la shell para admitir un comando completo con argumentos
@@ -182,7 +210,7 @@ static void terminal_spawn(VteTerminal *terminal, const char *cwd) {
     vte_terminal_spawn_async(terminal, VTE_PTY_DEFAULT, cwd,
                              elegido, NULL,
                              G_SPAWN_SEARCH_PATH, NULL, NULL, NULL, -1,
-                             NULL, NULL, NULL);
+                             NULL, spawn_callback, NULL);
 }
 
 static VteTerminal *current_terminal(MTerminal *app) {

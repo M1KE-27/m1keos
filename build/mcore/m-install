@@ -741,6 +741,12 @@ printf '%s' "$CMDLINE" > "$MONTAJE/boot/efi/EFI/mikeos/cmdline.txt"
 GRUB_ORIGEN=/usr/share/mikeos/grub
 if [ -f "$GRUB_ORIGEN/grubx64.efi" ]; then
     cp "$GRUB_ORIGEN/grubx64.efi" "$MONTAJE/boot/efi/EFI/BOOT/BOOTX64.EFI"
+    # Y otra copia con nombre propio, que es la que se registra en la UEFI.
+    # EFI/BOOT/BOOTX64.EFI es la ruta de RESPALDO: la firmware sólo la prueba
+    # cuando no tiene ninguna entrada en su NVRAM. En un equipo con Windows
+    # siempre la tiene, así que esa ruta no se usa nunca y hace falta una
+    # entrada que apunte a GRUB por su nombre.
+    cp "$GRUB_ORIGEN/grubx64.efi" "$MONTAJE/boot/efi/EFI/mikeos/grubx64.efi"
     [ -d "$GRUB_ORIGEN/tema" ] && cp -r "$GRUB_ORIGEN/tema" "$MONTAJE/boot/efi/EFI/mikeos/tema"
 
     {
@@ -807,6 +813,22 @@ if [ -f "$GRUB_ORIGEN/grubx64.efi" ]; then
         echo "}"
         echo
 
+        # El kernel de ANTES de la última actualización. El paquete del kernel
+        # lo guarda en vmlinuz-anterior.efi "por si el nuevo no llega ni a
+        # encender la pantalla", pero sin esta entrada no había forma de
+        # arrancarlo salvo sabiendo escribir órdenes de GRUB a mano. La
+        # comprobación la hace GRUB al arrancar, así que aparece sola después
+        # de la primera actualización de kernel y no antes.
+        echo "if [ -f /EFI/mikeos/vmlinuz-anterior.efi ]; then"
+        echo "    menuentry \"$(m_entrada 'MIKE OS (kernel anterior)' \
+                                  'MIKE OS (previous kernel)')\" {"
+        echo "        linux /EFI/mikeos/vmlinuz-anterior.efi $CMDLINE"
+        [ -f "$MONTAJE/boot/efi/EFI/mikeos/initramfs.cpio.gz" ] \
+            && echo "        initrd /EFI/mikeos/initramfs.cpio.gz"
+        echo "    }"
+        echo "fi"
+        echo
+
         # --- Otros sistemas del equipo: dual boot ---------------------
         #
         # Se buscan cargadores EFI ajenos en todas las particiones FAT del
@@ -861,8 +883,15 @@ if [ -f "$GRUB_ORIGEN/grubx64.efi" ]; then
             # mayoría (EFI/fabricante/algo.efi). Buscando sólo a dos niveles
             # no se encontraba Windows, que es precisamente el sistema con el
             # que la gente quiere arrancar en paralelo.
-            for _efi in $(find "$_tmp/EFI" -maxdepth 3 -type f \
-                               \( -iname '*.efi' \) 2>/dev/null); do
+            #
+            # Leyendo línea a línea de un archivo y no con "for _efi in
+            # $(find ...)": eso parte por espacios, y una carpeta de
+            # fabricante con un espacio en el nombre dejaba fuera su cargador.
+            # Por archivo y no por tubería, para que el bucle siga en esta
+            # misma shell y no se pierda la cuenta de _n_otros.
+            find "$_tmp/EFI" -maxdepth 3 -type f -iname '*.efi' 2>/dev/null \
+                > /tmp/m-install-efis.txt
+            while IFS= read -r _efi; do
                 [ -f "$_efi" ] || continue
                 _rel="${_efi#$_tmp}"
                 # Los nuestros no, ni los genéricos de respaldo: el de
@@ -889,11 +918,14 @@ if [ -f "$GRUB_ORIGEN/grubx64.efi" ]; then
                 echo "    insmod fat"
                 echo "    insmod chain"
                 echo "    search --no-floppy --fs-uuid --set=root $_uuid"
-                echo "    chainloader $_rel"
+                # Entre comillas: una carpeta de fabricante puede llevar un espacio
+                # ("EFI/HP Recovery"), y sin comillas GRUB lo parte en dos.
+                echo "    chainloader \"$_rel\""
                 echo "}"
                 echo
                 _n_otros=$((_n_otros + 1))
-            done
+            done < /tmp/m-install-efis.txt
+            rm -f /tmp/m-install-efis.txt
             # Sólo se desmonta lo que hemos montado nosotros: desmontar la
             # partición EFI de destino a media instalación la dejaría sin
             # terminar de escribir.
@@ -921,17 +953,73 @@ else
     cp "$KERNEL" "$MONTAJE/boot/efi/EFI/BOOT/BOOTX64.EFI"
 fi
 
-# Y además se registra en la UEFI, que es lo que hace que aparezca con su
-# nombre en el menú de arranque en vez de como "disco genérico".
-if command -v efibootmgr >/dev/null 2>&1 && [ -d /sys/firmware/efi ]; then
-    efibootmgr --create --disk "$DESTINO" --part 1 \
+# Y además se registra en la UEFI.
+#
+# Esto NO es un adorno para que salga el nombre bonito en el menú de la BIOS.
+# Al lado de Windows es lo que decide si MIKE OS arranca o no: la firmware
+# sigue el orden de su NVRAM, y ahí la primera es la de Windows. La ruta de
+# respaldo EFI/BOOT/BOOTX64.EFI sólo se prueba si NO hay ninguna entrada, así
+# que sin registrarse, instalabas MIKE OS y el equipo seguía arrancando
+# Windows como si no hubieras hecho nada.
+#
+# Tres fallos encadenados que lo tenían roto desde el principio, y en silencio
+# --- la nota de abajo decía "arrancará por BOOTX64.EFI", que al lado de
+# Windows es falso:
+#
+#   1. efibootmgr escribe a través de efivarfs, que iba compilado como MÓDULO
+#      en un kernel que no carga módulos, y nadie lo montaba. Fallaba siempre.
+#   2. "--part 1" fijo. La partición EFI que se reutiliza al instalar junto a
+#      Windows no tiene por qué ser la primera, y "--disk" tampoco tiene por
+#      qué ser el disco donde va MIKE OS.
+#   3. Apuntaba al KERNEL, saltándose GRUB: aunque hubiera funcionado,
+#      arrancaba MIKE OS sin menú y sin forma de volver a Windows.
+#
+# Ahora: dos entradas. "MIKE OS" apunta a GRUB (menú con Windows dentro) y va
+# primera; "MIKE OS (kernel)" apunta al kernel y va detrás, como red de
+# seguridad si GRUB se estropea --- que es para lo que estaba pensada.
+registrar_uefi() {
+    command -v efibootmgr >/dev/null 2>&1 || { nota "efibootmgr no está; arrancará por EFI/BOOT/BOOTX64.EFI"; return; }
+    [ -d /sys/firmware/efi ] || { nota "arrancado en modo BIOS: se usará EFI/BOOT/BOOTX64.EFI"; return; }
+
+    if [ ! -d /sys/firmware/efi/efivars ] || [ -z "$(ls /sys/firmware/efi/efivars 2>/dev/null | head -1)" ]; then
+        mount -t efivarfs efivarfs /sys/firmware/efi/efivars 2>/dev/null || true
+    fi
+
+    # Disco y número de partición de la EFI, leídos del propio kernel en vez
+    # de deducidos del nombre del dispositivo (nvme0n1p3, sda2, mmcblk0p1...).
+    _esp="$(basename "$P1")"
+    _num="$(cat "/sys/class/block/$_esp/partition" 2>/dev/null || true)"
+    _padre="$(basename "$(readlink -f "/sys/class/block/$_esp/..")" 2>/dev/null || true)"
+    if [ -z "$_num" ] || [ -z "$_padre" ] || [ ! -b "/dev/$_padre" ]; then
+        nota "no se pudo saber en qué disco está la partición EFI; arrancará por EFI/BOOT/BOOTX64.EFI"
+        return
+    fi
+
+    # Reinstalar no debe ir acumulando entradas "MIKE OS" repetidas.
+    efibootmgr 2>/dev/null | sed -n 's/^Boot\([0-9A-Fa-f]\{4\}\)[* ] MIKE OS.*/\1/p' \
+        | while read -r _n; do efibootmgr -q -b "$_n" -B >/dev/null 2>&1 || true; done
+
+    # efibootmgr --create pone cada entrada nueva la PRIMERA del orden, así
+    # que se crean al revés de como se quieren: primero la de respaldo.
+    efibootmgr -q --create --disk "/dev/$_padre" --part "$_num" \
                --loader '\EFI\mikeos\vmlinuz.efi' \
-               --label "MIKE OS" --unicode "$CMDLINE" >/dev/null 2>&1 \
-        && ok "registrado en el menú de arranque de la UEFI" \
-        || nota "no se pudo registrar en la UEFI; arrancará por EFI/BOOT/BOOTX64.EFI"
-else
-    nota "arrancado en modo BIOS: se usará EFI/BOOT/BOOTX64.EFI"
-fi
+               --label "MIKE OS (kernel)" --unicode "$CMDLINE" >/dev/null 2>&1 || true
+
+    if [ -f "$MONTAJE/boot/efi/EFI/mikeos/grubx64.efi" ]; then
+        if efibootmgr -q --create --disk "/dev/$_padre" --part "$_num" \
+                      --loader '\EFI\mikeos\grubx64.efi' \
+                      --label "MIKE OS" >/dev/null 2>&1; then
+            ok "registrado en la UEFI como primera opción, con su menú"
+        else
+            nota "no se pudo registrar en la UEFI; arrancará por EFI/BOOT/BOOTX64.EFI"
+        fi
+    elif efibootmgr 2>/dev/null | grep -q "MIKE OS (kernel)"; then
+        ok "registrado en la UEFI como primera opción"
+    else
+        nota "no se pudo registrar en la UEFI; arrancará por EFI/BOOT/BOOTX64.EFI"
+    fi
+}
+registrar_uefi
 ok "kernel instalado en la partición EFI"
 
 # --- 5. Configuración --------------------------------------------------------

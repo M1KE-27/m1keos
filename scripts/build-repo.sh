@@ -404,10 +404,22 @@ fi
 mkdir -p "$ESP/EFI/BOOT" "$ESP/EFI/mikeos"
 # El anterior se guarda antes de pisarlo: es la única vuelta atrás que hay si
 # el nuevo no llega ni a encender la pantalla.
+#
+# EFI/BOOT/BOOTX64.EFI sólo se pisa si lo que hay ahí ES el kernel (una
+# instalación sin GRUB). Antes se pisaba siempre, y m-install pone GRUB
+# justo en esa ruta: la primera actualización de kernel borraba GRUB y su
+# menú --- el que lleva a Windows --- y dejaba el kernel desnudo en su sitio.
+# Se compara ANTES de copiar el nuevo, con el kernel que había.
+_bootx64_es_kernel=0
+if [ -f "$ESP/EFI/mikeos/vmlinuz.efi" ] && [ -f "$ESP/EFI/BOOT/BOOTX64.EFI" ] \
+   && cmp -s "$ESP/EFI/BOOT/BOOTX64.EFI" "$ESP/EFI/mikeos/vmlinuz.efi"; then
+    _bootx64_es_kernel=1
+fi
+[ -f "$ESP/EFI/BOOT/BOOTX64.EFI" ] || _bootx64_es_kernel=1
 [ -f "$ESP/EFI/mikeos/vmlinuz.efi" ] && \
     cp -f "$ESP/EFI/mikeos/vmlinuz.efi" "$ESP/EFI/mikeos/vmlinuz-anterior.efi"
 cp -f /boot/vmlinuz "$ESP/EFI/mikeos/vmlinuz.efi"
-cp -f /boot/vmlinuz "$ESP/EFI/BOOT/BOOTX64.EFI"
+[ "$_bootx64_es_kernel" = 1 ] && cp -f /boot/vmlinuz "$ESP/EFI/BOOT/BOOTX64.EFI"
 sync
 echo "  Kernel $(cat /boot/vmlinuz.version 2>/dev/null) instalado en la partición EFI."
 echo "  El anterior queda en EFI/mikeos/vmlinuz-anterior.efi por si acaso."

@@ -178,6 +178,9 @@ t() {  # t <plantilla en español> [datos...]
             "firmware de Bluetooth que falta") _p="the missing Bluetooth firmware" ;;
             "actualizaciones de microcódigo Intel") _p="Intel microcode updates" ;;
             "actualizaciones de microcódigo AMD") _p="AMD microcode updates" ;;
+            "Microcódigo") _p="Microcode" ;;
+            "%s, actualizado al arrancar") _p="%s, updated at boot" ;;
+            "%s, el que trae la BIOS (ya era el último)") _p="%s, the one in the BIOS (already the latest)" ;;
             "Hardware detectado") _p="Hardware detected" ;;
             "Recomendado") _p="Recommended" ;;
             "No hace falta instalar nada: el sistema ya cubre este equipo.") _p="Nothing needs installing: the system already covers this machine." ;;
@@ -478,10 +481,23 @@ buscar_cpu() {
     else
         componente "$(t Procesador)" "$_cpu" "mejorable" "$(t 'sin control de frecuencia')"
     fi
-    case "$(sed -n 's/^vendor_id[[:space:]]*: //p' /proc/cpuinfo 2>/dev/null | head -1)" in
-        GenuineIntel) proponer intel-ucode "$(t 'actualizaciones de microcódigo Intel')" ;;
-        AuthenticAMD) proponer amd-ucode   "$(t 'actualizaciones de microcódigo AMD')" ;;
-    esac
+
+    # El microcódigo, dicho en vez de recomendado.
+    #
+    # Antes aquí se proponía SIEMPRE el paquete amd-ucode o intel-ucode, en
+    # cualquier equipo, funcionara lo que funcionara: la pantalla de
+    # bienvenida decía "Faltan por instalar: amd-ucode" para siempre. Y
+    # además no servía: el kernel sólo carga el microcódigo desde el
+    # principio del initramfs, no desde /lib/firmware, que es donde lo dejaba
+    # el paquete. Ahora va dentro de la imagen y aquí sólo se cuenta si llegó.
+    _mc="$(sed -n 's/^microcode[[:space:]]*: //p' /proc/cpuinfo 2>/dev/null | head -1)"
+    if [ -n "$_mc" ]; then
+        if dmesg 2>/dev/null | grep -qi "microcode: updated early"; then
+            componente "$(t Procesador)" "$(t Microcódigo)" "ok" "$(t '%s, actualizado al arrancar' "$_mc")"
+        else
+            componente "$(t Procesador)" "$(t Microcódigo)" "ok" "$(t '%s, el que trae la BIOS (ya era el último)' "$_mc")"
+        fi
+    fi
 }
 
 # ===================================================================== batería

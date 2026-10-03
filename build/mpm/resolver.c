@@ -156,6 +156,29 @@ static int run(const char *fmt, ...) {
     return system(cmd);
 }
 
+/* nombre/repo/archivo del catálogo acaban interpolados sin más dentro de
+ * comandos de shell en run() -- por ejemplo
+ * `zstd -dc '%s/%s' | tar -x -C /` con "archivo" puesto ahí a mano. Entre
+ * comillas simples, pero una comilla simple DENTRO del propio valor rompe
+ * las comillas y todo lo que venga detrás se ejecuta como si lo hubiera
+ * escrito quien llama a mpm -- como root, que es con quien corre la
+ * instalación. Y estos tres campos no salen de argv ni de algo que ya se
+ * validara antes: salen tal cual del catálogo remoto (index.tsv), que es
+ * exactamente lo que un espejo comprometido o una respuesta interceptada
+ * pueden manipular. Un nombre de paquete real de Arch nunca lleva nada
+ * fuera de este conjunto, así que cualquier otra cosa es, como mínimo,
+ * sospechosa, y como máximo, el propio ataque. */
+static int campo_seguro(const char *s) {
+    if (!s || !*s) return 0;
+    for (const unsigned char *p = (const unsigned char *)s; *p; p++) {
+        int ok = (*p >= 'a' && *p <= 'z') || (*p >= 'A' && *p <= 'Z') ||
+                 (*p >= '0' && *p <= '9') ||
+                 *p == '-' || *p == '_' || *p == '.' || *p == '+' || *p == ':' || *p == '~';
+        if (!ok) return 0;
+    }
+    return 1;
+}
+
 /* Trocea una línea por tabuladores. Devuelve cuántos campos encontró. */
 static int trocear(char *linea, char **campos, int max) {
     int n = 0;
@@ -204,7 +227,8 @@ static int cargar_catalogo(void) {
         if (nl) *nl = 0;
         char *campos[12];
         int n = trocear(p, campos, 12);
-        if (n >= 8 && campos[0][0] == 'P') {
+        if (n >= 8 && campos[0][0] == 'P'
+            && campo_seguro(campos[1]) && campo_seguro(campos[2]) && campo_seguro(campos[3])) {
             paquetes[n_paquetes].nombre  = campos[1];
             paquetes[n_paquetes].repo    = campos[2];
             paquetes[n_paquetes].archivo = campos[3];

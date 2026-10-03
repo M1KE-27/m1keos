@@ -12,11 +12,22 @@ ROOTFS_DIR="$PROJECT_ROOT/rootfs"
 ISO_DIR="$PROJECT_ROOT/iso"
 KERNEL_IMAGE="$PROJECT_ROOT/kernel/arch/x86/boot/bzImage"
 
-# Kernel Linux propio del proyecto (rama de desarrollo de torvalds/linux,
-# fijado por commit exacto para reproducibilidad -- no es un tag estable,
-# así que sin este pin "git clone" traería un árbol distinto cada vez).
-KERNEL_REPO="https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git"
-KERNEL_COMMIT="388b607d107c07aaade04c7f22f344cab6bdccd3"
+# El kernel: la última ESTABLE de kernel.org, fijada por etiqueta y por commit.
+#
+# Antes era un commit de la rama de desarrollo de torvalds tomado en mitad de
+# la ventana de fusión de 7.3 ("7.2.0-12252-g388b607d": doce mil cambios sin
+# probar encima de 7.2). Nadie lo había publicado como versión, así que nadie
+# le había dado los arreglos de las estables. La rama estable es la que recibe
+# las correcciones de seguridad y de hardware semana a semana.
+#
+# El commit va además de la etiqueta para que una etiqueta movida en el
+# servidor no cambie en silencio lo que se compila: si no coinciden, se para.
+#
+# Para pasar a una estable nueva: cambiar las dos líneas, y ./scripts/build.sh
+# la trae, aplica los parches y se planta si alguno no entra o choca.
+KERNEL_REPO="https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git"
+KERNEL_TAG="v7.2.9"
+KERNEL_COMMIT="5fce161649b4d779d1b76d9fcd52dc77779774b8"
 KERNEL_CONFIG_FRAGMENT="$PROJECT_ROOT/.config"
 
 BUSYBOX_VERSION="1.36.1"
@@ -159,7 +170,20 @@ if [ ! -f "$KERNEL_IMAGE" ]; then
             ;;
     esac
     cd "$KERNEL_SRC"
-    git checkout -q "$KERNEL_COMMIT"
+    # Un clon hecho antes (de la rama de torvalds, o de otra estable) no tiene
+    # por qué tener este commit: se trae SÓLO esa etiqueta, que son unos
+    # megas, en vez de volver a clonar 4 GB.
+    if ! git cat-file -e "$KERNEL_COMMIT^{commit}" 2>/dev/null; then
+        echo "Trayendo $KERNEL_TAG de kernel.org..."
+        git fetch -q --no-tags "$KERNEL_REPO" "refs/tags/$KERNEL_TAG:refs/tags/$KERNEL_TAG" || exit 1
+    fi
+    if [ "$(git rev-parse "$KERNEL_TAG^{commit}" 2>/dev/null)" != "$KERNEL_COMMIT" ]; then
+        echo "ERROR: la etiqueta $KERNEL_TAG no apunta a $KERNEL_COMMIT." >&2
+        echo "       O ha cambiado en el servidor, o hay que actualizar build.sh." >&2
+        exit 1
+    fi
+    git checkout -q -- . 2>/dev/null; git clean -qfd
+    git checkout -q --detach "$KERNEL_COMMIT"
 
     # Parches de hardware Surface (ver build/kernel-patches/LEEME.md).
     #
@@ -189,6 +213,13 @@ if [ ! -f "$KERNEL_IMAGE" ]; then
                 exit 1
             fi
         done
+        # Que todos entren no basta: un parche puede entrar y aun así dejar
+        # un valor repetido (ver scripts/choques-kernel.py --- pasó con tres
+        # al pasar a 7.2.9, y ninguno daba error al compilar).
+        if ! python3 "$PROJECT_ROOT/scripts/choques-kernel.py" . "$KERNEL_COMMIT"; then
+            echo "ERROR: los parches dejan valores repetidos en el kernel (arriba)." >&2
+            exit 1
+        fi
     fi
 
     make defconfig
@@ -204,7 +235,11 @@ if [ ! -f "$KERNEL_IMAGE" ]; then
         } >> .config
     fi
     make olddefconfig
-    make -j"$(nproc)" bzImage
+    # LOCALVERSION definida (aunque vacía) para que el kernel se llame
+    # "7.2.9-mikeos" y no "7.2.9-dirty": el árbol lleva los parches aplicados
+    # sin confirmar, y con el sufijo automático de git eso salía en uname, en
+    # "Acerca de" y en el nombre del paquete del kernel.
+    LOCALVERSION= make -j"$(nproc)" bzImage
     cd "$PROJECT_ROOT"
     printf '%s\n' "$KERNEL_SHA_AHORA" > "$KERNEL_HUELLA"
     [ -n "$KERNEL_BIND" ] && sudo umount "$KERNEL_BIND" 2>/dev/null || true
@@ -1126,36 +1161,71 @@ if [ -d "$FW_ORIGEN" ]; then
     # lo cual hace falta red. O sea que en un portátil con wifi Intel y sin
     # cable, la primera vez hay que tirar de móvil por USB. Está documentado en
     # m-drivers, que dice exactamente qué falta y cómo traerlo.
+    # Cada entrada es una ruta dentro de /lib/firmware. Si es una CARPETA se
+    # copia entera, con todo lo que tenga dentro.
+    #
+    # Eso último es la corrección de un fallo que duró semanas: el bucle de
+    # abajo se saltaba las carpetas, así que "ath10k/*" --- que sólo
+    # encuentra QCA6174/, QCA9377/... --- no copiaba NADA. El Wi-Fi
+    # Qualcomm/Atheros, de los más comunes en portátiles, no tuvo firmware
+    # nunca, y este mismo comentario decía que sí. Lo mismo mediatek/mt7925
+    # (Wi-Fi 7) y el firmware de NVIDIA. tests/firmware.sh lo comprueba ahora
+    # cruzando lo que lleva la imagen con lo que piden los drivers.
+    #
+    # Qualcomm va por chip y no entero: ath11k/ath12k incluyen los de los
+    # routers (IPQ, QCN), 35 MB que ningún portátil va a pedir.
     FW_PATRONES="
         amdgpu/*
-        i915/*            xe/*
-        ath10k/*          ath11k/*          ath12k/*
+        i915/*            xe/*              radeon/*
+        ath10k/QCA6174    ath10k/QCA9377
+        ath11k/WCN6855    ath11k/QCA6390    ath12k/WCN7850
         qca/*             ath9k_htc/*
-        mediatek/mt76*    mediatek/WIFI_*
-        rtw88/*           rtw89/*           rtlwifi/*         rtl_nic/*
+        mediatek/mt76*    mediatek/WIFI_*   mediatek/BT_*
+        mediatek/mt7925   mediatek/mt7927
+        mt7601u.bin*      mt7662*           mt7650*
+        rtw88/*           rtw89/*           rtlwifi/*         rtl_nic/*         rtl_bt/*
         brcm/*
-        mrvl/*
-        intel/ibt-*       qca/*bt*
-        amd-ucode/*       intel-ucode/*
+        mrvl/pcie*        mrvl/usb*         mrvl/sd*
+        intel/ibt-*       intel/ish
+        intel/sof         intel/sof-tplg    intel/sof-ace-tplg
+        intel/sof-ipc4    intel/sof-ipc4-lib                  intel/sof-ipc4-tplg
+        cirrus/cs35l41*   cirrus/cs35l56*   cirrus/cs35l57*
+        ti/audio/tas2781  TAS2XXX*
+        amdtee
+        tigon/*           bnx2/*            e100/*
         regulatory.db*
-        rtl_bt/*
     "
     _fw_n=0
     for _pat in $FW_PATRONES; do
+        _hubo=0
         for _f in $FW_ORIGEN/$_pat; do
             [ -e "$_f" ] || continue
-            [ -d "$_f" ] && continue
+            _hubo=1
             _rel="${_f#$FW_ORIGEN/}"
+            mkdir -p "$FW_DESTINO/$(dirname "$_rel")"
             # Se copian TAL CUAL, comprimidos incluidos. El kernel lleva
             # CONFIG_FW_LOADER_COMPRESS_ZSTD, así que sabe abrirlos él mismo.
             # Antes se descomprimían "porque se cargan más rápido": eran unos
             # milisegundos a cambio de triplicar el espacio, y ese espacio es
             # exactamente lo que impedía cubrir más hardware.
-            mkdir -p "$FW_DESTINO/$(dirname "$_rel")"
             cp -aL "$_f" "$FW_DESTINO/$_rel" 2>/dev/null || continue
-            _fw_n=$((_fw_n + 1))
+            if [ -d "$_f" ]; then
+                _fw_n=$((_fw_n + $(find "$FW_DESTINO/$_rel" -type f | wc -l)))
+            else
+                _fw_n=$((_fw_n + 1))
+            fi
         done
+        # Que un patrón no encuentre nada casi siempre es que al equipo que
+        # compila le falta un paquete de firmware. Antes se callaba, y la
+        # imagen salía sin ese hardware sin que nadie se enterase.
+        [ "$_hubo" = 1 ] || FW_FALTAN="${FW_FALTAN:-} $_pat"
     done
+    if [ -n "${FW_FALTAN:-}" ]; then
+        echo "AVISO: este equipo no tiene estos firmware, y la imagen saldrá sin ellos:"
+        for _p in $FW_FALTAN; do echo "         $_p"; done
+        echo "       En Arch/CachyOS: sudo pacman -S linux-firmware wireless-regdb \\"
+        echo "                        linux-firmware-marvell sof-firmware"
+    fi
     # iwlwifi (Intel) no va en la imagen base: son 185 archivos y cada serie
     # tiene varias revisiones -- 239 MB en total para un portátil que lleva
     # Qualcomm. Va en el paquete firmware-extra, que se instala en un minuto
@@ -1198,24 +1268,43 @@ if [ -d "$FW_ORIGEN" ]; then
     # triplicarían el tamaño de la imagen para cubrir un caso en el que casi
     # siempre hay una gráfica integrada moviendo la pantalla. Ese va aparte,
     # con "mpm install linux-firmware-nvidia".
+    # Por generaciones y no "todo menos GSP", que es lo que había y no
+    # funcionaba: el bucle sólo copiaba los archivos sueltos de cada chip, y
+    # nouveau los guarda en subcarpetas (acr/, gr/, sec2/, pmu/). Copiaba 0 de
+    # los 519 que puede pedir.
+    #
+    #   gk*, gm*, gp*, gv*   Kepler, Maxwell, Pascal y Volta (GTX 600 a 1000).
+    #                        nouveau los necesita para acelerar. 1,2 MB.
+    #   tu*, ga*, ad*, gb*   Turing en adelante (RTX 20/30/40/50). Ahí nouveau
+    #                        no hace nada sin el GSP: 103 MB que triplicarían
+    #                        la imagen para un caso en el que casi siempre hay
+    #                        una gráfica integrada moviendo la pantalla. Va
+    #                        aparte, con "mpm install linux-firmware-nvidia".
     if [ -d "$FW_ORIGEN/nvidia" ]; then
         _nv=0
-        for _d in "$FW_ORIGEN"/nvidia/*/; do
+        for _d in "$FW_ORIGEN"/nvidia/gk* "$FW_ORIGEN"/nvidia/gm* \
+                  "$FW_ORIGEN"/nvidia/gp* "$FW_ORIGEN"/nvidia/gv*; do
             [ -d "$_d" ] || continue
-            case "$(basename "$_d")" in
-                ga102|tu102|[0-9]*) continue ;;   # los de GSP, fuera
-            esac
-            for _f in "$_d"*; do
-                [ -f "$_f" ] || continue
-                _rel="${_f#$FW_ORIGEN/}"
-                mkdir -p "$FW_DESTINO/$(dirname "$_rel")"
-                cp -aL "$_f" "$FW_DESTINO/$_rel" 2>/dev/null || continue
-                _nv=$((_nv + 1)); _fw_n=$((_fw_n + 1))
-            done
+            _rel="${_d#$FW_ORIGEN/}"
+            mkdir -p "$FW_DESTINO/$(dirname "$_rel")"
+            cp -aL "$_d" "$FW_DESTINO/$_rel" 2>/dev/null || continue
+            _nv=$((_nv + $(find "$FW_DESTINO/$_rel" -type f | wc -l)))
         done
-        echo "  -> $_nv archivos de NVIDIA (sin los blobs GSP, que van aparte)."
+        _fw_n=$((_fw_n + _nv))
+        echo "  -> $_nv archivos de NVIDIA (hasta Volta; Turing y posteriores van aparte)."
     fi
 
+    # Lo que llega SIN comprimir, se comprime. El kernel lleva
+    # FW_LOADER_COMPRESS_ZSTD: cuando un driver pide "x.ri" y no existe, prueba
+    # "x.ri.zst" él solo. Casi todo linux-firmware ya viene así, pero el
+    # firmware de sonido de Intel (SOF) son 88 MB en bruto que comprimidos se
+    # quedan en una fracción. En la ISO casi no se notaba (el squashfs ya
+    # comprime), pero en un equipo instalado eran 88 MB de disco por nada.
+    # Se copió con -L, así que aquí no queda ningún enlace que se quede colgado.
+    if command -v zstd >/dev/null 2>&1; then
+        find "$FW_DESTINO" -type f -size +64k ! -name '*.zst' ! -name '*.xz' \
+             ! -name 'regulatory.db*' -exec zstd -19 -q --rm {} \; 2>/dev/null || true
+    fi
     echo "  -> $_fw_n archivos de firmware ($(du -sh "$FW_DESTINO" 2>/dev/null | cut -f1))."
 else
     echo "Aviso: el equipo de construcción no tiene /lib/firmware; la imagen"
@@ -1730,14 +1819,71 @@ fakeroot -- env ROOTFS_DIR="$ROOTFS_DIR" ISO_DIR="$ISO_DIR" sh -c '
     # cuanto la raíz de verdad está montada, así que encuentran su firmware un
     # segundo más tarde en vez de quedarse sin él para siempre. Antes ese
     # segundo era la diferencia entre tener wifi y no tenerla.
+    #
+    # La excepción es regulatory.db, que pesa 4 KB. No lo pide ningún
+    # dispositivo sino cfg80211 al iniciarse, así que m-reintentar-drivers
+    # no tiene a quién reenganchar y nadie lo vuelve a pedir: sin él en el
+    # initramfs, TODO el Wi-Fi se queda en el dominio regulador "mundial",
+    # con menos canales y menos potencia en 5 GHz.
     find . -not -path "./boot/*" -not -path "./var/lib/mpm/repo/*" -not -path "./usr/lib/*" -not -path "./lib64/*" -not -path "./usr/share/X11/*" -not -path "./usr/bin/Hyprland*" -not -path "./usr/bin/quickshell*" \
          \( -path "./lib/firmware/amdgpu/*" -o -path "./lib/firmware/i915/*" \
             -o -path "./lib/firmware/xe/*" -o -path "./lib/firmware/nvidia/*" \
-            -o -path "./lib/firmware/radeon/*" -o -not -path "./lib/firmware/*" \) -print0 \
+            -o -path "./lib/firmware/radeon/*" -o -path "./lib/firmware/regulatory.db*" \
+            -o -not -path "./lib/firmware/*" \) -print0 \
         | LC_ALL=C sort -z \
         | cpio --null -o --format=newc 2>/dev/null \
         | gzip -9n > "$ISO_DIR/initramfs.cpio.gz"
 '
+
+# --- Microcódigo de la CPU, delante del initramfs -----------------------------
+#
+# El kernel lleva CONFIG_MICROCODE pero no la carga tardía, así que sólo sabe
+# coger el microcódigo en un sitio: un cpio SIN COMPRIMIR al principio del
+# initramfs, con kernel/x86/microcode/AuthenticAMD.bin o GenuineIntel.bin.
+# Ese cpio no existía, y el microcódigo de la CPU no se ha cargado nunca en
+# ningún equipo. La imagen copiaba amd-ucode/ e intel-ucode/ a /lib/firmware,
+# y m-drivers recomendaba instalarlos, pero ahí no los mira nadie.
+#
+# Son los arreglos que los fabricantes publican para fallos de la propia CPU:
+# Zenbleed en los Ryzen 3000-5000, o la degradación de los Intel de 13.ª y
+# 14.ª generación, que con el microcódigo viejo se van estropeando con el uso.
+#
+# Es el mismo archivo que usan Arch, Fedora o Ubuntu: si este equipo lo tiene
+# en /boot se usa ese (es el más reciente); si no, se descarga una vez el
+# paquete de Arch y se guarda en build/microcode. Ponerlo delante es lo mismo
+# que hace GRUB con "initrd /amd-ucode.img /initramfs.img": el kernel acepta
+# varios cpio seguidos.
+UCODE_DIR="$PROJECT_ROOT/build/microcode"
+mkdir -p "$UCODE_DIR"
+obtener_ucode() {  # obtener_ucode amd|intel  ->  ruta del .img, o nada
+    if [ -s "/boot/$1-ucode.img" ]; then
+        cp -f "/boot/$1-ucode.img" "$UCODE_DIR/$1-ucode.img"
+    elif [ ! -s "$UCODE_DIR/$1-ucode.img" ] && command -v pacman >/dev/null 2>&1; then
+        _url="$(pacman -Sp "$1-ucode" 2>/dev/null | head -1)"
+        _tmp="$(mktemp -d)"
+        if [ -n "$_url" ] && curl -fsSL "$_url" -o "$_tmp/p.pkg.tar.zst" \
+           && bsdtar -xf "$_tmp/p.pkg.tar.zst" -C "$_tmp" "boot/$1-ucode.img" 2>/dev/null; then
+            cp -f "$_tmp/boot/$1-ucode.img" "$UCODE_DIR/$1-ucode.img"
+        fi
+        rm -rf "$_tmp"
+    fi
+    [ -s "$UCODE_DIR/$1-ucode.img" ] && printf '%s' "$UCODE_DIR/$1-ucode.img"
+}
+_ucode=""
+for _v in amd intel; do
+    _img="$(obtener_ucode "$_v" || true)"
+    if [ -n "$_img" ]; then
+        _ucode="$_ucode $_img"
+    else
+        echo "AVISO: sin microcódigo de $_v: esas CPU arrancarán con el que traiga su BIOS."
+    fi
+done
+if [ -n "$_ucode" ]; then
+    # shellcheck disable=SC2086
+    cat $_ucode "$ISO_DIR/initramfs.cpio.gz" > "$ISO_DIR/initramfs.cpio.gz.nuevo"
+    mv -f "$ISO_DIR/initramfs.cpio.gz.nuevo" "$ISO_DIR/initramfs.cpio.gz"
+    echo "Microcódigo de CPU delante del initramfs:$(for _f in $_ucode; do printf ' %s (%s)' "$(basename "$_f")" "$(du -h "$_f" | cut -f1)"; done)"
+fi
 
 chmod +x "$PROJECT_ROOT/scripts/create-disk.sh"
 "$PROJECT_ROOT/scripts/create-disk.sh"

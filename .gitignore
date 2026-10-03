@@ -93,3 +93,6 @@ build/web/*
 # scripts/build.sh prepara para empotrarlas dentro del kernel. Se regeneran
 # solas y no son nuestras: no tienen por qué ocupar sitio en el repositorio.
 build/firmware-kernel/
+
+# Microcódigo de CPU descargado por build.sh (se rehace solo).
+build/microcode/

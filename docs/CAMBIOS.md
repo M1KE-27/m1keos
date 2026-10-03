@@ -7,6 +7,125 @@ de la versión anterior el día que alguien tiene prisa.
 
 Una sección por etiqueta, encabezada con `## ` y el nombre de la etiqueta.
 
+## v0.10.0
+
+MIKE OS arranca en muchos más equipos. Casi todo lo de esta versión es
+hardware que **no funcionaba sin decir nada**: el kernel compilaba, la imagen
+arrancaba en QEMU, y en el portátil concreto simplemente faltaba el Wi-Fi, el
+sonido o el disco.
+
+### Kernel: la estable de kernel.org
+
+- **Linux 7.2.9**, la última estable (publicada el 3 de octubre). Antes era un
+  commit de la rama de desarrollo tomado en mitad de la ventana de fusión de
+  7.3 — doce mil cambios sin probar que nadie había publicado como versión.
+  Fijado por etiqueta **y** por commit: si la etiqueta cambia en el servidor,
+  el build se para.
+- **`scripts/actualizar-kernel.sh`** trae la estable del día, aplica los
+  parches, comprueba choques y opciones, y sólo entonces la fija. Antes iba a
+  la rama de desarrollo y buscaba los parches en una carpeta que no existe.
+- Dos parches de Surface **adaptados a mano**. Aplicados con *fuzz* habrían
+  entrado sin queja y dejado tres choques: el bit de `btusb` para la Marvell de
+  Surface ya era otro flag en 7.2.9, y la Type Cover quedaba con el mismo bit
+  que una peculiaridad de otro teclado y con el mismo número de clase que el
+  ASUS ROG Z13 — le habría estropeado el teclado a otro equipo.
+
+### Drivers que faltaban
+
+Aquí todo va compilado dentro del kernel: un driver que falta o que queda como
+módulo es un equipo que no funciona.
+
+- **Intel VMD** (el "RST" de muchas BIOS Intel desde la 11.ª generación): sin
+  él el instalador no veía ningún disco.
+- **Gráficas**: `xe` (Intel Lunar Lake y Arc Battlemage, que `i915` no lleva) y
+  `radeon` (AMD anteriores a GCN y las HD 7000/R9 200, que no tenían ningún
+  driver).
+- **Wi-Fi 7 de Intel** (BE200/BE201), **Ethernet** Intel de 2,5 Gb y Broadcom
+  — este último se pedía como `TG3`, que no existe: el símbolo es `TIGON3`.
+- **Compartir internet desde el móvil por USB** (Android antiguo e iPhone):
+  `m-drivers` lo recomendaba cuando no hay red, y no funcionaba.
+- **Touchpads** Elantech y Synaptics con dos dedos, receptores **Logitech**,
+  lectores de tarjetas **Realtek**, **sonido** de portátiles AMD modernos y los
+  amplificadores de altavoz Cirrus/TI.
+- **Drivers de cada marca de portátil**: no había ninguno salvo Surface.
+  ThinkPad, IdeaPad, ASUS, HP, Dell, Acer, MSI, Samsung, LG, Huawei, Gigabyte,
+  Fujitsu, Sony, Panasonic y Toshiba: teclas de brillo y volumen, modo avión,
+  retroiluminación, límite de carga y perfiles de ventilador.
+- **Temperatura** (Intel DPTF) y **energía** de los Ryzen portátiles (AMD
+  PMF), que se caía en silencio por una dependencia.
+
+### Firmware que nunca llegó a la imagen
+
+- El copiado del firmware **no entraba en subcarpetas**. `ath10k/*` sólo
+  encuentra carpetas, y el bucle se las saltaba: el **Wi-Fi Qualcomm/Atheros**,
+  de los más comunes en portátiles, no tuvo firmware nunca. Lo mismo el
+  **Wi-Fi 7 de MediaTek** (mt7925), el de **NVIDIA** (0 de 519 archivos) y el de
+  las Surface Pro (Marvell). El comentario del script decía que sí estaban.
+- **`regulatory.db`** no estaba: todo el Wi-Fi, de cualquier marca, iba en el
+  dominio regulador "mundial", con menos canales y potencia en 5 GHz.
+- **Sonido de los portátiles Intel desde 2019** (SOF): 57 MB que en la ISO
+  ocupan 2,8.
+- **`tests/firmware.sh`** cruza lo que piden los drivers con lo que lleva la
+  imagen. Antes de este cambio encontraba 15 drivers dentro del kernel sin un
+  solo archivo de su firmware.
+
+### Microcódigo de la CPU
+
+No se había cargado **nunca**, en ningún equipo. El kernel sólo lo coge del
+principio del initramfs, y ahí no estaba; la imagen lo dejaba en
+`/lib/firmware`, donde no lo mira nadie, y `m-drivers` recomendaba instalar un
+paquete que hacía lo mismo. Ahora va delante del initramfs, para AMD e Intel:
+son los arreglos de los fabricantes para fallos de la propia CPU (Zenbleed,
+o la degradación de los Intel de 13.ª y 14.ª generación).
+
+### Arranque dual con Windows
+
+- **El instalador no podía registrar MIKE OS en la UEFI**: `efivarfs` iba como
+  módulo en un kernel que no carga módulos. Al lado de Windows eso significa
+  que, después de instalar, **el equipo seguía arrancando Windows**. Además
+  usaba `--part 1` fijo y apuntaba al kernel saltándose GRUB (sin menú para
+  volver a Windows). Ahora: dos entradas, GRUB primero y el kernel detrás como
+  respaldo, en la partición EFI que sea.
+- **La primera actualización de kernel borraba GRUB**: el paquete del kernel
+  copiaba el kernel encima de `EFI/BOOT/BOOTX64.EFI`, que es donde el
+  instalador pone GRUB.
+- **El kernel anterior se puede arrancar** desde el menú tras una
+  actualización. Se guardaba, pero no había forma de llegar a él.
+- Una carpeta de fabricante con un espacio en el nombre se perdía al buscar
+  otros sistemas, y si se encontraba, GRUB partía su ruta en dos.
+
+### Seguridad
+
+- `m-sudo` limpia `LD_PRELOAD`, `LD_LIBRARY_PATH` y compañía antes de dar root,
+  y fija su propio `PATH`.
+- `mpm` rechaza nombres de paquete del catálogo remoto con caracteres que
+  podrían romper las comillas de una orden de shell.
+
+### Que no vuelva a pasar
+
+- **`tests/estatico.sh`**: todo lo que se comprueba sin arrancar una máquina, de
+  una vez.
+- **`tests/kernel-config.sh`**: lo que pide el fragmento acaba de verdad en el
+  kernel (el `TG3` que no existía, `AMD_PMF` cayéndose, los módulos que aquí no
+  se cargan). Y nada escrito dos veces.
+- **`scripts/choques-kernel.py`**, dentro del build: se para si un parche deja
+  un valor repetido.
+- **`tests/menu-dualboot.sh`**: el instalador encuentra a Windows.
+- **`tests/instalar-uefi.sh`**: la primera prueba que **instala**. Arranca el
+  USB con firmware UEFI real y un disco vacío, instala sin preguntas, apaga,
+  quita el USB y vuelve a encender con la misma NVRAM: comprueba que arranca
+  por la entrada "MIKE OS", pasando por GRUB, con el kernel, el idioma y los
+  subvolúmenes que tocan. 13 comprobaciones.
+- `tests/probar-arranque-uefi.sh` arranca ahora la ISO por defecto. Su modo
+  anterior (sólo kernel e initramfs) no podía pasar desde hacía meses y daba
+  "nunca llega a contestar" en arranques correctos.
+- La imagen EFI de la ISO se dimensiona según lo que mide GRUB: tenía 16 MB
+  fijos "porque GRUB ocupa unos 2", y GRUB ya ocupa 17 — la ISO dejó de
+  construirse.
+- El kernel se llama `7.2.9-mikeos` y no `7.2.9-dirty`.
+- El firmware que llega sin comprimir (el sonido de Intel) se comprime al
+  copiarlo: el kernel lo abre igual.
+
 ## v0.7.0-alpha
 
 MIKE OS habla inglés. No la web: **el sistema**.

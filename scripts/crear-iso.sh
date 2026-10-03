@@ -144,11 +144,6 @@ paso "Creando la imagen de arranque EFI (FAT32)"
 # en el sistema de archivos de la ISO, que no tiene el límite de la FAT.
 # Un 20 % de margen cubre lo que gasta la propia tabla FAT: la primera versión
 # ajustaba al byte y moría con "Disk full".
-# La FAT lleva sólo GRUB (unos 2 MB). 16 MB dan de sobra y evitan tener que
-# afinar el tamaño cada vez que GRUB engorde.
-TAM_KB=16384
-dd if=/dev/zero of="$TRABAJO/efiboot.img" bs=1K count="$TAM_KB" status=none
-mkfs.vfat -n MIKEOS_EFI "$TRABAJO/efiboot.img" >/dev/null 2>&1
 
 # --- GRUB ---------------------------------------------------------------
 # El gestor de arranque va delante, y el kernel a pelo queda de respaldo.
@@ -178,6 +173,20 @@ else
     err "falta grub-mkstandalone (paquete grub)."
     exit 1
 fi
+
+# El tamaño de la FAT sale de lo que mide GRUB, no de una cifra fija.
+#
+# Aquí ponía "La FAT lleva sólo GRUB (unos 2 MB). 16 MB dan de sobra". Pero
+# grub-mkstandalone mete DENTRO del ejecutable todos sus módulos y el tema, y
+# con una actualización de GRUB en el equipo que compila pasó a medir 17 MB:
+# la ISO dejó de construirse con un seco "Disk full". GRUB más un 30 % para lo
+# que gasta la propia FAT, y nunca menos de 16 MB.
+_grub_kb=$(( ( $(stat -c %s "$TRABAJO/grubx64.efi") + 1023 ) / 1024 ))
+TAM_KB=$(( _grub_kb * 13 / 10 + 2048 ))
+[ "$TAM_KB" -ge 16384 ] || TAM_KB=16384
+dd if=/dev/zero of="$TRABAJO/efiboot.img" bs=1K count="$TAM_KB" status=none
+mkfs.vfat -n MIKEOS_EFI "$TRABAJO/efiboot.img" >/dev/null 2>&1
+gris "  imagen EFI de $((TAM_KB / 1024)) MB"
 
 # mcopy (mtools) evita tener que montar nada, o sea que no hace falta root.
 if command -v mcopy >/dev/null 2>&1; then

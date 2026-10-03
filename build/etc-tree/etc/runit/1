@@ -13,6 +13,14 @@ mountpoint -q /dev/pts || mount -t devpts devpts /dev/pts -o mode=0620,gid=5 2>/
 mountpoint -q /dev/shm || mount -t tmpfs -o mode=1777,nosuid,nodev tmpfs /dev/shm 2>/dev/null || true
 mountpoint -q /run || mount -t tmpfs none /run 2>/dev/null || true
 mountpoint -q /tmp || mount -t tmpfs none /tmp 2>/dev/null || true
+# Las variables de la UEFI. Sin esto efibootmgr no puede leer ni escribir el
+# menú de arranque de la firmware: el instalador no podía registrar MIKE OS, y
+# al lado de Windows eso significa que el equipo sigue arrancando Windows.
+# "nosuid,nodev,noexec" porque escribir ahí a lo loco puede dejar inservible
+# la placa en algunos portátiles; el kernel ya protege las variables críticas.
+if [ -d /sys/firmware/efi/efivars ] && ! mountpoint -q /sys/firmware/efi/efivars; then
+    mount -t efivarfs -o nosuid,nodev,noexec efivarfs /sys/firmware/efi/efivars 2>/dev/null || true
+fi
 # Y ahora lo que pida /etc/fstab: el resto de particiones del equipo.
 #
 # Esto FALTABA, y era la razón de que un sistema instalado arrancara a una

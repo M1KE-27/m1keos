@@ -1,7 +1,7 @@
 # MIKE OS — Kernel Management and Lifecycle
 
 ## 1. Overview
-The Linux Kernel in MIKE OS (version 7.2.0, x86_64) is optimized for ultra-fast boot times, embedded drivers (ext4, virtio_blk, virtio_net, devtmpfs), and zero systemd dependencies.
+The Linux Kernel in MIKE OS (the latest kernel.org stable, currently 7.2.9, x86_64) is optimized for ultra-fast boot times, embedded drivers (ext4, virtio_blk, virtio_net, devtmpfs), and zero systemd dependencies.
 
 ---
 

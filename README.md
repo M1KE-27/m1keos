@@ -13,7 +13,7 @@ Kernel Linux propio · init con runit · gestor de paquetes propio · shell prop
 [![Licencia](https://img.shields.io/badge/licencia-MIT-00d4ff)](LICENSE)
 [![Kernel](https://img.shields.io/badge/kernel-7.2-00d4ff)](docs/kernel.md)
 [![Plataforma](https://img.shields.io/badge/x86__64-UEFI-00d4ff)](docs/boot.md)
-[![Pruebas](https://img.shields.io/badge/pruebas-47%20%2B%2011%20%2B%2016%20en%20verde-4cc38a)](#comprobar-que-funciona)
+[![Pruebas](https://img.shields.io/badge/pruebas-47%20%2B%2011%20%2B%2013%20%2B%208%20en%20verde-4cc38a)](#comprobar-que-funciona)
 
 [**Web**](https://m1keos.duckdns.org/) ·
 [Descargar](https://m1keos.duckdns.org/descargas.html) ·
@@ -39,7 +39,7 @@ Kernel Linux propio · init con runit · gestor de paquetes propio · shell prop
 | Compilar el sistema entero | **25 s** |
 | systemd | **0 líneas** |
 | Idiomas | **español e inglés**, el sistema entero |
-| Imagen | **489 MB** |
+| Imagen | **566 MB** |
 
 ![El escritorio de MIKE OS](build/web/capturas/escritorio.png)
 
@@ -166,8 +166,9 @@ desarrollo dentro de una imagen distribuida es acceso root para quien la mire.
 ```sh
 ./tests/humo.sh                    # 47 comprobaciones sobre una máquina arrancada
 ./tests/raton-real.sh              # 11 comprobaciones con pulsaciones arrastradas
-./tests/traducciones.sh            # 16 comprobaciones, sin arrancar nada
-./tests/probar-arranque-uefi.sh    # arranca con firmware UEFI, sin trampas
+./tests/estatico.sh                # todo lo que no necesita arrancar nada
+./tests/instalar-uefi.sh           # instala con UEFI real y arranca lo instalado
+./tests/probar-arranque-uefi.sh    # arranca la ISO con firmware UEFI, sin trampas
 ./tests/arrancar-como-ventoy.sh    # la ISO como ARCHIVO dentro de una partición
 ./tests/actualizacion.sh           # editar código -> paquete -> mpm upgrade
 ./tests/medir-arranque.sh          # cronometra el arranque
@@ -235,11 +236,22 @@ docs/              documentación (se publica sola en la web)
 .config            las opciones del kernel propias de MIKE OS
 ```
 
-Las modificaciones del kernel son **opciones de `.config`, no parches**. Por eso
-`scripts/actualizar-kernel.sh` puede traer una versión nueva de kernel.org y
-reaplicarlas, comprobando una a una cuáles siguen existiendo: entre versiones
-las opciones se renombran, y una que desaparece en silencio no se nota hasta que
-falta el WiFi.
+El kernel es la **última estable de kernel.org** (ahora Linux 7.2.9), fijada por
+etiqueta y por commit en `scripts/build.sh`. Lo propio de MIKE OS va en dos
+sitios: unas 400 **opciones** en `.config` y nueve **parches** de hardware
+Surface en `build/kernel-patches/`. Pasar a una estable nueva es una orden:
+
+```sh
+./scripts/actualizar-kernel.sh     # trae la estable de hoy, aplica los parches,
+                                   # comprueba choques y opciones, y la fija
+```
+
+Se planta si algo no cuadra, porque las tres formas en que esto falla son
+silenciosas: una opción que la versión nueva renombró desaparece sin avisar, un
+parche que "aplica" puede dejar un valor repetido veinte líneas más abajo, y un
+driver compilado sin su firmware no da ningún error hasta que falta el Wi-Fi.
+Para eso están `tests/kernel-config.sh`, `scripts/choques-kernel.py` y
+`tests/firmware.sh`.
 
 ## Colaborar
 

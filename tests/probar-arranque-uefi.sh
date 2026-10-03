@@ -10,8 +10,15 @@
 # partición EFI, y nadie que le pase nada al kernel. Si arranca aquí, arranca
 # en la Surface.
 #
-#   ./tests/probar-arranque-uefi.sh            disco GPT + ESP (como m-install)
-#   ./tests/probar-arranque-uefi.sh --iso      la ISO, como un USB
+#   ./tests/probar-arranque-uefi.sh            la ISO, como un USB (lo normal)
+#   ./tests/probar-arranque-uefi.sh --kernel   sólo kernel + initramfs en una ESP
+#
+# El modo por defecto era el de "sólo kernel", y desde hace meses no podía
+# pasar nunca: el initramfs ya no es un sistema completo, sólo arranca y busca
+# el de verdad (el squashfs del medio), y además excluye /usr/lib, así que ni
+# SSH funciona ahí dentro. Daba "nunca llega a contestar" en arranques que
+# estaban bien. El modo --kernel sigue sirviendo para lo único que puede
+# demostrar: que la firmware ejecuta el kernel y que el kernel llega a /init.
 # ==============================================================================
 set -uo pipefail
 
@@ -39,7 +46,8 @@ rojo()  { printf '\033[31m%s\033[0m\n' "$*"; }
 gris()  { printf '\033[90m%s\033[0m\n' "$*"; }
 paso()  { printf '\033[1m»\033[0m %s\n' "$*"; }
 
-MODO=disco
+MODO=iso
+[ "${1:-}" = "--kernel" ] && MODO=disco
 [ "${1:-}" = "--iso" ] && MODO=iso
 
 # KVM si lo hay; si no, emulación pura. Sin esto la prueba no corre en un
@@ -52,6 +60,15 @@ else
 fi
 
 [ -f "$CODE" ] || { rojo "Falta OVMF ($CODE). Instala edk2-ovmf."; exit 1; }
+# Si algo ya escucha en el puerto, QEMU no arranca ("Could not set up host
+# forwarding rule") y la prueba decía "la firmware no llegó a ejecutar el
+# kernel", que es mentira: no llegó a encenderse nada. Pasó con una VM que se
+# quedó viva de una ejecución anterior.
+if ss -ltn 2>/dev/null | grep -q ":$PUERTO "; then
+    rojo "El puerto $PUERTO ya está en uso (¿otra VM de pruebas encendida?)."
+    pgrep -af "^qemu-system" | cut -c1-100 | sed 's/^/    /'
+    exit 2
+fi
 mkdir -p "$TRABAJO"
 SERIE="$TRABAJO/serie.log"
 rm -f "$SERIE"
