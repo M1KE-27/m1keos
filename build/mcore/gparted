@@ -1,0 +1,40 @@
+#!/bin/sh
+# gparted - abre GParted como root y en el idioma del sistema.
+#
+# El "gparted" de las distribuciones es un envoltorio que pide permisos con
+# polkit (pkexec). Aquí no hay polkit: se entra con m-sudo, que es lo que usa
+# el resto del sistema, y se lanza el programa de verdad (gpartedbin).
+#
+# GParted va DENTRO de la imagen y no como paquete aparte. Antes había que
+# descargarlo desde el instalador, y la opción salía desactivada sin
+# internet --- que es justo cuando más se instala. Es el mismo GParted de
+# siempre: lo usa el modo "Particionado manual" del instalador y se puede
+# abrir también desde el lanzador.
+set -u
+PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
+export PATH
+
+# El idioma de MIKE OS. Hace falta un locale de verdad: con C.UTF-8, gettext
+# ignora LANGUAGE y GParted salía en inglés en un sistema en español.
+#
+# Sólo para GParted y no para todo el sistema, a propósito: con un locale
+# español, awk y printf escriben los decimales con coma, y los scripts que
+# leen números (m-energia, m-metrics...) se romperían sin decir nada.
+case "$(m-idioma 2>/dev/null)" in
+    es) LANGUAGE=es; export LANGUAGE
+        if [ -d /usr/lib/locale/es_ES.UTF-8 ]; then
+            LANG=es_ES.UTF-8; LC_ALL=es_ES.UTF-8; export LANG LC_ALL
+        fi ;;
+esac
+
+if [ "$(id -u)" != "0" ]; then
+    exec m-sudo "$0" "$@"
+fi
+
+# En /usr/bin si viene en la imagen; en /usr/lib/gparted si se instaló el
+# paquete de Arch con mpm (el plan B del instalador).
+for _b in /usr/bin/gpartedbin /usr/lib/gparted/gpartedbin; do
+    [ -x "$_b" ] && exec "$_b" "$@"
+done
+echo "GParted no está instalado (m-sudo mpm install gparted)." >&2
+exit 1

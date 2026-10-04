@@ -50,7 +50,7 @@ msj() {
           bios)       _t="This computer booted in old BIOS mode, not UEFI. MIKE OS only boots via UEFI: go into your firmware settings and turn off Legacy or CSM mode." ;;
           pequeno)    _t="The disk is %s and at least %s are needed." ;;
           sin_hueco)  _t="Only %s is free, and %s is needed. Free up space from the other system, or pick another option." ;;
-          sin_part)   _t="You have not chosen which partition to replace." ;;
+          sin_part)   _t="You have not chosen which partition MIKE OS goes on." ;;
           part_chica) _t="That partition is %s and at least %s are needed." ;;
           part_usada) _t="That partition is in use right now." ;;
           sin_esp)    _t="This disk has no EFI partition and is not being erased, so there is nowhere to put the boot files. Choose to erase the disk, or create a 512 MB EFI partition first." ;;
@@ -67,7 +67,7 @@ msj() {
           bios)       _t="Este equipo ha arrancado en modo BIOS antiguo, no en UEFI. MIKE OS sólo arranca por UEFI: entra en la configuración de la placa y desactiva el modo Legacy o CSM." ;;
           pequeno)    _t="El disco tiene %s y hacen falta al menos %s." ;;
           sin_hueco)  _t="Sólo hay %s sin usar, y hacen falta %s. Libera espacio desde el otro sistema o elige otra opción." ;;
-          sin_part)   _t="No has elegido qué partición reemplazar." ;;
+          sin_part)   _t="No has elegido en qué partición va MIKE OS." ;;
           part_chica) _t="Esa partición tiene %s y hacen falta al menos %s." ;;
           part_usada) _t="Esa partición está en uso ahora mismo." ;;
           sin_esp)    _t="Este disco no tiene partición EFI y no se va a borrar entero, así que no hay dónde poner el arranque. Elige borrar el disco, o crea antes una partición EFI de 512 MB." ;;

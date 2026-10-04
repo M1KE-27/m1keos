@@ -86,6 +86,9 @@ ShellRoot {
 
             discoTitulo: "Where should MIKE OS go?",
             discoTexto: "Everything on the chosen disk will be erased.",
+            discoTextoLado: "Only the free space is used. Nothing else is touched.",
+            discoTextoReemplazar: "Only the partition you pick is erased.",
+            discoTextoManual: "Nothing is touched until you say so: you make the partitions, you pick where it goes.",
             discoNinguno: "No disk available. The one you booted from is never offered.",
             discoExtraible: "This is a removable drive.",
             discoFs: "Filesystem",
@@ -97,8 +100,11 @@ ShellRoot {
             modoLadoSub: "Uses only free space. Nothing else on the disk is touched.",
             modoReemplazar: "Replace one partition",
             modoReemplazarSub: "Only that partition is erased.",
+            modoManual: "Manual partitioning",
+            modoManualSub: "Make the partitions yourself with GParted, then pick where MIKE OS goes.",
+            manualPaso: "1. Make your partitions   2. Close GParted   3. Pick the one for MIKE OS below",
             modoLibre: "free",
-            avanzado: "Advanced partitioning",
+            avanzado: "Partition editor",
             avanzadoSub: "Resize, create or delete partitions with GParted.",
             avanzadoInstalar: "Get GParted",
             avanzadoBajando: "Downloading…",
@@ -188,6 +194,9 @@ ShellRoot {
 
             discoTitulo: "¿Dónde va MIKE OS?",
             discoTexto: "Se borrará todo lo que haya en el disco elegido.",
+            discoTextoLado: "Sólo se usa el espacio libre. No se toca nada más.",
+            discoTextoReemplazar: "Sólo se borra la partición que elijas.",
+            discoTextoManual: "No se toca nada hasta que tú lo digas: haces las particiones y eliges dónde va.",
             discoNinguno: "No hay ningún disco disponible. El medio del que has arrancado nunca se ofrece.",
             discoExtraible: "Es una unidad extraíble.",
             discoFs: "Sistema de archivos",
@@ -199,8 +208,11 @@ ShellRoot {
             modoLadoSub: "Usa sólo el espacio libre. No se toca nada más del disco.",
             modoReemplazar: "Reemplazar una partición",
             modoReemplazarSub: "Sólo se borra esa partición.",
+            modoManual: "Particionado manual",
+            modoManualSub: "Haces tú las particiones con GParted y luego eliges dónde va MIKE OS.",
+            manualPaso: "1. Haz tus particiones   2. Cierra GParted   3. Elige abajo la de MIKE OS",
             modoLibre: "libres",
-            avanzado: "Particionado avanzado",
+            avanzado: "Editor de particiones",
             avanzadoSub: "Redimensionar, crear o borrar particiones con GParted.",
             avanzadoInstalar: "Traer GParted",
             avanzadoBajando: "Descargando…",
@@ -287,6 +299,11 @@ ShellRoot {
     property string fs: "btrfs"
     // borrar | al-lado | reemplazar
     property string modo: "borrar"
+    // "Manual" es lo mismo que "reemplazar" para m-install: instalar en UNA
+    // partición concreta y reutilizar la partición EFI que haya. La diferencia
+    // está en la pantalla: antes de elegir, las particiones las haces tú con
+    // GParted. Es lo que hace Calamares en su modo manual.
+    readonly property string modoReal: modo === "manual" ? "reemplazar" : modo
     property string particionObjetivo: ""
     property var particiones: []
     property double espacioLibre: 0
@@ -369,6 +386,7 @@ ShellRoot {
         var n = Number(b)
         if (!(n > 0)) return "?"
         if (n >= 1e12) return (n / 1e12).toFixed(1) + " TB"
+        if (n < 1e9)   return Math.round(n / 1e6) + " MB"
         return Math.round(n / 1e9) + " GB"
     }
 
@@ -621,7 +639,7 @@ ShellRoot {
     Process {
         id: mirarGparted
         running: true
-        command: ["sh", "-c", "command -v gparted >/dev/null 2>&1 && echo si || echo no"]
+        command: ["sh", "-c", "{ [ -x /usr/bin/gpartedbin ] || [ -x /usr/lib/gparted/gpartedbin ]; } && echo si || echo no"]
         stdout: StdioCollector {
             onStreamFinished: {
                 raiz.gpartedPuesto = (text.trim() === "si")
@@ -629,7 +647,18 @@ ShellRoot {
             }
         }
     }
-    Process { id: abrirGparted; command: ["m-sudo", "gparted"] }
+    // Al cerrar GParted se vuelve a leer el disco. Antes no se hacía: el
+    // instalador seguía enseñando las particiones de ANTES de tus cambios, y
+    // la que acababas de crear no aparecía para elegirla --- o aparecía una
+    // que ya habías borrado.
+    Process {
+        id: abrirGparted
+        command: ["gparted"]
+        onExited: {
+            raiz.particionObjetivo = ""
+            refrescarDisco()
+        }
+    }
 
     // Al cambiar de disco o de modo, todo lo que dependía de ellos deja de
     // valer: se vuelve a mirar en vez de arrastrar lo de antes.
@@ -652,7 +681,7 @@ ShellRoot {
         // tienen que salir en el mismo idioma que el resto de la pantalla.
         comprobar.command = ["sh", "-c",
             "MIKEOS_LANG=" + idioma + " m-particiones comprobar " +
-            discoSel.ruta + " " + modo + " " + particionObjetivo]
+            discoSel.ruta + " " + modoReal + " " + particionObjetivo]
         comprobar.running = true
     }
 
@@ -709,14 +738,14 @@ ShellRoot {
 
         var orden = ["m-sudo", "m-install",
                      "--disco", discoSel.ruta,
-                     "--modo", modo,
+                     "--modo", modoReal,
                      "--fs", fs,
                      "--equipo", equipo,
                      // La elección de la primera pantalla, para que el
                      // sistema instalado arranque en el idioma que se pidió
                      // en vez de en español pasara lo que pasara.
                      "--idioma", idioma]
-        if (modo === "reemplazar" && particionObjetivo !== "")
+        if (modoReal === "reemplazar" && particionObjetivo !== "")
             orden = orden.concat(["--particion", particionObjetivo])
         orden = orden.concat(["--clave-por-entrada", "--si"])
         instalar.command = orden
@@ -1244,7 +1273,13 @@ ShellRoot {
                             font.weight: Font.Light
                         }
                         Text {
-                            text: raiz.t("discoTexto")
+                            // Antes decía "se borrará todo" en los cuatro
+                            // modos, también al instalar al lado de Windows:
+                            // justo la frase que hace que alguien cancele.
+                            text: raiz.modo === "al-lado"    ? raiz.t("discoTextoLado")
+                                : raiz.modo === "reemplazar" ? raiz.t("discoTextoReemplazar")
+                                : raiz.modo === "manual"     ? raiz.t("discoTextoManual")
+                                : raiz.t("discoTexto")
                             color: Paleta.textoTenue
                             font.pixelSize: 14
                         }
@@ -1324,7 +1359,9 @@ ShellRoot {
                                          raiz.bytesLegibles(raiz.espacioLibre) + " " +
                                          raiz.t("modoLibre") },
                                     { id: "reemplazar", t: raiz.t("modoReemplazar"),
-                                      s: raiz.t("modoReemplazarSub") }
+                                      s: raiz.t("modoReemplazarSub") },
+                                    { id: "manual",     t: raiz.t("modoManual"),
+                                      s: raiz.t("modoManualSub") }
                                 ]
                                 Rectangle {
                                     width: parent.width
@@ -1378,126 +1415,23 @@ ShellRoot {
                             }
                         }
 
-                        // --- Qué hay dentro del disco ---
-                        // Se enseña siempre, no sólo al reemplazar: antes de
-                        // borrar nada, lo primero es ver qué se va a borrar.
-                        Column {
+                        // --- Particionado manual: GParted ---
+                        //
+                        // Sólo aparece al elegir "Particionado manual". Antes
+                        // era una tarjeta suelta debajo de las otras opciones
+                        // que sin internet salía desactivada: GParted no iba
+                        // en la ISO y había que descargarlo, justo cuando más
+                        // se instala sin red. Ahora va dentro.
+                        Text {
                             Layout.fillWidth: true
-                            spacing: 5
-                            visible: raiz.particiones.length > 0
-                            Repeater {
-                                model: raiz.particiones
-                                Rectangle {
-                                    width: parent.width
-                                    height: 40
-                                    radius: 9
-                                    color: raiz.modo === "reemplazar" && raiz.particionObjetivo === modelData.ruta
-                                           ? Qt.rgba(raiz.acento.r, raiz.acento.g, raiz.acento.b, 0.12)
-                                           : "transparent"
-                                    border.width: 1
-                                    border.color: raiz.modo === "reemplazar" && raiz.particionObjetivo === modelData.ruta
-                                                  ? raiz.acento : Paleta.borde
-                                    Row {
-                                        anchors.left: parent.left
-                                        anchors.leftMargin: 14
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        spacing: 12
-                                        Text {
-                                            text: modelData.ruta
-                                            color: Paleta.texto
-                                            font.family: "monospace"
-                                            font.pixelSize: 12
-                                            anchors.verticalCenter: parent.verticalCenter
-                                        }
-                                        Text {
-                                            text: raiz.bytesLegibles(modelData.bytes)
-                                            color: Paleta.textoTenue
-                                            font.pixelSize: 12
-                                            anchors.verticalCenter: parent.verticalCenter
-                                        }
-                                        Text {
-                                            text: modelData.fs
-                                            color: Paleta.textoTenue
-                                            font.pixelSize: 12
-                                            anchors.verticalCenter: parent.verticalCenter
-                                        }
-                                        Text {
-                                            visible: modelData.sistema !== "" &&
-                                                     modelData.sistema !== "desconocido"
-                                            text: modelData.sistema
-                                            color: raiz.acento
-                                            font.pixelSize: 12
-                                            font.bold: true
-                                            anchors.verticalCenter: parent.verticalCenter
-                                        }
-                                    }
-                                    HoverHandler {
-                                        enabled: raiz.modo === "reemplazar"
-                                        cursorShape: Qt.PointingHandCursor
-                                    }
-                                    TapHandler {
-                                        gesturePolicy: TapHandler.ReleaseWithinBounds
-                                        enabled: raiz.modo === "reemplazar"
-                                        onTapped: raiz.particionObjetivo = modelData.ruta
-                                    }
-                                }
-                            }
+                            visible: raiz.modo === "manual"
+                            text: raiz.t("manualPaso")
+                            color: Paleta.textoTenue
+                            font.pixelSize: 11
+                            wrapMode: Text.WordWrap
                         }
-
-                        // --- Lo que impide seguir, y por qué ---
-                        // Sale AQUÍ, en el paso del disco, y no al final: de
-                        // nada sirve enterarte de que falta la partición EFI
-                        // cuando ya le has dado a instalar.
                         Rectangle {
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: colProblemas.implicitHeight + 26
-                            visible: raiz.problemas.length > 0 || raiz.avisos.length > 0
-                            radius: 12
-                            color: raiz.problemas.length > 0
-                                   ? Qt.rgba(1, 0.36, 0.41, 0.10)
-                                   : Qt.rgba(0.89, 0.63, 0.24, 0.10)
-                            border.width: 1
-                            border.color: raiz.problemas.length > 0 ? "#ff5c68" : Paleta.aviso
-                            Column {
-                                id: colProblemas
-                                anchors.left: parent.left
-                                anchors.right: parent.right
-                                anchors.verticalCenter: parent.verticalCenter
-                                anchors.leftMargin: 16
-                                anchors.rightMargin: 16
-                                spacing: 6
-                                Text {
-                                    visible: raiz.problemas.length > 0
-                                    text: raiz.t("revisarTitulo")
-                                    color: "#ff5c68"
-                                    font.pixelSize: 13
-                                    font.bold: true
-                                }
-                                Repeater {
-                                    model: raiz.problemas
-                                    Text {
-                                        width: colProblemas.width
-                                        text: "·  " + modelData
-                                        color: "#ff5c68"
-                                        font.pixelSize: 12
-                                        wrapMode: Text.WordWrap
-                                    }
-                                }
-                                Repeater {
-                                    model: raiz.avisos
-                                    Text {
-                                        width: colProblemas.width
-                                        text: "·  " + modelData
-                                        color: Paleta.aviso
-                                        font.pixelSize: 12
-                                        wrapMode: Text.WordWrap
-                                    }
-                                }
-                            }
-                        }
-
-                        // --- Particionado avanzado ---
-                        Rectangle {
+                            visible: raiz.modo === "manual"
                             Layout.fillWidth: true
                             Layout.preferredHeight: 52
                             Layout.topMargin: 4
@@ -1553,6 +1487,124 @@ ShellRoot {
                                             raiz.bajandoGparted = true
                                             traerGparted.running = true
                                         }
+                                    }
+                                }
+                            }
+                        }
+
+                        // --- Qué hay dentro del disco ---
+                        // Se enseña siempre, no sólo al reemplazar: antes de
+                        // borrar nada, lo primero es ver qué se va a borrar.
+                        Column {
+                            Layout.fillWidth: true
+                            spacing: 5
+                            visible: raiz.particiones.length > 0
+                            Repeater {
+                                model: raiz.particiones
+                                Rectangle {
+                                    width: parent.width
+                                    height: 40
+                                    radius: 9
+                                    color: raiz.modoReal === "reemplazar" && raiz.particionObjetivo === modelData.ruta
+                                           ? Qt.rgba(raiz.acento.r, raiz.acento.g, raiz.acento.b, 0.12)
+                                           : "transparent"
+                                    border.width: 1
+                                    border.color: raiz.modoReal === "reemplazar" && raiz.particionObjetivo === modelData.ruta
+                                                  ? raiz.acento : Paleta.borde
+                                    Row {
+                                        anchors.left: parent.left
+                                        anchors.leftMargin: 14
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        spacing: 12
+                                        Text {
+                                            text: modelData.ruta
+                                            color: Paleta.texto
+                                            font.family: "monospace"
+                                            font.pixelSize: 12
+                                            anchors.verticalCenter: parent.verticalCenter
+                                        }
+                                        Text {
+                                            text: raiz.bytesLegibles(modelData.bytes)
+                                            color: Paleta.textoTenue
+                                            font.pixelSize: 12
+                                            anchors.verticalCenter: parent.verticalCenter
+                                        }
+                                        Text {
+                                            text: modelData.fs
+                                            color: Paleta.textoTenue
+                                            font.pixelSize: 12
+                                            anchors.verticalCenter: parent.verticalCenter
+                                        }
+                                        Text {
+                                            visible: modelData.sistema !== "" &&
+                                                     modelData.sistema !== "desconocido"
+                                            text: modelData.sistema
+                                            color: raiz.acento
+                                            font.pixelSize: 12
+                                            font.bold: true
+                                            anchors.verticalCenter: parent.verticalCenter
+                                        }
+                                    }
+                                    HoverHandler {
+                                        enabled: raiz.modoReal === "reemplazar"
+                                        cursorShape: Qt.PointingHandCursor
+                                    }
+                                    TapHandler {
+                                        gesturePolicy: TapHandler.ReleaseWithinBounds
+                                        enabled: raiz.modoReal === "reemplazar"
+                                        onTapped: raiz.particionObjetivo = modelData.ruta
+                                    }
+                                }
+                            }
+                        }
+
+                        // --- Lo que impide seguir, y por qué ---
+                        // Sale AQUÍ, en el paso del disco, y no al final: de
+                        // nada sirve enterarte de que falta la partición EFI
+                        // cuando ya le has dado a instalar.
+                        Rectangle {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: colProblemas.implicitHeight + 26
+                            visible: raiz.problemas.length > 0 || raiz.avisos.length > 0
+                            radius: 12
+                            color: raiz.problemas.length > 0
+                                   ? Qt.rgba(1, 0.36, 0.41, 0.10)
+                                   : Qt.rgba(0.89, 0.63, 0.24, 0.10)
+                            border.width: 1
+                            border.color: raiz.problemas.length > 0 ? "#ff5c68" : Paleta.aviso
+                            Column {
+                                id: colProblemas
+                                anchors.left: parent.left
+                                anchors.right: parent.right
+                                anchors.verticalCenter: parent.verticalCenter
+                                anchors.leftMargin: 16
+                                anchors.rightMargin: 16
+                                spacing: 6
+                                Text {
+                                    visible: raiz.problemas.length > 0
+                                    text: raiz.t("revisarTitulo")
+                                    color: "#ff5c68"
+                                    font.pixelSize: 13
+                                    font.bold: true
+                                }
+                                Repeater {
+                                    model: raiz.problemas
+                                    Text {
+                                        width: colProblemas.width
+                                        text: "·  " + modelData
+                                        color: "#ff5c68"
+                                        font.pixelSize: 12
+                                        wrapMode: Text.WordWrap
+                                    }
+                                }
+                                Repeater {
+                                    model: raiz.avisos
+                                    Text {
+                                        width: colProblemas.width
+                                        text: "·  " + modelData
+                                        color: Paleta.aviso
+                                        font.pixelSize: 12
+                                        wrapMode: Text.WordWrap
                                     }
                                 }
                             }

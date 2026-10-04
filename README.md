@@ -39,7 +39,7 @@ Kernel Linux propio · init con runit · gestor de paquetes propio · shell prop
 | Compilar el sistema entero | **25 s** |
 | systemd | **0 líneas** |
 | Idiomas | **español e inglés**, el sistema entero |
-| Imagen | **566 MB** |
+| Imagen | **570 MB** |
 
 ![El escritorio de MIKE OS](build/web/capturas/escritorio.png)
 

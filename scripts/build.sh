@@ -699,6 +699,12 @@ bins = ['/usr/bin/Hyprland', '/usr/bin/Xwayland', '/usr/bin/start-hyprland', '/u
     '/usr/bin/dumpe2fs', '/usr/bin/ntfs-3g', '/usr/bin/ntfs-3g.probe',
     '/usr/bin/lowntfs-3g', '/usr/bin/ntfsresize', '/usr/bin/ntfsinfo',
     '/usr/bin/ntfsfix', '/usr/bin/ntfsclone', '/usr/bin/mkntfs',
+    # GParted, para el modo "Particionado manual" del instalador. Va dentro y
+    # no como paquete aparte: sin internet, que es cuando más se instala, la
+    # opción salía desactivada. Se copia gpartedbin (el programa) y no
+    # /usr/bin/gparted (un envoltorio de polkit); el lanzador es el nuestro,
+    # build/mcore/gparted. fsck.fat es lo que usa para comprobar las FAT.
+    '/usr/lib/gparted/gpartedbin', '/usr/bin/fsck.fat',
     # fastfetch. Estaba escrito el código para copiarlo desde
     # build/fastfetch-static/, pero NADA lo compilaba nunca: esa carpeta no
     # existe, así que el build avisaba «Fastfetch no fue compilado» y seguía.
@@ -1489,6 +1495,47 @@ install_etc etc/os-release 644
 # durante toda la 0.3.0.
 MIKEOS_VERSION="$(tr -d ' \n' < "$PROJECT_ROOT/VERSION" 2>/dev/null || echo 0.0.0)"
 sed -i "s/@VERSION@/$MIKEOS_VERSION/g" "$ROOTFS_DIR/etc/os-release"
+
+# GParted: icono, traducción y entrada en el lanzador de aplicaciones. El
+# programa ya lo copió el bloque de binarios de arriba. La entrada del lanzador
+# se escribe aquí y no se copia la del paquete, que llama a "gparted" con
+# polkit; la nuestra llama a nuestro lanzador, que entra con m-sudo.
+if [ -x "$ROOTFS_DIR/usr/bin/gpartedbin" ]; then
+    for _i in /usr/share/icons/hicolor/*/apps/gparted.*; do
+        [ -f "$_i" ] || continue
+        _d="$ROOTFS_DIR${_i%/*}"; mkdir -p "$_d"; cp -f "$_i" "$_d/"
+    done
+    # Y el locale español, que sin él la traducción no sale: gettext ignora
+    # LANGUAGE cuando el locale es "C", y la imagen sólo tenía C.UTF-8. Son
+    # 2,9 MB. NO se pone en todo el sistema (ver build/mcore/gparted).
+    if command -v localedef >/dev/null 2>&1; then
+        mkdir -p "$ROOTFS_DIR/usr/lib/locale"
+        localedef -i es_ES -f UTF-8 --no-archive "$ROOTFS_DIR/usr/lib/locale/es_ES.UTF-8" 2>/dev/null \
+            || echo "AVISO: no se pudo generar el locale es_ES.UTF-8."
+    fi
+    if [ -f /usr/share/locale/es/LC_MESSAGES/gparted.mo ]; then
+        mkdir -p "$ROOTFS_DIR/usr/share/locale/es/LC_MESSAGES"
+        cp -f /usr/share/locale/es/LC_MESSAGES/gparted.mo "$ROOTFS_DIR/usr/share/locale/es/LC_MESSAGES/"
+    fi
+    mkdir -p "$ROOTFS_DIR/usr/share/applications"
+    cat > "$ROOTFS_DIR/usr/share/applications/gparted.desktop" <<'DESKTOP'
+[Desktop Entry]
+Type=Application
+Name=GParted
+Name[es]=GParted
+GenericName=Partition Editor
+GenericName[es]=Editor de particiones
+Comment=Create, resize and delete disk partitions
+Comment[es]=Crear, cambiar de tamaño y borrar particiones del disco
+Exec=gparted
+Icon=gparted
+Terminal=false
+Categories=System;
+DESKTOP
+else
+    echo "AVISO: GParted no está en este equipo (sudo pacman -S gparted): la imagen"
+    echo "       saldrá sin el modo de particionado manual del instalador."
+fi
 
 # Configurar skeleton /etc/skel y ~/.config/mike
 mkdir -p "$ROOTFS_DIR/etc/skel/.config/mike/quickshell" "$ROOTFS_DIR/etc/skel/.config/mike/theme"

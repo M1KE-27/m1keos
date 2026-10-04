@@ -78,6 +78,24 @@ paquete que hacía lo mismo. Ahora va delante del initramfs, para AMD e Intel:
 son los arreglos de los fabricantes para fallos de la propia CPU (Zenbleed,
 o la degradación de los Intel de 13.ª y 14.ª generación).
 
+### Particionado manual en el instalador, como en Calamares
+
+- **Cuarta opción en el paso del disco: "Particionado manual"**, junto a
+  borrar el disco, instalar al lado y reemplazar una partición. Haces las
+  particiones con GParted, lo cierras, y eliges en cuál va MIKE OS; se
+  reutiliza la partición EFI que haya.
+- **GParted va dentro de la ISO** y funciona sin internet. Antes era una
+  tarjeta aparte que había que descargar, y sin red salía desactivada —
+  justo cuando más se instala. Sale en el idioma del sistema (hace falta un
+  locale de verdad: se genera `es_ES.UTF-8` sólo para él, porque en todo el
+  sistema cambiaría los decimales a coma y rompería scripts que leen números).
+- **Al cerrar GParted el instalador vuelve a leer el disco.** Antes seguía
+  enseñando las particiones de antes de tus cambios.
+- El texto de arriba ya no dice "se borrará todo lo que haya en el disco" en
+  los cuatro modos, también al instalar al lado de Windows.
+- Probado de punta a punta con firmware UEFI: particionar a mano, instalar en
+  la partición elegida reutilizando la EFI, y arrancar lo instalado.
+
 ### Arranque dual con Windows
 
 - **El instalador no podía registrar MIKE OS en la UEFI**: `efivarfs` iba como
