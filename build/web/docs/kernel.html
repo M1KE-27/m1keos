@@ -55,7 +55,7 @@ try{var _t=localStorage.getItem("mikeos-tema");
 <header><h1>Kernel</h1></header>
 <article><h1 id="mike-os-kernel-management-and-lifecycle">MIKE OS — Kernel Management and Lifecycle</h1>
 <h2 id="1-overview">1. Overview</h2>
-<p>The Linux Kernel in MIKE OS (version 7.2.0, x86_64) is optimized for ultra-fast boot times, embedded drivers (ext4, virtio_blk, virtio_net, devtmpfs), and zero systemd dependencies.</p>
+<p>The Linux Kernel in MIKE OS (the latest kernel.org stable, currently 7.2.9, x86_64) is optimized for ultra-fast boot times, embedded drivers (ext4, virtio_blk, virtio_net, devtmpfs), and zero systemd dependencies.</p>
 <hr>
 <h2 id="2-kernel-lifecycle-via-mpm">2. Kernel Lifecycle via MPM</h2>
 <p>MPM manages the kernel layout under <code>/boot</code>:</p>
@@ -85,8 +85,8 @@ mpm kernel remove 7.1.0
 <li><code>CONFIG_VIRTIO_BLK=y</code> &amp; <code>CONFIG_VIRTIO_NET=y</code>: Hypervisor acceleration.</li>
 </ul></article></main></div>
 <footer><div class="cont">
-MIKE OS 0.9.0, MIT licence. Served from a mini PC at home.
-Updated on September 20, 2026.
+MIKE OS 0.10.0, MIT licence. Served from a mini PC at home.
+Updated on October 4, 2026.
 <a href="https://github.com/macorredor270/mikeos">Source on GitHub</a>
 </div></footer>
 <script>
