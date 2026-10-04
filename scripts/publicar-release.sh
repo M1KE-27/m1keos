@@ -174,12 +174,13 @@ sistema antes de cada instalación y que \`mpm rollback\` vuelva atrás de verda
 
 ## Qué esperar
 
-Versión **alpha**. Arranca en hardware UEFI real, se instala y se actualiza,
-pero no hay versión estable ni promesa de que no se rompa nada entre una y
-otra. **Instálalo en un equipo que puedas formatear.**
+Probado de punta a punta con firmware UEFI real: arrancar el USB, instalar
+—también al lado de otro sistema—, arrancar lo instalado y actualizar. Lleva
+los drivers y el firmware de muchos más equipos de los que se han podido
+probar uno a uno: **instálalo primero en uno que puedas formatear.**
 
-Sin gestor de arranque: el kernel lleva \`CONFIG_EFI_STUB\` y es su propio
-ejecutable UEFI.
+Arranca con GRUB (menú con los demás sistemas del equipo) y, además, el kernel
+lleva \`CONFIG_EFI_STUB\` y queda registrado aparte en la UEFI como respaldo.
 
 ---
 
@@ -190,12 +191,26 @@ ejecutable UEFI.
 NOTAS_FIN
 
 # --- Publicar ---------------------------------------------------------------
+# El código fuente entero, junto a la ISO.
+#
+# GitHub ya genera "Source code (zip/tar.gz)" de la etiqueta, pero sin huella
+# y sin decir qué lleva. Esto es "git archive" de lo que hay en git ahora: todo
+# lo propio del sistema (kernel: opciones y parches; escritorio; herramientas;
+# instalador; gestor de paquetes; pruebas; documentación) y nada que no sea
+# fuente. Lo de terceros (el árbol del kernel, BusyBox...) no va: build.sh lo
+# descarga de su origen.
+FUENTE="$(dirname "$ISO")/mikeos-${ETIQUETA}-codigo-fuente.tar.gz"
+paso "Empaquetando el código fuente"
+git -C "$RAIZ" archive --format=tar.gz --prefix="mikeos-${ETIQUETA#v}/" -o "$FUENTE" HEAD || exit 1
+( cd "$(dirname "$FUENTE")" && sha256sum "$(basename "$FUENTE")" > "$(basename "$FUENTE").sha256" )
+gris "  $(basename "$FUENTE"): $(du -h "$FUENTE" | cut -f1), $(tar -tzf "$FUENTE" | grep -vc '/$') archivos"
+
 paso "Creando la release $ETIQUETA"
 if gh release view "$ETIQUETA" --repo "$REPO" >/dev/null 2>&1; then
-    gris "  ya existe: se sustituye el archivo"
-    gh release upload "$ETIQUETA" "$ISO" "$ISO.sha256" --repo "$REPO" --clobber || exit 1
+    gris "  ya existe: se sustituyen los archivos"
+    gh release upload "$ETIQUETA" "$ISO" "$ISO.sha256" "$FUENTE" "$FUENTE.sha256" --repo "$REPO" --clobber || exit 1
 else
-    gh release create "$ETIQUETA" "$ISO" "$ISO.sha256" \
+    gh release create "$ETIQUETA" "$ISO" "$ISO.sha256" "$FUENTE" "$FUENTE.sha256" \
         --repo "$REPO" \
         --title "MIKE OS $ETIQUETA" \
         --notes-file "$NOTAS" \

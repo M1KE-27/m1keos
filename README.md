@@ -9,7 +9,8 @@
 Kernel Linux propio · init con runit · gestor de paquetes propio · shell propia
 · escritorio propio · español e inglés · **cero systemd**
 
-[![Release](https://img.shields.io/github/v/release/M1KE-27/m1keos?include_prereleases&label=versi%C3%B3n&color=00d4ff)](https://github.com/M1KE-27/m1keos/releases/latest)
+[![Release](https://img.shields.io/github/v/release/macorredor270/mikeos?label=versi%C3%B3n&color=00d4ff)](https://github.com/macorredor270/mikeos/releases/latest)
+[![Kernel](https://img.shields.io/badge/Linux-7.2.9-00d4ff)](https://www.kernel.org/)
 [![Licencia](https://img.shields.io/badge/licencia-MIT-00d4ff)](LICENSE)
 [![Kernel](https://img.shields.io/badge/kernel-7.2-00d4ff)](docs/kernel.md)
 [![Plataforma](https://img.shields.io/badge/x86__64-UEFI-00d4ff)](docs/boot.md)
@@ -26,11 +27,31 @@ Kernel Linux propio · init con runit · gestor de paquetes propio · shell prop
 
 ---
 
-> [!WARNING]
-> **Versión alpha.** Arranca, se instala y se actualiza, y todo eso está
-> probado de punta a punta: en QEMU con firmware UEFI real y en una Surface
-> Laptop 4 física. En otros portátiles sigue sin probar. Si lo instalas, que
-> sea en un equipo que puedas formatear.
+> [!NOTE]
+> **MIKE OS 0.10.0.** Arranca, se instala junto a Windows, se actualiza y vuelve
+> atrás, y todo eso está probado de punta a punta: en QEMU con firmware UEFI
+> real —instalando y arrancando lo instalado— y en una Surface Laptop 4 física.
+> En otros portátiles lleva sus drivers y su firmware, pero sin probar en el
+> equipo concreto. Instálalo primero en uno que puedas formatear.
+
+**Descarga:** [`mikeos.iso`](https://github.com/macorredor270/mikeos/releases/latest/download/mikeos.iso)
+(570 MB) · [todas las versiones](https://github.com/macorredor270/mikeos/releases) ·
+[qué hay de nuevo](docs/CAMBIOS.md)
+
+### Novedades de la 0.10.0
+
+- **Linux 7.2.9**, la última estable de kernel.org, en vez de un commit de la
+  rama de desarrollo.
+- **Particionado manual con GParted** en el instalador, como en Calamares, y
+  GParted dentro de la ISO: funciona sin internet.
+- **Instalar al lado de Windows funciona de verdad**: MIKE OS se registra en la
+  UEFI, GRUB va primero con Windows en el menú, y actualizar el kernel ya no
+  borra GRUB.
+- **Muchos más equipos**: drivers de cada marca de portátil, Intel VMD, gráficas
+  Intel y AMD nuevas y viejas, Wi-Fi 7, Ethernet de 2,5 Gb, touchpads, sonido…
+  y el firmware que nunca había llegado a la imagen (Wi-Fi Qualcomm, MediaTek,
+  NVIDIA, Surface Pro, sonido de Intel).
+- **El microcódigo de la CPU se carga** al arrancar. No se había cargado nunca.
 
 | | |
 |---|---|
@@ -74,12 +95,12 @@ No encender es el peor fallo que puede tener un sistema operativo.
 
 | Pieza | Qué es |
 |---|---|
-| **kernel** | Linux compilado para este sistema. Todo va dentro (`=y`): no se montan módulos |
+| **kernel** | Linux 7.2.9, la estable de kernel.org, con ~390 opciones y 9 parches de Surface propios. Todo va dentro (`=y`): no se montan módulos |
 | **runit** | Init y supervisión, PID 1 |
 | **mpm** | Gestor de paquetes: SHA256, dependencias, instantáneas de btrfs antes de instalar, y rollback |
 | **mkshell** | Shell en C: tuberías, redirecciones, variables |
-| **mcore** | 35 herramientas del sistema: `m-install`, `m-doctor`, `m-drivers`, `m-energia`, `m-particiones`… |
-| **instalador** | Gráfico, en QML. Detecta el disco, instala al lado de otro sistema y avisa de lo que va a borrar |
+| **mcore** | 37 herramientas del sistema: `m-install`, `m-doctor`, `m-drivers`, `m-energia`, `m-idioma`, `m-particiones`… |
+| **instalador** | Gráfico, en QML. Borrar el disco, instalar al lado, reemplazar una partición o particionado manual con GParted; avisa de lo que va a borrar |
 | **bloqueo** | Pantalla de bloqueo con `ext-session-lock-v1`, aviso de Bloq Mayús y salida si la cuenta no tiene contraseña |
 | **escritorio** | Hyprland, con barra y Centro de Control escritos para MIKE OS en QML |
 | **servidor** | Phoenix + PostgreSQL: índice de versiones y parque de equipos |
@@ -87,8 +108,8 @@ No encender es el peor fallo que puede tener un sistema operativo.
 ## Probarlo
 
 ```sh
-# descarga desde https://m1keos.duckdns.org/descargas.html
-sha256sum mikeos.iso                  # compara con el publicado
+# https://github.com/macorredor270/mikeos/releases/latest
+sha256sum -c mikeos.iso.sha256        # comprueba la descarga
 sudo dd if=mikeos.iso of=/dev/sdX bs=4M status=progress oflag=sync
 ```
 
@@ -103,10 +124,18 @@ arrancado), enseña qué hay en cada partición y avisa en ámbar de lo que se v
 perder. Si algo impediría que el equipo arrancara después, no deja continuar y
 explica por qué.
 
-**Instalar al lado de Windows** usa el espacio libre y no toca nada más. La
-partición EFI que encuentre se conserva con el arranque de Windows dentro, que
-es lo que hace que Windows siga apareciendo en el menú de GRUB en vez de
-«desaparecer».
+El paso del disco tiene cuatro opciones, como en Calamares:
+
+| | |
+|---|---|
+| **Borrar el disco** | Lo más sencillo, y lo que quieres en un disco nuevo |
+| **Instalar al lado** | Usa sólo el espacio libre y no toca nada más |
+| **Reemplazar una partición** | Sólo se borra la que elijas |
+| **Particionado manual** | Haces las particiones con GParted (va en la ISO, no hace falta internet), lo cierras y eliges en cuál va MIKE OS |
+
+**Al lado de Windows**, la partición EFI que haya se conserva con el arranque de
+Windows dentro, y MIKE OS se registra en la UEFI como primera opción: arranca
+GRUB, y en su menú está Windows.
 
 > [!IMPORTANT]
 > **Secure Boot hay que desactivarlo.** Este kernel no lleva la firma de
@@ -133,7 +162,6 @@ Esto es parte de la documentación, no una nota al pie.
 |---|---|
 | **Secure Boot** | Hay que desactivarlo. El kernel no está firmado por Microsoft y no lo va a estar pronto |
 | **Sólo UEFI** | No arranca por BIOS ni con CSM |
-| **Particionado manual** | El instalador sabe borrar, instalar al lado y reemplazar. Para crear o redimensionar a mano, `mpm install gparted` |
 | **Privilegios** | `m-sudo` da root a la cuenta sin pedir contraseña. El bloqueo protege de miradas, no de alguien con tiempo y teclado |
 | **Hardware real** | Probado en QEMU con UEFI real y en una Surface Laptop 4. En otros portátiles, sin probar |
 
